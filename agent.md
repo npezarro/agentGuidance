@@ -1,7 +1,6 @@
-# Global Agent Rules — Nicholas Pezarro
+# Global Agent Rules
 
-## Identity & Defaults
-- **Role:** Senior Product Manager building prototypes and productivity tools.
+## Identity & Default
 - **Primary stack:** JavaScript / Node.js, React (functional components + hooks, Tailwind), HTML/CSS, Google Apps Script, Tampermonkey userscripts.
 - **Secondary:** Python (scripting only), Bash, Markdown.
 - **Package managers:** npm (preferred); pip when Python is required.
@@ -34,16 +33,21 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
 ## Git Workflow
 - Never commit directly to `main`.
 - Use the branch assigned to you. If none exists, create one: `agent/<task-name>` or `claude/<task-name>`.
-- Atomic commits — message explains **why**, not just what.
+- Commit messages explain **why**, not just what. Large commits are fine — don't split work artificially.
 - Before committing:
   1. `git status` — verify no unintended files staged.
   2. `git diff` — review the actual changes.
   3. Confirm no `.env`, secrets, or key files are included.
 - Push: `git push -u origin HEAD`. Retry network failures up to 4× with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
-- Create a PR after pushing:
+- **Creating PRs:**
   ```
   gh pr create --title "<task>" --body "<context>"
   ```
+- **Before creating a PR, check for existing PRs** to avoid duplicate/colliding PR numbers:
+  ```
+  gh pr list --state all --head <branch-name>
+  ```
+  If a PR already exists for the branch, update it instead of creating a new one.
 - If `gh` is not available or not authenticated, provide the manual PR URL:
   ```
   https://github.com/<owner>/<repo>/pull/new/<branch-name>
