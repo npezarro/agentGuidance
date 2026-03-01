@@ -78,11 +78,50 @@ Active Branch: current working branch name
 
 This is how the next agent picks up where you left off. Be thorough.
 
+## Testing
+- **Run existing tests before making changes.** Know the baseline — don't introduce regressions.
+- **Run tests after changes.** `npx jest`, `npm test`, or whatever the repo uses. Check `package.json` for the test command.
+- **Write tests when:**
+  - Fixing a bug (regression test proving the fix).
+  - Adding a function with non-trivial logic (edge cases, error paths).
+  - The repo already has a test suite (match its patterns).
+- **Don't write tests when:**
+  - The repo has no test infrastructure and you weren't asked to add one.
+  - The change is purely cosmetic (copy, styling, config).
+- **Test structure:** Arrange-Act-Assert. One assertion per behavior. Descriptive test names that read as sentences.
+- **Mocks:** Only mock external boundaries (network, file system, databases). Never mock the unit under test.
+
+## Debugging
+- **Reproduce first.** Before changing code, confirm you can trigger the issue.
+- **Read the error.** Stack traces, error codes, and log output contain the answer more often than not. Read them fully.
+- **Isolate the problem.** Binary-search through the code path. Add targeted `console.log` or breakpoint, not scattered print statements.
+- **Check the obvious:**
+  - Is the right branch deployed / running?
+  - Are environment variables loaded?
+  - Is the correct version of the dependency installed?
+  - Is there a typo in a variable name, route, or selector?
+- **Use git history.** `git log --oneline -20`, `git diff HEAD~1`, `git bisect` — find what changed.
+- **Don't fix symptoms.** If a variable is unexpectedly `undefined`, trace *why* instead of adding a null check.
+- **Document the fix.** Commit message should explain the root cause, not just "fix bug."
+
+## Dependency Management
+- **Minimize new dependencies.** Before adding a package, check if the standard library or existing deps already solve the problem.
+- **Evaluate before installing:**
+  - Is it actively maintained? (check last publish date, open issues)
+  - How large is it? (`npm info <pkg> | grep size` or check bundlephobia)
+  - Does it have known vulnerabilities? (`npm audit`)
+  - Is the license compatible? (MIT, Apache-2.0, ISC are safe)
+- **Pin versions.** Use exact versions in `package.json` for deployed apps. Use `--save-exact` or lockfiles.
+- **Don't mix package managers.** If the repo uses `npm`, don't run `yarn` or `pnpm`.
+- **After installing:** Run the build and tests. New deps can introduce conflicts.
+- **Keep lockfiles committed.** `package-lock.json` or `yarn.lock` must be in version control.
+
 ## Code Standards
 - **Match existing patterns.** Read `package.json`, config files, and surrounding code before writing anything. Do not introduce new frameworks, ORMs, or styling approaches without explicit approval.
 - **JS/TS style:** Functional, ES modules, modern syntax (async/await, optional chaining, destructuring). React: functional components, hooks, Tailwind — no class components.
 - **Logging:** Use `console.log` / `console.error` liberally in scripts and prototypes. For deployed or user-facing code, log errors and key state transitions only.
 - **No over-engineering.** Solve the stated problem. Don't add abstraction layers, feature flags, or refactors beyond what was asked.
+- **Error handling:** Handle errors at system boundaries (user input, API calls, file I/O). Use early returns for validation. Let internal errors propagate — don't swallow them with empty `catch` blocks.
 
 ## Environment Awareness
 Before starting work on a deployed project:
@@ -100,10 +139,44 @@ Before starting work on a deployed project:
 - No secrets in commits, PRs, context files, or logs. Ever.
 - Environment-specific values belong in `.env` or local config, never in committed code.
 
+## Code Review (Self-Review Before Committing)
+Before every commit, run through this checklist:
+1. **Diff review:** `git diff --staged` — read every line. Does each change serve the stated goal?
+2. **No debug artifacts:** Remove `console.log`, `debugger`, `TODO: remove`, commented-out code added during development.
+3. **No secrets:** Grep for API keys, tokens, passwords, hardcoded URLs with credentials.
+4. **Build passes:** `npm run build` (or equivalent) exits cleanly.
+5. **Tests pass:** `npm test` (or equivalent) — no regressions.
+6. **File hygiene:** No unintended files staged (`.DS_Store`, `node_modules/`, build artifacts).
+7. **Naming:** Variables, functions, and files follow existing conventions in the codebase.
+8. **Edge cases:** Did you handle empty inputs, missing data, and error states?
+
+## Communication
+- **Be concise.** Lead with the answer or action, then provide supporting detail.
+- **Show, don't tell.** Include relevant code snippets, commands, or file paths — not vague descriptions.
+- **Progress updates:** For multi-step tasks, report what was completed after each step, not just at the end.
+- **Flag blockers immediately.** Don't silently struggle. If something is unclear, missing, or broken, say so.
+- **Summarize at the end.** After completing a task, provide a brief summary: what changed, what was tested, what to watch for.
+- **Use structured output** for lists, comparisons, and multi-part answers. Bullet points and tables are easier to scan than paragraphs.
+
+## Multi-Session Continuity
+When picking up work from a previous session (yours or another agent's):
+1. **Read `context.md` first.** It's the handoff document.
+2. **Check git log.** `git log --oneline -10` — understand recent changes.
+3. **Check git status.** Look for uncommitted work left behind.
+4. **Check for open PRs.** `gh pr list` — don't duplicate existing work.
+5. **Verify the environment.** Are dependencies installed? Is the build working? Are services running?
+6. **Update `context.md` when you're done.** The next session depends on it.
+
 ## Deployment
 - Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 - **Pre-deploy checklist:**
   1. All changes committed and pushed via PR.
   2. Build succeeds locally.
-  3. `context.md` updated with deployment intent.
-  4. No secrets exposed in repository history.
+  3. Tests pass.
+  4. `context.md` updated with deployment intent.
+  5. No secrets exposed in repository history.
+  6. Dependencies are locked (`package-lock.json` committed).
+- **Post-deploy:**
+  1. Verify the deployment is live and functioning.
+  2. Update `context.md` with deployment status.
+  3. Monitor for errors in the first few minutes if logs are accessible.
