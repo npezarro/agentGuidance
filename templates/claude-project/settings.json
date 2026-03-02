@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sf --max-time 10 https://raw.githubusercontent.com/npezarro/agentGuidance/main/agent.md || echo 'Warning: Could not fetch global rules' >&2",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'I=$(cat); F=$(mktemp); trap \"rm -f $F\" EXIT; curl -sf --max-time 5 https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/post-to-wordpress.sh -o \"$F\" && printf \"%s\" \"$I\" | bash \"$F\"; exit 0'",
+            "timeout": 15000
+          }
+        ]
+      }
+    ]
+  }
+}
