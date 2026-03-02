@@ -1,0 +1,134 @@
+#!/bin/bash
+# Post each Claude Code turn as a private WordPress post
+# Triggered by the Stop hook event
+
+set -euo pipefail
+
+# --- Credential Resolution ---
+# Priority: env vars (set via settings.json "env" block) > .env files > exit silently
+if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
+  for envfile in "$HOME/.env" /home/generatedByTermius/.env; do
+    if [ -f "$envfile" ]; then
+      source "$envfile"
+      break
+    fi
+  done
+fi
+
+if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
+  exit 0  # No credentials available — skip silently
+fi
+
+WP_SITE="https://pezant.ca"
+WP_API="${WP_SITE}/wp-json/wp/v2/posts"
+AUTH=$(echo -n "${WP_USER}:${WP_APP_PASSWORD}" | base64)
+
+# --- Redaction ---
+# Scrub sensitive information from text before posting to WordPress.
+# Defense-in-depth: agent.md also instructs Claude to self-censor,
+# but this catches anything that slips through.
+redact_sensitive() {
+  sed -E \
+    -e 's/[A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4}/[REDACTED_APP_PASSWORD]/g' \
+    -e 's/ghp_[A-Za-z0-9]{36,}/[REDACTED_GITHUB_TOKEN]/g' \
+    -e 's/github_pat_[A-Za-z0-9_]{40,}/[REDACTED_GITHUB_PAT]/g' \
+    -e 's/sk-proj-[A-Za-z0-9_-]{40,}/[REDACTED_API_KEY]/g' \
+    -e 's/sk-[A-Za-z0-9]{20,}/[REDACTED_API_KEY]/g' \
+    -e 's/key-[A-Za-z0-9]{20,}/[REDACTED_API_KEY]/g' \
+    -e 's/Bearer [A-Za-z0-9._-]{20,}/Bearer [REDACTED_BEARER]/g' \
+    -e 's/(Authorization: Basic )[A-Za-z0-9+\/=]{10,}/\1[REDACTED_AUTH]/g' \
+    -e 's/(SECRET|_SECRET|CLIENT_SECRET|TOKEN_ENCRYPTION_KEY|API_KEY|OPENAI_API_KEY|SMTP_PASS|APP_PASSWORD|WP_APP_PASSWORD)=[^ "'\'']+/\1=[REDACTED]/g' \
+    -e 's/(PASSWORD|_PASS|_PASSWORD|CREDENTIAL|_CREDENTIAL)=[^ "'\'']+/\1=[REDACTED]/g' \
+    -e 's|https?://[^:@ ]+:[^@ ]+@|https://[REDACTED_CREDS]@|g' \
+    -e 's/-----BEGIN[A-Z ]*PRIVATE KEY-----[^-]*-----END[A-Z ]*PRIVATE KEY-----/[REDACTED_PRIVATE_KEY]/g' \
+    -e 's/\b(10\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]))\b/[REDACTED_IP]/g' \
+    -e 's/\b(192\.168\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]))\b/[REDACTED_IP]/g' \
+    -e 's/\b(172\.(1[6-9]|2[0-9]|3[01])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]))\b/[REDACTED_IP]/g'
+}
+
+# Read hook input from stdin
+INPUT=$(cat)
+
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+LAST_ASSISTANT_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // empty')
+
+# Skip if no transcript or no assistant message
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ] || [ -z "$LAST_ASSISTANT_MSG" ]; then
+  exit 0
+fi
+
+# Extract the last user prompt from transcript
+# User messages have type="user" and message.content is a string (not tool_result arrays)
+# Use jq --slurp with reverse to handle files with/without trailing newlines
+USER_PROMPT=$(jq -rs '[.[] | select(.type == "user" and (.message.content | type == "string"))] | last | .message.content // empty' "$TRANSCRIPT_PATH" 2>/dev/null)
+
+# Skip if we couldn't find a user prompt
+if [ -z "$USER_PROMPT" ]; then
+  exit 0
+fi
+
+# Redact sensitive information from both prompt and response
+USER_PROMPT=$(echo "$USER_PROMPT" | redact_sensitive)
+LAST_ASSISTANT_MSG=$(echo "$LAST_ASSISTANT_MSG" | redact_sensitive)
+
+# Summarize long prompts — keep first line + truncate body
+PROMPT_LEN=${#USER_PROMPT}
+PROMPT_DISPLAY="$USER_PROMPT"
+if [ "$PROMPT_LEN" -gt 300 ]; then
+  FIRST_LINE=$(echo "$USER_PROMPT" | head -1 | cut -c1-120)
+  PROMPT_DISPLAY="${FIRST_LINE}...
+
+<em>[Full prompt truncated — ${PROMPT_LEN} chars. See transcript for complete text.]</em>"
+fi
+
+# Summarize long assistant responses — keep first ~2000 chars
+RESPONSE_LEN=${#LAST_ASSISTANT_MSG}
+RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
+if [ "$RESPONSE_LEN" -gt 2000 ]; then
+  RESPONSE_DISPLAY=$(echo "$LAST_ASSISTANT_MSG" | head -c 2000)
+  RESPONSE_DISPLAY="${RESPONSE_DISPLAY}...
+
+<em>[Response truncated — ${RESPONSE_LEN} chars total. See transcript for complete output.]</em>"
+fi
+
+# Get working directory and extract project name for narrative framing
+CWD=$(echo "$INPUT" | jq -r '.cwd // "unknown"')
+PROJECT=$(basename "$CWD")
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+DATE_HUMAN=$(date '+%B %-d, %Y')
+
+# Build the title: first ~60 chars of user prompt, truncated at word boundary
+TITLE=$(echo "$USER_PROMPT" | head -1 | cut -c1-80 | sed 's/\s\+[^\s]*$//' | head -c 60)
+if [ ${#TITLE} -ge 58 ]; then
+  TITLE="${TITLE}..."
+fi
+
+# --- Build post content (narrative style) ---
+CONTENT="<p>While working in <code>${PROJECT}</code>, I asked Claude Code to help with the following:</p>
+
+<h3>The Ask</h3>
+<blockquote>${PROMPT_DISPLAY}</blockquote>
+
+<h3>What Happened</h3>
+${RESPONSE_DISPLAY}
+
+<hr />
+<p style='color:#888; font-size:0.9em;'>Logged on ${DATE_HUMAN} at ${TIMESTAMP} &mdash; Session <code>${SESSION_ID}</code> in <code>${CWD}</code></p>"
+
+# Create the WordPress post (private)
+PAYLOAD=$(jq -n \
+  --arg title "$TITLE" \
+  --arg content "$CONTENT" \
+  --arg status "private" \
+  '{title: $title, content: $content, status: $status}')
+
+curl -s -X POST "$WP_API" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Basic ${AUTH}" \
+  -d "$PAYLOAD" \
+  -o /dev/null \
+  -w "" \
+  --max-time 10 2>/dev/null || true
+
+exit 0
