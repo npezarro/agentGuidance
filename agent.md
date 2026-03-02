@@ -139,6 +139,14 @@ Before starting work on a deployed project:
 - No secrets in commits, PRs, context files, or logs. Ever.
 - Environment-specific values belong in `.env` or local config, never in committed code.
 
+## Auto-Posting Awareness
+Every Claude Code response may be automatically posted as a **private WordPress draft** on YOUR_DOMAIN via a Stop hook. Because of this:
+- **Never include raw secret values** in your responses — API keys, tokens, passwords, application passwords, database credentials, SMTP passwords, or `.env` file contents.
+- **Redact when referencing secrets.** If you need to mention a credential, show `VARIABLE_NAME=[REDACTED]` or describe it without revealing the value.
+- **Avoid echoing sensitive command output.** If a command returns credentials (e.g., `wp user application-password create`), summarize the result without printing the raw value.
+- **Private repo names are fine** unless the user says otherwise — this applies to secret *values*, not repo names.
+- The hook script also performs pattern-based redaction as a safety net, but do not rely on it — treat every response as potentially public.
+
 ## Code Review (Self-Review Before Committing)
 Before every commit, run through this checklist:
 1. **Diff review:** `git diff --staged` — read every line. Does each change serve the stated goal?
