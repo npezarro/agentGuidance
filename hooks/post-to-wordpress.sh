@@ -149,10 +149,34 @@ PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 DATE_HUMAN=$(date '+%B %-d, %Y')
 
-# Build the title: first ~60 chars of user prompt, truncated at word boundary
-TITLE=$(echo "$USER_PROMPT" | head -1 | cut -c1-80 | sed 's/\s\+[^\s]*$//' | head -c 60)
-if [ ${#TITLE} -ge 58 ]; then
-  TITLE="${TITLE}..."
+# Build the title: use the first heading from the response if the prompt is
+# too short or conversational to make a good title. Fall back to project + date.
+PROMPT_FIRST_LINE=$(echo "$USER_PROMPT" | head -1 | sed 's/^[[:space:]]*//')
+PROMPT_WORD_COUNT=$(echo "$PROMPT_FIRST_LINE" | wc -w | tr -d ' ')
+
+if [ "$PROMPT_WORD_COUNT" -ge 5 ]; then
+  # Prompt is substantive enough to use as title
+  TITLE=$(echo "$PROMPT_FIRST_LINE" | cut -c1-80 | sed 's/\s\+[^\s]*$//' | head -c 60)
+  if [ ${#TITLE} -ge 58 ]; then
+    TITLE="${TITLE}..."
+  fi
+else
+  # Short prompt ("yes", "do it", "looks good") — derive title from response
+  # Try first markdown heading, then first sentence, then fallback
+  RESPONSE_HEADING=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //')
+  if [ -n "$RESPONSE_HEADING" ]; then
+    TITLE=$(echo "$RESPONSE_HEADING" | cut -c1-60)
+  else
+    RESPONSE_FIRST=$(echo "$LAST_ASSISTANT_MSG" | head -1 | sed 's/^[[:space:]]*//' | cut -c1-80 | sed 's/\s\+[^\s]*$//' | head -c 60)
+    if [ -n "$RESPONSE_FIRST" ] && [ "$(echo "$RESPONSE_FIRST" | wc -w | tr -d ' ')" -ge 3 ]; then
+      TITLE="$RESPONSE_FIRST"
+      if [ ${#TITLE} -ge 58 ]; then
+        TITLE="${TITLE}..."
+      fi
+    else
+      TITLE="${PROJECT} — $(date '+%b %-d, %Y')"
+    fi
+  fi
 fi
 
 # --- Convert markdown to HTML ---
