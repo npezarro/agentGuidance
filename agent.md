@@ -38,6 +38,7 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
   1. `git status` — verify no unintended files staged.
   2. `git diff` — review the actual changes.
   3. Confirm no `.env`, secrets, or key files are included.
+  4. **Update `context.md`** — this is mandatory for any commit that changes code or configuration. See the Context File section below.
 - Push: `git push -u origin HEAD`. Retry network failures up to 4× with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
 - **Creating PRs:**
   ```
@@ -55,28 +56,40 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
 - Do **not** enable auto-merge unless explicitly asked.
 
 ## Context File (`context.md`)
-Maintain at the repo root. Read on session start; update before every push.
+**This is not optional.** Every repo must have a `context.md` at its root. It is the handoff document between sessions — the way the next agent (or the next you) picks up where the last one left off. Treat it like a relay baton: if you don't pass it, the next runner starts blind.
+
+### When to update
+- **Every commit that changes code or configuration.** Include the `context.md` update in the same commit — not as a separate follow-up.
+- **When you discover something about the environment** — a port, a config path, a quirk that's not documented yet.
+- **At the end of a session**, even if you didn't push. If you investigated something, made a decision, or identified a blocker, capture it.
+
+### What to write
+Keep it concise and current. This is a living status page, not a changelog.
 
 ```
 # context.md
 Last Updated: YYYY-MM-DD — one-line summary
 Current State: what works, what's deployed, known issues
-Recent Changes: what changed and why (keep brief)
+Recent Changes: what changed and why (keep brief, most recent first)
 Open Work: blockers, unfinished tasks, decisions needed
 Environment Notes: deploy target, process manager, ports, SSH user, config file paths
 Active Branch: current working branch name
 ```
 
-**Never include:** credentials, API keys, tokens, passwords, or `.env` contents.
+### What NOT to include
+- Credentials, API keys, tokens, passwords, or `.env` contents — ever.
+- Verbose history — this isn't a git log. Keep "Recent Changes" to the last 3–5 entries. Older items can be removed.
 
-**Environment Notes must include** (when applicable):
+### Environment Notes must include (when applicable)
 - SSH user and hostname
 - PM2 process name and port
 - Web server config file path (e.g., Apache VirtualHost location)
 - Base path if deployed to a subdirectory
 - Database file path
+- Node version, if it matters for the project
 
-This is how the next agent picks up where you left off. Be thorough.
+### If `context.md` doesn't exist yet
+Create it from the template at `agentGuidance/templates/context.md`. Fill in what you can from the repo's config files, `package.json`, and environment. Don't leave placeholder comments — either fill in the value or remove the line.
 
 ## Testing
 - **Run existing tests before making changes.** Know the baseline — don't introduce regressions.
