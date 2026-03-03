@@ -198,12 +198,12 @@ CONTENT="${RECAP_HTML}${RESPONSE_HTML}
 <hr />
 <p style='color:#888; font-size:0.9em;'>Logged on ${DATE_HUMAN} at ${TIMESTAMP} &mdash; Session <code>${SESSION_ID}</code> in <code>${CWD}</code></p>"
 
-# Create the WordPress post (private)
+# Create the WordPress post (private, filed under "Claude Journals" category)
 PAYLOAD=$(jq -n \
   --arg title "$TITLE" \
   --arg content "$CONTENT" \
   --arg status "private" \
-  '{title: $title, content: $content, status: $status}')
+  '{title: $title, content: $content, status: $status, categories: [16]}')
 
 curl -s -X POST "$WP_API" \
   -H "Content-Type: application/json" \
