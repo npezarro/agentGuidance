@@ -158,8 +158,30 @@ fi
 # --- Convert markdown to HTML ---
 RESPONSE_HTML=$(echo "$RESPONSE_DISPLAY" | md_to_html)
 
+# --- "Previously on..." recap ---
+# Fetch the last 3 private posts to build a recap section, like a TV series cold open.
+# Fails silently — if the API is unreachable, we just skip the recap.
+RECAP_HTML=""
+RECENT_POSTS=$(curl -s --max-time 5 \
+  -H "Authorization: Basic ${AUTH}" \
+  "${WP_API}?per_page=3&status=private&orderby=date&order=desc" 2>/dev/null)
+
+if [ -n "$RECENT_POSTS" ] && echo "$RECENT_POSTS" | jq -e '.[0].id' &>/dev/null; then
+  RECAP_ITEMS=$(echo "$RECENT_POSTS" | jq -r '.[] | "<li><a href=\"" + .link + "\">" + .title.rendered + "</a></li>"' 2>/dev/null)
+  if [ -n "$RECAP_ITEMS" ]; then
+    RECAP_HTML="<div style=\"background:#f7f7f7; border-left:4px solid #999; padding:12px 16px; margin-bottom:24px;\">
+<p><strong>Previously on&hellip;</strong></p>
+<ul style=\"margin:8px 0 0 0;\">
+${RECAP_ITEMS}
+</ul>
+</div>
+
+"
+  fi
+fi
+
 # --- Build post content (narrative style) ---
-CONTENT="<p>While working in <code>${PROJECT}</code>, I asked Claude Code to help with the following:</p>
+CONTENT="${RECAP_HTML}<p>While working in <code>${PROJECT}</code>, I asked Claude Code to help with the following:</p>
 
 <h3>The Ask</h3>
 <blockquote>${PROMPT_DISPLAY}</blockquote>

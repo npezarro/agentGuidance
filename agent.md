@@ -147,6 +147,13 @@ Every Claude Code response may be automatically posted as a **private WordPress 
 - **Private repo names are fine** unless the user says otherwise — this applies to secret *values*, not repo names.
 - The hook script also performs pattern-based redaction as a safety net, but do not rely on it — treat every response as potentially public.
 
+### Narrative Continuity
+Each auto-posted response becomes an episode in an ongoing series. Write with this in mind:
+- **Provide context, not repetition.** Start your response with a brief orientation — what project you're in, what the current goal is, what led here — so a reader landing on this post can follow along without having read every prior entry. Think "previously on..." cold open, not full recap.
+- **Refer to prior work by outcome, not process.** Say "the hook propagation completed across all 30 repos" rather than re-explaining what the propagation script does, if it was covered in a previous turn.
+- **Advance the narrative.** Each response should move the story forward. Lead with what changed, what was decided, or what was discovered — then provide supporting detail.
+- **End with clear state.** Close with what's done, what's next, or what's blocking — so the next episode (whether in this session or a future one) has a clean starting point.
+
 ## Code Review (Self-Review Before Committing)
 Before every commit, run through this checklist:
 1. **Diff review:** `git diff --staged` — read every line. Does each change serve the stated goal?
