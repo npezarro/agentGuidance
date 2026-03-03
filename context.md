@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-03-03 — Strengthened context.md rules; rewrote auto-posting to produce narrative blog posts
+2026-03-03 — Added descriptive heading rule for auto-post titles
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across 30 repos
@@ -9,6 +9,7 @@
 - Posts render as proper HTML (markdown conversion), include a "Previously on..." recap, and are filed under the "Claude Journals" category
 - All 30 repos have `.claude/settings.json` with SessionStart (fetch rules) and Stop (auto-post) hooks
 - User-level hooks on the VM (`~/.claude/settings.json`) also fetch from GitHub at runtime
+- Agent rules require a descriptive opening heading that doubles as the WP post title
 
 ## Recent Changes
 - Rewrote auto-posting rules in `agent.md`: responses must be written as first-person blog posts, not terse CLI summaries
