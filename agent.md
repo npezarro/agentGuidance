@@ -212,6 +212,16 @@ When picking up work from a previous session (yours or another agent's):
 5. **Verify the environment.** Are dependencies installed? Is the build working? Are services running?
 6. **Update `context.md` when you're done.** The next session depends on it.
 
+## Session Wrap-Up
+**Before ending any session where you wrote or changed code, you MUST complete all of these steps.** Do not wait to be asked — this is automatic.
+
+1. **Update `context.md`** — reflect the current state of the project, what changed, and any open work.
+2. **Commit all changes.** Stage relevant files (never `.env`, secrets, or build artifacts). Write a commit message that explains *why*, not just *what*.
+3. **Push to remote.** `git push -u origin HEAD`. Confirm the push succeeded.
+4. **Verify nothing was left behind.** Run `git status` after pushing — there should be no uncommitted changes related to the task.
+
+If the build is broken and you cannot fix it before the session ends, still commit and push with a clear note in the commit message and `context.md` explaining the broken state so the next session can pick it up. Uncommitted local changes are invisible to future sessions and effectively lost work.
+
 ## Deployment
 - Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 - **Pre-deploy checklist:**
