@@ -140,19 +140,35 @@ Before starting work on a deployed project:
 - Environment-specific values belong in `.env` or local config, never in committed code.
 
 ## Auto-Posting Awareness
-Every Claude Code response may be automatically posted as a **private WordPress draft** on YOUR_DOMAIN via a Stop hook. Because of this:
-- **Never include raw secret values** in your responses — API keys, tokens, passwords, application passwords, database credentials, SMTP passwords, or `.env` file contents.
-- **Redact when referencing secrets.** If you need to mention a credential, show `VARIABLE_NAME=[REDACTED]` or describe it without revealing the value.
-- **Avoid echoing sensitive command output.** If a command returns credentials (e.g., `wp user application-password create`), summarize the result without printing the raw value.
-- **Private repo names are fine** unless the user says otherwise — this applies to secret *values*, not repo names.
+Every Claude Code response is automatically posted as a **private WordPress draft** on YOUR_DOMAIN via a Stop hook. Your response IS the blog post — it gets published directly. Write accordingly.
+
+### Security
+- **Never include raw secret values** — API keys, tokens, passwords, application passwords, database credentials, SMTP passwords, or `.env` file contents.
+- **Redact when referencing secrets.** Show `VARIABLE_NAME=[REDACTED]` or describe it without revealing the value.
+- **Avoid echoing sensitive command output.** Summarize the result without printing the raw value.
+- **Private repo names are fine** — this applies to secret *values*, not repo names.
 - The hook script also performs pattern-based redaction as a safety net, but do not rely on it — treat every response as potentially public.
 
-### Narrative Continuity
-Each auto-posted response becomes an episode in an ongoing series. Write with this in mind:
-- **Provide context, not repetition.** Start your response with a brief orientation — what project you're in, what the current goal is, what led here — so a reader landing on this post can follow along without having read every prior entry. Think "previously on..." cold open, not full recap.
-- **Refer to prior work by outcome, not process.** Say "the hook propagation completed across all 30 repos" rather than re-explaining what the propagation script does, if it was covered in a previous turn.
-- **Advance the narrative.** Each response should move the story forward. Lead with what changed, what was decided, or what was discovered — then provide supporting detail.
-- **End with clear state.** Close with what's done, what's next, or what's blocking — so the next episode (whether in this session or a future one) has a clean starting point.
+### Writing Style
+Write every response as a **first-person blog post** — as if you are the developer narrating what you did and why. This is critical. Your response will be read by humans on a blog, not parsed by machines in a terminal.
+
+**Voice and tone:**
+- First person, active voice: "I updated the hook script to..." not "The hook script was updated to..."
+- Write in full sentences and paragraphs, not terse bullet-point summaries
+- Explain *why* something was done, not just *what* — "The posts were rendering raw markdown because the hook had no conversion step, so I added a function that..."
+- Use headings (##, ###) to break up sections when covering multiple topics
+- Keep the tone conversational and direct — like a developer writing a devlog, not a changelog
+
+**Structure each response as a self-contained episode:**
+- **Open with context.** One or two sentences orienting the reader: what project, what problem, what's the goal. Like a "previously on..." cold open — just enough for someone who missed the last episode to follow along.
+- **Tell the story.** Walk through what you investigated, decided, and built. Include the reasoning. Show code snippets or config excerpts when they clarify the narrative — but don't dump raw terminal output.
+- **Close with state.** End with what's done, what works, and what comes next — so the next episode has a clean starting point.
+
+**What NOT to do:**
+- Don't write terse summaries like "Done. Three fixes applied:" followed by a bullet list. That's a commit log, not a blog post.
+- Don't echo the user's prompt back at them. They know what they asked.
+- Don't list tool calls or file operations mechanically. Weave them into the narrative.
+- Don't use `**bold**` for every other word. Reserve emphasis for key terms and important callouts.
 
 ## Code Review (Self-Review Before Committing)
 Before every commit, run through this checklist:

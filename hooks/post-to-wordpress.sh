@@ -149,33 +149,20 @@ PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 DATE_HUMAN=$(date '+%B %-d, %Y')
 
-# Build the title: use the first heading from the response if the prompt is
-# too short or conversational to make a good title. Fall back to project + date.
-PROMPT_FIRST_LINE=$(echo "$USER_PROMPT" | head -1 | sed 's/^[[:space:]]*//')
-PROMPT_WORD_COUNT=$(echo "$PROMPT_FIRST_LINE" | wc -w | tr -d ' ')
-
-if [ "$PROMPT_WORD_COUNT" -ge 5 ]; then
-  # Prompt is substantive enough to use as title
-  TITLE=$(echo "$PROMPT_FIRST_LINE" | cut -c1-80 | sed 's/\s\+[^\s]*$//' | head -c 60)
-  if [ ${#TITLE} -ge 58 ]; then
-    TITLE="${TITLE}..."
-  fi
+# Build the title from the response content — since the response IS the blog post.
+# Priority: first markdown heading > first sentence > project + date fallback.
+RESPONSE_HEADING=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //')
+if [ -n "$RESPONSE_HEADING" ]; then
+  TITLE=$(echo "$RESPONSE_HEADING" | cut -c1-70)
 else
-  # Short prompt ("yes", "do it", "looks good") — derive title from response
-  # Try first markdown heading, then first sentence, then fallback
-  RESPONSE_HEADING=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //')
-  if [ -n "$RESPONSE_HEADING" ]; then
-    TITLE=$(echo "$RESPONSE_HEADING" | cut -c1-60)
-  else
-    RESPONSE_FIRST=$(echo "$LAST_ASSISTANT_MSG" | head -1 | sed 's/^[[:space:]]*//' | cut -c1-80 | sed 's/\s\+[^\s]*$//' | head -c 60)
-    if [ -n "$RESPONSE_FIRST" ] && [ "$(echo "$RESPONSE_FIRST" | wc -w | tr -d ' ')" -ge 3 ]; then
-      TITLE="$RESPONSE_FIRST"
-      if [ ${#TITLE} -ge 58 ]; then
-        TITLE="${TITLE}..."
-      fi
-    else
-      TITLE="${PROJECT} — $(date '+%b %-d, %Y')"
+  RESPONSE_FIRST=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '.{10,}' | sed 's/^[[:space:]]*//' | cut -c1-80 | sed 's/[[:space:]][^[:space:]]*$//' | head -c 70)
+  if [ -n "$RESPONSE_FIRST" ] && [ "$(echo "$RESPONSE_FIRST" | wc -w | tr -d ' ')" -ge 3 ]; then
+    TITLE="$RESPONSE_FIRST"
+    if [ ${#TITLE} -ge 68 ]; then
+      TITLE="${TITLE}..."
     fi
+  else
+    TITLE="${PROJECT} — $(date '+%b %-d, %Y')"
   fi
 fi
 
@@ -204,14 +191,9 @@ ${RECAP_ITEMS}
   fi
 fi
 
-# --- Build post content (narrative style) ---
-CONTENT="${RECAP_HTML}<p>While working in <code>${PROJECT}</code>, I asked Claude Code to help with the following:</p>
-
-<h3>The Ask</h3>
-<blockquote>${PROMPT_DISPLAY}</blockquote>
-
-<h3>What Happened</h3>
-${RESPONSE_HTML}
+# --- Build post content ---
+# The response IS the blog post. No template wrapper — just recap, content, and metadata.
+CONTENT="${RECAP_HTML}${RESPONSE_HTML}
 
 <hr />
 <p style='color:#888; font-size:0.9em;'>Logged on ${DATE_HUMAN} at ${TIMESTAMP} &mdash; Session <code>${SESSION_ID}</code> in <code>${CWD}</code></p>"
