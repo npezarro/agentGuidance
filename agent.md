@@ -173,6 +173,7 @@ Write every response as a **first-person blog post** — as if you are the devel
 - Keep the tone conversational and direct — like a developer writing a devlog, not a changelog
 
 **Structure each response as a self-contained episode:**
+- **Start with a descriptive heading.** Your first `##` heading becomes the WordPress post title. Make it specific and meaningful — it should tell a reader what this post is about without clicking through. Good: `## Propagating Claude Code Hooks to All 30 Repos`. Bad: `## What I Changed`, `## Summary`, `## The Fix`. Think of it like an article headline, not a section label.
 - **Open with context.** One or two sentences orienting the reader: what project, what problem, what's the goal. Like a "previously on..." cold open — just enough for someone who missed the last episode to follow along.
 - **Tell the story.** Walk through what you investigated, decided, and built. Include the reasoning. Show code snippets or config excerpts when they clarify the narrative — but don't dump raw terminal output.
 - **Close with state.** End with what's done, what works, and what comes next — so the next episode has a clean starting point.
