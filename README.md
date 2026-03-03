@@ -61,6 +61,11 @@ agentGuidance/
 │   ├── context.md                     # Project context file template
 │   ├── pr-body.md                     # Pull request body template
 │   └── commit-message.md             # Commit message format guide
+├── hooks/
+│   ├── post-to-wordpress.sh           # Stop hook: auto-post sessions to WP
+│   └── fetch-rules.sh                 # SessionStart hook: fetch global rules
+├── scripts/
+│   └── propagate-hooks.sh             # Push hooks + CLAUDE.md to all repos
 ├── .claude/
 │   ├── settings.json                  # Claude Code hooks configuration
 │   └── scripts/
@@ -78,6 +83,7 @@ agentGuidance/
 | `guidance/debugging.md` | Reproduction, isolation, common patterns, git bisect |
 | `guidance/code-review.md` | Pre-commit checklist, PR checklist, common issues |
 | `guidance/dependencies.md` | Evaluation criteria, adding/updating/removing packages, security auditing |
+| `guidance/wordpress-auto-posting.md` | WP auto-posting setup, credentials, cloud sandbox config, troubleshooting |
 
 ## Customizing
 
