@@ -19,6 +19,57 @@ if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
   exit 0  # No credentials available — skip silently
 fi
 
+# --- Markdown to HTML ---
+# Convert markdown to proper HTML for WordPress rendering.
+# Uses python-markdown if available; falls back to basic sed conversion.
+md_to_html() {
+  local input
+  input=$(cat)
+  converted=$(echo "$input" | python3 -c "
+import sys
+text = sys.stdin.read()
+try:
+    import markdown
+    print(markdown.markdown(text, extensions=['tables', 'fenced_code']))
+except ImportError:
+    import re, html as h
+    t = h.escape(text)
+    # fenced code blocks
+    t = re.sub(r'\`\`\`(\w*)\n(.*?)\`\`\`', lambda m: '<pre><code>' + m.group(2) + '</code></pre>', t, flags=re.S)
+    # headings
+    t = re.sub(r'^#### (.+)$', r'<h4>\1</h4>', t, flags=re.M)
+    t = re.sub(r'^### (.+)$', r'<h3>\1</h3>', t, flags=re.M)
+    t = re.sub(r'^## (.+)$', r'<h2>\1</h2>', t, flags=re.M)
+    t = re.sub(r'^# (.+)$', r'<h1>\1</h1>', t, flags=re.M)
+    # bold and italic
+    t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
+    t = re.sub(r'\*(.+?)\*', r'<em>\1</em>', t)
+    # inline code
+    t = re.sub(r'\`([^\`]+)\`', r'<code>\1</code>', t)
+    # unordered lists
+    t = re.sub(r'((?:^- .+\n?)+)', lambda m: '<ul>\n' + re.sub(r'^- (.+)$', r'<li>\1</li>', m.group(0), flags=re.M) + '</ul>\n', t, flags=re.M)
+    # horizontal rules
+    t = re.sub(r'^---+$', '<hr />', t, flags=re.M)
+    # links
+    t = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href=\"\2\">\1</a>', t)
+    # paragraphs (double newlines)
+    t = re.sub(r'\n\n+', '</p>\n<p>', t.strip())
+    t = '<p>' + t + '</p>'
+    # clean up empty paragraphs and paragraphs wrapping block elements
+    t = re.sub(r'<p>\s*</p>', '', t)
+    t = re.sub(r'<p>\s*(<h[1-4])', r'\1', t)
+    t = re.sub(r'(</h[1-4]>)\s*</p>', r'\1', t)
+    t = re.sub(r'<p>\s*(<ul>)', r'\1', t)
+    t = re.sub(r'(</ul>)\s*</p>', r'\1', t)
+    t = re.sub(r'<p>\s*(<pre>)', r'\1', t)
+    t = re.sub(r'(</pre>)\s*</p>', r'\1', t)
+    t = re.sub(r'<p>\s*(<hr)', r'\1', t)
+    t = re.sub(r'(<hr />)\s*</p>', r'\1', t)
+    print(t)
+" 2>/dev/null) || converted="$input"
+  echo "$converted"
+}
+
 WP_SITE="https://YOUR_DOMAIN"
 WP_API="${WP_SITE}/wp-json/wp/v2/posts"
 AUTH=$(echo -n "${WP_USER}:${WP_APP_PASSWORD}" | base64)
@@ -104,6 +155,9 @@ if [ ${#TITLE} -ge 58 ]; then
   TITLE="${TITLE}..."
 fi
 
+# --- Convert markdown to HTML ---
+RESPONSE_HTML=$(echo "$RESPONSE_DISPLAY" | md_to_html)
+
 # --- Build post content (narrative style) ---
 CONTENT="<p>While working in <code>${PROJECT}</code>, I asked Claude Code to help with the following:</p>
 
@@ -111,7 +165,7 @@ CONTENT="<p>While working in <code>${PROJECT}</code>, I asked Claude Code to hel
 <blockquote>${PROMPT_DISPLAY}</blockquote>
 
 <h3>What Happened</h3>
-${RESPONSE_DISPLAY}
+${RESPONSE_HTML}
 
 <hr />
 <p style='color:#888; font-size:0.9em;'>Logged on ${DATE_HUMAN} at ${TIMESTAMP} &mdash; Session <code>${SESSION_ID}</code> in <code>${CWD}</code></p>"
