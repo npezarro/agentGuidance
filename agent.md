@@ -104,6 +104,23 @@ Create it from the template at `agentGuidance/templates/context.md`. Fill in wha
 - **Test structure:** Arrange-Act-Assert. One assertion per behavior. Descriptive test names that read as sentences.
 - **Mocks:** Only mock external boundaries (network, file system, databases). Never mock the unit under test.
 
+### Regression & Functional Verification
+Unit tests alone are not enough. **After every change, verify that existing user flows still work.** Regressions — features that were working but break silently during development — are the most damaging bugs because they ship unnoticed.
+
+- **Identify critical user flows before coding.** Before making changes, list the key paths a user takes through the app (e.g., sign in → dashboard → connect integrations → view data). These are your regression checklist.
+- **Test every flow after changes, not just the one you touched.** A change to auth middleware can break the dashboard. A change to a shared component can break pages that import it. Assume your change has side effects until proven otherwise.
+- **For web apps:** After building, manually verify (or script verification of) these at minimum:
+  - Authentication works (sign up, sign in, sign out)
+  - Authenticated pages are accessible after sign-in (dashboard, settings, profile)
+  - Core integrations and connected services still function (OAuth flows, API callbacks, webhooks)
+  - Navigation between pages works without errors
+  - API endpoints return expected responses (use `curl` or the app itself)
+- **Check server logs after testing.** `pm2 logs`, browser console, or network tab — look for errors, 500s, redirects to wrong pages, and failed API calls that the UI might silently swallow.
+- **If the app has multiple user states, test each one.** Logged out vs. logged in. New user vs. returning user. User with connected services vs. without. Admin vs. regular user.
+- **Don't assume "it builds, so it works."** A clean build means the code compiles — it does not mean the app behaves correctly. Build success is necessary but not sufficient.
+- **When a regression is found:** Fix it before moving on to new work. Document what broke and why in the commit message — this prevents the same class of bug from recurring.
+- **Before declaring a task complete:** Run through the full regression checklist one final time. If you cannot verify a flow (e.g., OAuth requires real credentials), flag it explicitly in `context.md` as untested.
+
 ## Debugging
 - **Reproduce first.** Before changing code, confirm you can trigger the issue.
 - **Read the error.** Stack traces, error codes, and log output contain the answer more often than not. Read them fully.
