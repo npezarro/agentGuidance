@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-03-03 — Added descriptive heading rule for auto-post titles
+2026-03-04 — Added Regression & Functional Verification section to Testing
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across 30 repos
@@ -12,6 +12,7 @@
 - Agent rules require a descriptive opening heading that doubles as the WP post title
 
 ## Recent Changes
+- Added "Regression & Functional Verification" subsection under Testing — agents must verify all critical user flows after changes, not just run unit tests
 - Rewrote auto-posting rules in `agent.md`: responses must be written as first-person blog posts, not terse CLI summaries
 - Removed rigid "The Ask / What Happened" template from `post-to-wordpress.sh` — response is the post
 - Added `md_to_html()` markdown-to-HTML converter to the hook (uses python-markdown, stdlib fallback)
@@ -32,4 +33,4 @@
 - **Propagation script:** `scripts/propagate-hooks.sh` pushes `.claude/settings.json` + `CLAUDE.md` to all repos
 
 ## Active Branch
-main
+agent/add-regression-testing-guidance
