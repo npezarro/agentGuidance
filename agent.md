@@ -1,5 +1,7 @@
 # Global Agent Rules
 
+> **THIS IS A PUBLIC REPOSITORY.** Everything committed here is visible to the entire internet. Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information — not in code, not in comments, not in examples, not in commit messages. If you need to reference a secret, use a placeholder like `YOUR_API_KEY_HERE` or `[REDACTED]`. When in doubt, leave it out. A leaked secret in a public repo cannot be un-leaked — it must be rotated immediately.
+
 ## Identity & Default
 - **Primary stack:** JavaScript / Node.js, React (functional components + hooks, Tailwind), HTML/CSS, Google Apps Script, Tampermonkey userscripts.
 - **Secondary:** Python (scripting only), Bash, Markdown.
@@ -166,8 +168,13 @@ Before starting work on a deployed project:
 - Search for current docs before implementing anything version-sensitive (model APIs, SDK methods, breaking changes).
 
 ## Security
-- No secrets in commits, PRs, context files, or logs. Ever.
-- Environment-specific values belong in `.env` or local config, never in committed code.
+**This repo (`agentGuidance`) is public.** It is indexed by search engines and visible to anyone on the internet. Every other repo you work on may be private, but this one is not. Treat every commit, every file, every line as if it will be read by strangers — because it will be.
+
+- **No secrets in commits, PRs, context files, or logs. Ever.** This includes API keys, tokens, passwords, webhook URLs, Discord bot tokens, database credentials, private IPs, internal hostnames, and `.env` contents.
+- **Environment-specific values belong in `.env` or local config**, never in committed code. Use placeholders like `YOUR_API_KEY_HERE` or `$ENV_VAR_NAME` in examples.
+- **Audit before every commit to this repo.** Run `git diff --staged` and read every line. Ask yourself: "Would I be comfortable if a stranger read this?" If not, redact or remove it.
+- **Do not reference real infrastructure details** (server IPs, SSH usernames, ports, PM2 process names, domain-specific paths) in this repo. Those belong in each project's private `context.md` or `.env`, not in shared public guidance.
+- **If a secret is accidentally committed**, treat it as compromised. Rotate the credential immediately, then remove it from git history with `git filter-branch` or `bfg`. A force-push to clean history is justified in this case — and only this case.
 
 ## Discord Integration
 A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it. **Discord is not optional.** Every agent is expected to use it as the coordination layer between sessions, between agents, and between agents and the owner.
