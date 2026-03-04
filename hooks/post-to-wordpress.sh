@@ -9,7 +9,19 @@ set -euo pipefail
 if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
   for envfile in "$HOME/.env" $HOME/.env; do
     if [ -f "$envfile" ]; then
-      source "$envfile"
+      while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$key" ]] && continue
+        # Remove surrounding quotes from value
+        value="${value%\"}"
+        value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
+        # Trim whitespace
+        key="$(echo "$key" | xargs)"
+        export "$key=$value"
+      done < "$envfile"
       break
     fi
   done
@@ -17,6 +29,11 @@ fi
 
 if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
   exit 0  # No credentials available — skip silently
+fi
+
+if ! command -v jq &>/dev/null; then
+  echo "ERROR: jq is required but not installed" >&2
+  exit 1
 fi
 
 # --- Markdown to HTML ---
@@ -48,6 +65,12 @@ except ImportError:
     t = re.sub(r'\`([^\`]+)\`', r'<code>\1</code>', t)
     # unordered lists
     t = re.sub(r'((?:^- .+\n?)+)', lambda m: '<ul>\n' + re.sub(r'^- (.+)$', r'<li>\1</li>', m.group(0), flags=re.M) + '</ul>\n', t, flags=re.M)
+    # ordered lists
+    t = re.sub(r'((?:^\d+\. .+\n?)+)', lambda m: '<ol>\n' + re.sub(r'^\d+\. (.+)$', r'<li>\1</li>', m.group(0), flags=re.M) + '</ol>\n', t, flags=re.M)
+    # blockquotes
+    t = re.sub(r'((?:^> .+\n?)+)', lambda m: '<blockquote>\n' + re.sub(r'^> (.+)$', r'<p>\1</p>', m.group(0), flags=re.M) + '</blockquote>\n', t, flags=re.M)
+    # images
+    t = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src=\"\2\" alt=\"\1\" />', t)
     # horizontal rules
     t = re.sub(r'^---+$', '<hr />', t, flags=re.M)
     # links
@@ -61,6 +84,12 @@ except ImportError:
     t = re.sub(r'(</h[1-4]>)\s*</p>', r'\1', t)
     t = re.sub(r'<p>\s*(<ul>)', r'\1', t)
     t = re.sub(r'(</ul>)\s*</p>', r'\1', t)
+    t = re.sub(r'<p>\s*(<ol>)', r'\1', t)
+    t = re.sub(r'(</ol>)\s*</p>', r'\1', t)
+    t = re.sub(r'<p>\s*(<blockquote>)', r'\1', t)
+    t = re.sub(r'(</blockquote>)\s*</p>', r'\1', t)
+    t = re.sub(r'<p>\s*(<img )', r'\1', t)
+    t = re.sub(r'(<img [^>]*/>)\s*</p>', r'\1', t)
     t = re.sub(r'<p>\s*(<pre>)', r'\1', t)
     t = re.sub(r'(</pre>)\s*</p>', r'\1', t)
     t = re.sub(r'<p>\s*(<hr)', r'\1', t)
@@ -98,11 +127,12 @@ redact_sensitive() {
 }
 
 # Read hook input from stdin
-INPUT=$(cat)
-
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
-LAST_ASSISTANT_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // empty')
+INPUT_FILE=$(mktemp)
+trap "rm -f $INPUT_FILE" EXIT
+cat > "$INPUT_FILE"
+SESSION_ID=$(jq -r '.session_id // empty' < "$INPUT_FILE")
+TRANSCRIPT_PATH=$(jq -r '.transcript_path // empty' < "$INPUT_FILE")
+LAST_ASSISTANT_MSG=$(jq -r '.last_assistant_message // empty' < "$INPUT_FILE")
 
 # Skip if no transcript or no assistant message
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ] || [ -z "$LAST_ASSISTANT_MSG" ]; then
@@ -144,7 +174,7 @@ if [ "$RESPONSE_LEN" -gt 2000 ]; then
 fi
 
 # Get working directory and extract project name for narrative framing
-CWD=$(echo "$INPUT" | jq -r '.cwd // "unknown"')
+CWD=$(jq -r '.cwd // "unknown"' < "$INPUT_FILE")
 PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 DATE_HUMAN=$(date '+%B %-d, %Y')

@@ -1,3 +1,4 @@
+<!-- agent.md v1.0.0 | Last updated: 2026-03-04 -->
 # Global Agent Rules
 
 ## Identity & Default
