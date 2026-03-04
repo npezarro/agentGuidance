@@ -170,56 +170,164 @@ Before starting work on a deployed project:
 - Environment-specific values belong in `.env` or local config, never in committed code.
 
 ## Discord Integration
-A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it.
+A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it. **Discord is not optional.** Every agent is expected to use it as the coordination layer between sessions, between agents, and between agents and the owner.
 
 ### Server Structure
 - **Guild ID:** `1478847062903754793`
-- **`#claude-agent-logs`** — Every Claude Code turn is auto-posted here as a webhook embed via the Stop hook. The owner can reply to any embed to trigger a follow-up Claude invocation with context from the original turn.
-- **`#requests`** — The owner posts jobs here. The bot (ClaudeAgent) picks them up, runs `claude -p --dangerously-skip-permissions`, and posts results back as replies. A completion notice with a link to the original request is also posted in `#claude-agent-logs`.
-- **Per-project channels** — Agents may create project-specific channels (e.g., `#runeval`, `#pezant-tools`) for focused discussion, progress updates, or long-running task logs. Use `guild.channels.create()` via the bot or the Discord webhook. Name channels after the project directory.
+- **`#claude-agent-logs`** (ID: `1478862063777611828`) — Every Claude Code turn is auto-posted here as a webhook embed via the Stop hook. The owner can reply to any embed to trigger a follow-up Claude invocation with context from the original turn. This is the global activity feed — all agents post here automatically.
+- **`#requests`** — The owner posts jobs here. The bot (ClaudeAgent) picks them up, runs `claude -p --dangerously-skip-permissions`, and posts results back as replies. A completion notice with a link to the original request is also posted in `#claude-agent-logs`. **You can also post requests here** to ask for specialist agents, channel creation, or coordination with other agents.
+- **Per-project channels** — Project-specific channels (e.g., `#runeval`, `#pezant-tools`) for focused discussion, progress updates, long-running task logs, and inter-agent coordination. See "Creating Per-Project Channels" below.
 
-### Posting to Discord
-The webhook URL is stored in `~/.env` as `DISCORD_WEBHOOK_URL`. To post programmatically:
+### How Auto-Posting Works
+Every Claude Code response is automatically posted to `#claude-agent-logs` via the Stop hook — you don't need to do anything for this. The hook:
+1. Reads the last assistant message from the session transcript
+2. Redacts secrets (tokens, API keys, passwords, private IPs)
+3. Posts as a Discord embed with the project name, session ID, and the user's prompt as context
+4. Overflow content (responses > 3900 chars) is split into follow-up code blocks (up to 3 chunks)
+
+This means your responses are always visible to the owner and other agents in the server. Write accordingly.
+
+### Posting to Discord Manually
+Beyond auto-posting, you can post messages to Discord programmatically when you need to communicate something outside the normal turn flow — progress updates, alerts, requests for help, or coordination messages.
+
+The webhook URL is stored in `~/.env` as `DISCORD_WEBHOOK_URL`. To post:
 ```bash
+# Load the webhook URL
+source ~/.env
+
 # Simple message
 curl -s -X POST "$DISCORD_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -d '{"username":"Claude Agent","content":"Your message here"}'
 
-# From Node.js (see centralDiscord/src/webhooks/send.js for helpers)
+# Message with embed (for structured data)
+curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "Claude Agent",
+    "embeds": [{
+      "title": "Build Failed — runeval",
+      "description": "npm run build exited with code 1. See #runeval for details.",
+      "color": 15548997
+    }]
+  }'
 ```
-Discord messages have a **2000-character limit**. Split longer content into chunks. Embeds have a 4096-char description limit.
+
+**Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. Split longer content into chunks.
+
+**From Node.js:** Use the helpers in `centralDiscord/src/webhooks/send.js`:
+```javascript
+const { sendWebhook, sendWebhookEmbed } = require('./src/webhooks/send');
+await sendWebhook('Build complete', { username: 'Claude Agent' });
+await sendWebhookEmbed('Deploy Status', 'runeval deployed successfully', { color: 0x57F287 });
+```
 
 ### Creating Per-Project Channels
-When working on a project that would benefit from its own channel (long-running tasks, multi-session work, or tasks that generate lots of output), create one:
+You are encouraged to create per-project channels when the work would benefit from a dedicated space. **Don't hesitate to create one** — it keeps `#claude-agent-logs` focused on the global activity feed while giving your project room to breathe.
+
+**When to create a project channel:**
+- Multi-session work on the same project (handoff notes, progress tracking)
+- Long-running tasks that generate lots of output (deploy logs, test results)
+- Tasks involving multiple agents collaborating on the same codebase
+- Debugging sessions where you want to log findings without cluttering the main feed
+
+**How to create one:** Post a request in `#requests`:
+```
+Create a #project-name channel for [brief reason]
+```
+The bot will pick it up and create the channel. You can also invoke it programmatically via the bot's `actions.js`:
 ```javascript
-// Via the bot's actions.js
 const { createChannel } = require('./actions');
 await createChannel(guild, 'project-name');
 ```
-Or post a request in `#requests` asking the bot to create it. Keep channel names lowercase, hyphenated, matching the project directory name.
+
+**Naming conventions:**
+- Lowercase, hyphenated, matching the project directory name
+- Examples: `#runeval`, `#central-discord`, `#pezant-tools`, `#agent-guidance`
+
+**What to post in project channels:**
+- Build/test results and deploy status
+- Debugging findings and root cause analysis
+- Decision records ("chose X over Y because...")
+- Blockers and requests for help
+- Links to relevant PRs, commits, or issues
+
+### Receiving and Responding to Requests
+The `#requests` channel is a two-way street. The owner posts jobs there, but **you can also use it to:**
+- Request a specialist agent (see below)
+- Ask for a channel to be created
+- Flag a blocker that needs human intervention
+- Coordinate with another agent working on a related task
+
+**How requests work:**
+1. A message is posted in `#requests`
+2. The bot reacts with a hourglass emoji to acknowledge
+3. The bot spawns a `claude -p` session with the request text as the prompt
+4. The working directory is resolved from the project context in the message
+5. The result is posted back as a reply in `#requests`
+6. A completion notice is posted in `#claude-agent-logs`
+
+Only the server owner and authorized users (configured via `CLAUDE_ALLOWED_USERS`) can trigger requests. One request runs at a time — the bot queues if already processing.
 
 ### Specialist Agents
-The Discord bot can spawn Claude sessions with different system prompts for specialized roles. When you encounter a problem outside your expertise, you can request a specialist agent be invoked via `#requests`. Examples:
-- **Code reviewer** — "Review PR #5 on npezarro/runEvaluator for security issues"
-- **DevOps specialist** — "Debug why PM2 keeps restarting the runeval process"
-- **Architecture advisor** — "Evaluate whether we should migrate runeval from Pages Router to App Router"
+When you encounter a problem outside your expertise — security review, performance profiling, database optimization, architecture decisions — you can request a specialist agent. These are independent `claude -p` sessions with tailored system prompts that bring focused expertise to a specific problem.
 
-Specialist agents run as independent `claude -p` invocations with tailored system prompts. Their output is posted back to the requesting channel.
+**How to request a specialist:**
+Post in `#requests` with a clear description of what you need and why:
+```
+[Security Review] Review the auth middleware in npezarro/runEvaluator for session
+fixation, CSRF, and token leakage vulnerabilities. Focus on src/middleware/auth.js
+and src/pages/api/auth/*.js.
+```
 
-### What the Bot Can Do
-The bot (`ClaudeAgent#8311`, PM2 process `claude-bot`, code at `/home/generatedByTermius/centralDiscord`) has these capabilities:
+**Available specialist roles:**
+- **Code Reviewer** — Security audits, code quality review, PR review. "Review PR #5 on npezarro/runEvaluator for XSS and injection vulnerabilities"
+- **DevOps Specialist** — Infrastructure debugging, PM2 issues, deploy failures, server config. "Debug why PM2 keeps restarting the runeval process every 30 seconds"
+- **Architecture Advisor** — Design decisions, migration planning, tech stack evaluation. "Evaluate whether we should migrate runeval from Pages Router to App Router — what breaks, what improves?"
+- **Performance Analyst** — Profiling, optimization, database query analysis. "The dashboard API endpoint takes 4 seconds — profile the query chain and suggest optimizations"
+- **Test Engineer** — Test strategy, coverage analysis, test infrastructure setup. "Design a test suite for the OAuth integration in runeval — what should we test and how?"
+
+**How specialist output is delivered:**
+- The specialist runs as a `claude -p` invocation with the request as context
+- Output is posted back as a reply in the channel where the request was made
+- A completion notice appears in `#claude-agent-logs`
+- If a project channel exists, the specialist's findings can be cross-posted there
+
+**When to use a specialist vs. solving it yourself:**
+- Use a specialist when you've hit a wall or the problem is outside your current task's scope
+- Use a specialist when a second opinion would prevent a costly mistake (security, architecture)
+- Don't use a specialist for routine tasks you can handle — they're for focused expertise, not delegation
+
+### Inter-Agent Coordination
+Multiple agents may be working on related projects simultaneously. Discord is how you coordinate:
+
+- **Check `#claude-agent-logs` context.** Your auto-posted turns are visible to other agents. If another agent is working on the same repo, you'll see their activity in the feed.
+- **Use project channels for handoffs.** If you're done with a subtask and another agent needs to pick it up, post the status in the project channel with clear next steps.
+- **Avoid conflicting changes.** If you see another agent is actively working on the same branch or file, coordinate via `#requests` or the project channel before making changes.
+- **Share discoveries.** If you find a bug, a gotcha, or a useful pattern while working, post it in the relevant project channel so other agents (and future sessions) benefit.
+
+### The Bot (`ClaudeAgent#8311`)
+**PM2 process:** `claude-bot` | **Code:** `/home/generatedByTermius/centralDiscord`
+
+**Capabilities:**
 - Read and send messages in any visible channel
 - Create and manage channels and threads
 - Create and manage roles (no admin or invite perms)
 - Pin messages, set channel topics, add reactions
 - Manage webhooks
 - Spawn `claude -p` sessions on behalf of authorized users
+- Route requests to the correct project working directory
 
-### What the Bot Cannot Do (by Design)
-- Create server invites
-- Make the server discoverable
-- Grant administrator permissions
+**Built-in commands:**
+- `!ping` — Check if the bot is alive
+- `!status` — Show guild stats (members, channels, uptime)
+- Reply to any webhook embed — Triggers a follow-up Claude session with context from the original turn
+
+**Limitations (by design):**
+- Cannot create server invites
+- Cannot make the server discoverable
+- Cannot grant administrator permissions
+- One `claude -p` invocation at a time (queued, not parallel)
 
 ## Auto-Posting Awareness
 Every Claude Code response is automatically posted to **two destinations** via Stop hooks:
