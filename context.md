@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-03-04 — Expanded Discord Integration section for full agent-server interaction
+2026-03-04 — Added public repo warning and expanded Security section
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across 30 repos
@@ -11,16 +11,14 @@
 - User-level hooks on the VM (`~/.claude/settings.json`) also fetch from GitHub at runtime
 
 ## Recent Changes
-- Expanded Discord Integration section in `agent.md` — added subsections for auto-posting mechanics, manual posting, receiving/responding to requests, specialist agent roles, and inter-agent coordination
-- Agents are now explicitly encouraged to create per-project channels and use specialist agents when appropriate
-- Added detailed specialist agent role descriptions (code reviewer, devops, architecture, performance, test engineer)
-- Added inter-agent coordination guidelines for avoiding conflicts and sharing discoveries
+- Added prominent public repo warning banner at top of `agent.md` and expanded Security section with audit checklist, infrastructure detail restrictions, and incident response guidance
+- Previous: Expanded Discord Integration section — auto-posting mechanics, manual posting, specialist agents, inter-agent coordination
 - Previous: Added Regression & Functional Verification subsection under Testing
 - Previous: Rewrote auto-posting rules — responses as first-person blog posts
 
 ## Open Work
-- Specialist agent system prompts not yet formalized in discord-bot — bot spawns generic `claude -p` sessions; role-specific system prompts would improve specialist quality
-- Per-project channel creation works via #requests but could be streamlined with a dedicated bot command
+- **Discord section contains real infrastructure details** (Guild ID, channel IDs, server paths, domain names) that are now public — consider moving these to a private config or redacting them from `agent.md`
+- Specialist agent system prompts not yet formalized in discord-bot
 - Propagation needed: run `scripts/propagate-hooks.sh` after merging to push updated CLAUDE.md to all 30 repos
 
 ## Environment Notes
@@ -32,4 +30,4 @@
 - **Propagation script:** `scripts/propagate-hooks.sh` pushes `.claude/settings.json` + `CLAUDE.md` to all repos
 
 ## Active Branch
-agent/expand-discord-integration
+agent/public-repo-warning
