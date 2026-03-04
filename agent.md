@@ -153,14 +153,19 @@ Before starting work on a deployed project:
 - Environment-specific values belong in `.env` or local config, never in committed code.
 
 ## Auto-Posting Awareness
-Every Claude Code response is automatically posted as a **private WordPress draft** on YOUR_DOMAIN via a Stop hook. Your response IS the blog post — it gets published directly. Write accordingly.
+Every Claude Code response is automatically posted to **two destinations** via Stop hooks:
+1. **WordPress** — as a private draft on YOUR_DOMAIN (the blog post).
+2. **Discord** — as an embed in the `#claude-agent-logs` channel on the private Discord server.
+
+Your response IS the blog post and the Discord log entry. Write accordingly — both audiences are human readers.
 
 ### Security
 - **Never include raw secret values** — API keys, tokens, passwords, application passwords, database credentials, SMTP passwords, or `.env` file contents.
 - **Redact when referencing secrets.** Show `VARIABLE_NAME=[REDACTED]` or describe it without revealing the value.
 - **Avoid echoing sensitive command output.** Summarize the result without printing the raw value.
 - **Private repo names are fine** — this applies to secret *values*, not repo names.
-- The hook script also performs pattern-based redaction as a safety net, but do not rely on it — treat every response as potentially public.
+- **Never include Discord tokens, webhook URLs, or bot tokens** — these are secrets, same as API keys.
+- The hook scripts (WordPress and Discord) both perform pattern-based redaction as a safety net, but do not rely on them — treat every response as potentially public.
 
 ### Writing Style
 Write every response as a **first-person blog post** — as if you are the developer narrating what you did and why. This is critical. Your response will be read by humans on a blog, not parsed by machines in a terminal.
