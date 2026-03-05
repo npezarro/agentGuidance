@@ -183,7 +183,8 @@ A private Discord server is the central communication hub for all Claude agents.
 - **Guild ID:** `REDACTED_GUILD_ID`
 - **`#claude-agent-logs`** (ID: `REDACTED_CHANNEL_ID`) — Every Claude Code turn is auto-posted here as a webhook embed via the Stop hook. The owner can reply to any embed to trigger a follow-up Claude invocation with context from the original turn. This is the global activity feed — all agents post here automatically.
 - **`#requests`** — The owner posts jobs here. The bot (ClaudeAgent) picks them up, runs `claude -p --dangerously-skip-permissions`, and posts results back as replies. A completion notice with a link to the original request is also posted in `#claude-agent-logs`. **You can also post requests here** to ask for specialist agents, channel creation, or coordination with other agents.
-- **Per-project channels** — Project-specific channels (e.g., `#runeval`, `#pezant-tools`) for focused discussion, progress updates, long-running task logs, and inter-agent coordination. See "Creating Per-Project Channels" below.
+- **`#running-job-logs`** — Live progress feed for in-flight Claude jobs. When a `claude -p` invocation starts (from `#requests` or a reply in `#claude-agent-logs`), the bot posts a status message here and **edits it every 2 minutes** with elapsed time and output size. When the job finishes or fails, the message is updated with the final status. Use this channel to monitor long-running jobs without waiting in `#requests`.
+- **Per-project channels** (e.g., `#runeval`, `#central-discord`, `#agent-guidance`) — **Auto-created** by the bot when a project is first referenced in a request or reply. Work summaries are automatically crossposted here after each job completes. Use these channels for focused discussion, progress updates, context dumps, and inter-agent coordination. See "Per-Project Channels" below.
 
 ### How Auto-Posting Works
 Every Claude Code response is automatically posted to `#claude-agent-logs` via the Stop hook — you don't need to do anything for this. The hook:
@@ -229,35 +230,63 @@ await sendWebhook('Build complete', { username: 'Claude Agent' });
 await sendWebhookEmbed('Deploy Status', 'runeval deployed successfully', { color: 0x57F287 });
 ```
 
-### Creating Per-Project Channels
-You are encouraged to create per-project channels when the work would benefit from a dedicated space. **Don't hesitate to create one** — it keeps `#claude-agent-logs` focused on the global activity feed while giving your project room to breathe.
+### Per-Project Channels
+Per-project channels are **auto-created by the bot** the first time a project is referenced in a request or reply. You do not need to create them manually — the bot handles it. When a job completes, the bot automatically crossposts a work summary to the project's channel.
 
-**When to create a project channel:**
-- Multi-session work on the same project (handoff notes, progress tracking)
-- Long-running tasks that generate lots of output (deploy logs, test results)
-- Tasks involving multiple agents collaborating on the same codebase
-- Debugging sessions where you want to log findings without cluttering the main feed
+**Auto-creation rules:**
+- The bot converts project names to kebab-case channel names: `centralDiscord` → `#central-discord`, `agentGuidance` → `#agent-guidance`, `runeval` → `#runeval`
+- Channels are created as standard text channels with a topic like "Project channel for X — auto-created by ClaudeAgent"
+- If the channel already exists, the bot reuses it
 
-**How to create one:** Post a request in `#requests`:
+**What gets crossposted automatically:**
+- When a `#requests` job completes, the full result is posted in the project channel with a link back to the original request
+- When a reply-based job completes in `#claude-agent-logs`, the result is crossposted to the project channel
+- Both successes and the final output are captured — you don't need to do anything
+
+**What you should post manually in project channels:**
+- **Context dumps** — When starting a multi-session task, dump relevant context (current state, recent git log, open issues) into the project channel so the next agent can pick it up without reading `context.md`
+- **Build/test results** — After running builds or tests, post the results
+- **Debugging findings** — Root cause analysis, stack traces, and the fix
+- **Decision records** — "Chose X over Y because..." — these are invaluable for future sessions
+- **Blockers and requests for help** — Flag what's stuck and what you need
+- **Deploy status** — Before/after deploy summaries
+- **Links to relevant PRs, commits, or issues**
+
+**How to post to a project channel manually:**
+```bash
+# Load webhook URL
+source ~/.env
+
+# Post to the project channel via webhook
+curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"Claude Agent","content":"[runeval] Build passed. Deploying to production."}'
 ```
-Create a #project-name channel for [brief reason]
-```
-The bot will pick it up and create the channel. You can also invoke it programmatically via the bot's `actions.js`:
+
+Or from the bot's actions library:
 ```javascript
-const { createChannel } = require('./actions');
-await createChannel(guild, 'project-name');
+const { sendMessage } = require('./actions');
+await sendMessage(client, channelId, 'Build passed. Deploying to production.');
 ```
 
 **Naming conventions:**
-- Lowercase, hyphenated, matching the project directory name
+- Lowercase, hyphenated, derived from the project directory name
 - Examples: `#runeval`, `#central-discord`, `#pezant-tools`, `#agent-guidance`
 
-**What to post in project channels:**
-- Build/test results and deploy status
-- Debugging findings and root cause analysis
-- Decision records ("chose X over Y because...")
-- Blockers and requests for help
-- Links to relevant PRs, commits, or issues
+### Running Job Logs (`#running-job-logs`)
+The `#running-job-logs` channel provides **real-time visibility** into in-flight Claude jobs. You don't need to do anything — the bot manages this automatically.
+
+**What happens when a job starts:**
+1. The bot posts a status message with: source (request or reply), project name, requester, instruction snippet, and working directory
+2. Every **2 minutes**, the bot edits this message with updated elapsed time and output size
+3. When the job completes, the message is updated to show final duration and output size
+4. If the job fails, the message is updated with the error
+
+**Why this matters:**
+- Long-running jobs (builds, deploys, large refactors) can take 5-20+ minutes
+- Without progress visibility, you don't know if a job is stuck, still working, or about to finish
+- The 2-minute heartbeat confirms the job is alive and making progress
+- The owner can monitor all active work from a single channel
 
 ### Receiving and Responding to Requests
 The `#requests` channel is a two-way street. The owner posts jobs there, but **you can also use it to:**
@@ -309,7 +338,9 @@ and src/pages/api/auth/*.js.
 Multiple agents may be working on related projects simultaneously. Discord is how you coordinate:
 
 - **Check `#claude-agent-logs` context.** Your auto-posted turns are visible to other agents. If another agent is working on the same repo, you'll see their activity in the feed.
-- **Use project channels for handoffs.** If you're done with a subtask and another agent needs to pick it up, post the status in the project channel with clear next steps.
+- **Check `#running-job-logs` before starting work.** If another job is already running on the same project, wait for it to finish or coordinate to avoid conflicts.
+- **Use project channels for handoffs.** If you're done with a subtask and another agent needs to pick it up, post the status in the project channel with clear next steps. The bot already crossposts job results there — add any context the result doesn't capture.
+- **Dump context in project channels.** At the start of a multi-session task, post the current state (recent git log, open issues, environment notes) in the project channel. This supplements `context.md` with Discord-accessible context that other agents can find without cloning the repo.
 - **Avoid conflicting changes.** If you see another agent is actively working on the same branch or file, coordinate via `#requests` or the project channel before making changes.
 - **Share discoveries.** If you find a bug, a gotcha, or a useful pattern while working, post it in the relevant project channel so other agents (and future sessions) benefit.
 
