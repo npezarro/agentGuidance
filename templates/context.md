@@ -10,10 +10,6 @@
 <!-- What works, what's deployed, known issues -->
 -
 
-## Recent Changes
-<!-- What changed and why (keep brief, most recent first) -->
--
-
 ## Open Work
 <!-- Blockers, unfinished tasks, decisions needed -->
 -
@@ -35,3 +31,4 @@
 ---
 
 **Never include:** credentials, API keys, tokens, passwords, or `.env` contents.
+**For change history**, see `progress.md`.
