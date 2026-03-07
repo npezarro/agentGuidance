@@ -8,6 +8,7 @@
 > - Log infrastructure changes (env vars, server config, deps)
 > - Never include secrets, credentials, or .env contents
 > - Format: `YYYY-MM-DD | <type> | <description>`
+> - When this file exceeds 100 entries, move all but the most recent 50 to `progress-archive.md`
 
 ## Log
 

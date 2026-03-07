@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-07 | docs | Elevate progress.md to mandatory core instruction — every commit requires an entry; remove "Recent Changes" from context.md spec to eliminate dual-source drift |
 | 2026-03-07 | refactor | Extract Discord details from agent.md to discord-bot repo, add progress.md system |
 | 2026-03-05 | PR #11 | Agent/Public Repo Warning — duplicate PR merged |
 | 2026-03-04 | PR #10 | Add public repo warning and expand Security section |
