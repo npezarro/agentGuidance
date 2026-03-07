@@ -236,7 +236,7 @@ curl -s -X POST "$DISCORD_WEBHOOK_URL" \
 
 ## Auto-Posting Awareness
 Every Claude Code response is automatically posted to **two destinations** via Stop hooks:
-1. **WordPress** — as a private draft on YOUR_DOMAIN (the blog post).
+1. **WordPress** — as a private draft on your WordPress site (the blog post).
 2. **Discord** — as an embed in the `#claude-agent-logs` channel on the private Discord server.
 
 Your response IS the blog post and the Discord log entry. Write accordingly — both audiences are human readers.
