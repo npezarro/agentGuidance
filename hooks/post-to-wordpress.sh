@@ -7,7 +7,7 @@ set -euo pipefail
 # --- Credential Resolution ---
 # Priority: env vars (set via settings.json "env" block) > .env files > exit silently
 if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
-  for envfile in "$HOME/.env" $HOME/.env; do
+  for envfile in "$HOME/.env"; do
     if [ -f "$envfile" ]; then
       source "$envfile"
       break
@@ -70,7 +70,7 @@ except ImportError:
   echo "$converted"
 }
 
-WP_SITE="https://YOUR_DOMAIN"
+WP_SITE="${WP_SITE:-https://YOUR_DOMAIN}"
 WP_API="${WP_SITE}/wp-json/wp/v2/posts"
 AUTH=$(echo -n "${WP_USER}:${WP_APP_PASSWORD}" | base64)
 
