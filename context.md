@@ -1,32 +1,28 @@
 # context.md
 
 ## Last Updated
-2026-03-04 — Added public repo warning and expanded Security section
+2026-03-07 — Extracted Discord details from agent.md to centralDiscord repo, added progress.md system
 
 ## Current State
-- Central source of truth for all Claude Code agent rules, hooks, and templates across 30 repos
+- Central source of truth for all Claude Code agent rules, hooks, and templates across repos
 - Auto-posting system is live: every Claude Code response becomes a private WordPress draft on pezant.ca and a Discord embed in #claude-agent-logs
-- Discord Integration section now covers: auto-posting mechanics, manual posting, per-project channels, specialist agents, inter-agent coordination, and #requests usage
-- All 30 repos have `.claude/settings.json` with SessionStart (fetch rules) and Stop (auto-post) hooks
-- User-level hooks on the VM (`~/.claude/settings.json`) also fetch from GitHub at runtime
+- Discord Integration section in agent.md is now a slim reference — full details live in centralDiscord's `docs/discord-agent-guide.md`
+- New `progress.md` system: every repo now has a progress log tracking PRs, deploys, and infra changes over time
+- All repos have `.claude/settings.json` with SessionStart (fetch rules) and Stop (auto-post) hooks
 
 ## Recent Changes
-- Added prominent public repo warning banner at top of `agent.md` and expanded Security section with audit checklist, infrastructure detail restrictions, and incident response guidance
-- Previous: Expanded Discord Integration section — auto-posting mechanics, manual posting, specialist agents, inter-agent coordination
-- Previous: Added Regression & Functional Verification subsection under Testing
-- Previous: Rewrote auto-posting rules — responses as first-person blog posts
+- Extracted Discord-specific details (Guild IDs, channel IDs, bot details, specialist agents, per-project channels) from `agent.md` into `centralDiscord/docs/discord-agent-guide.md`
+- Added `progress.md` template to `templates/` and Progress Log section to `agent.md` rules
+- Seeded `progress.md` in all 5 local repos (agentGuidance, centralDiscord, groceryGenius, pezantTools, assortedLLMTasks)
+- Previous: Added public repo warning and expanded Security section
 
 ## Open Work
-- **Discord section contains real infrastructure details** (Guild ID, channel IDs, server paths, domain names) that are now public — consider moving these to a private config or redacting them from `agent.md`
-- Specialist agent system prompts not yet formalized in centralDiscord
-- Propagation needed: run `scripts/propagate-hooks.sh` after merging to push updated CLAUDE.md to all 30 repos
+- Propagation needed: run `scripts/propagate-hooks.sh` after merging to push updated CLAUDE.md to all repos
+- Repos not cloned locally (runEvaluator, runCoach, LIScraper, etc.) still need `progress.md` added
 
 ## Environment Notes
-- **Repo:** github.com/npezarro/agentGuidance
+- **Repo:** github.com/npezarro/agentGuidance (PUBLIC)
 - **Fetched from:** `https://raw.githubusercontent.com/npezarro/agentGuidance/main/` (CDN has ~5 min cache)
-- **WordPress site:** pezant.ca (REST API at `/wp-json/wp/v2/posts`)
-- **WP credentials:** stored in `/home/generatedByTermius/.env` (WP_USER, WP_APP_PASSWORD)
-- **Discord bot:** ClaudeAgent#8311, PM2 process `claude-bot`, code at `/home/generatedByTermius/centralDiscord`
 - **Propagation script:** `scripts/propagate-hooks.sh` pushes `.claude/settings.json` + `CLAUDE.md` to all repos
 
 ## Active Branch

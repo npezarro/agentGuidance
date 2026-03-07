@@ -41,6 +41,7 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
   2. `git diff` — review the actual changes.
   3. Confirm no `.env`, secrets, or key files are included.
   4. **Update `context.md`** — this is mandatory for any commit that changes code or configuration. See the Context File section below.
+  5. **Update `progress.md`** — add an entry for the work being committed. See the Progress Log section below.
 - Push: `git push -u origin HEAD`. Retry network failures up to 4× with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
 - **Creating PRs:**
   ```
@@ -92,6 +93,36 @@ Active Branch: current working branch name
 
 ### If `context.md` doesn't exist yet
 Create it from the template at `agentGuidance/templates/context.md`. Fill in what you can from the repo's config files, `package.json`, and environment. Don't leave placeholder comments — either fill in the value or remove the line.
+
+## Progress Log (`progress.md`)
+Every repo must have a `progress.md` at its root. This is the full chronological history of work done on the project — every PR merged, every deploy, every infrastructure change. Unlike `context.md` (which is a current-state snapshot), `progress.md` is a living changelog that grows over time.
+
+### When to update
+- **Every merged PR** — add an entry with the PR number and a one-line description.
+- **Every deploy** — note what was deployed and to where.
+- **Infrastructure changes** — env vars added, server config changed, dependencies updated.
+- **Significant commits** that don't go through PRs (hotfixes, config changes pushed directly).
+
+### Format
+Entries are reverse-chronological (newest first), one line per entry in a markdown table:
+
+```
+| Date | Type | Description |
+|------|------|-------------|
+| 2026-03-07 | PR #18 | Gate upload page behind Google OAuth |
+| 2026-03-06 | deploy | Deployed geocoding fix to production |
+| 2026-03-05 | infra | Added MAPBOX_ACCESS_TOKEN env var |
+```
+
+**Types:** `PR #N`, `deploy`, `infra`, `fix`, `feat`, `refactor`, `docs`
+
+### Rules
+- Keep entries to 1-2 lines. This is a log, not a blog.
+- Never include secrets, credentials, or `.env` contents.
+- Include the entry in the same commit as the work it describes.
+
+### If `progress.md` doesn't exist yet
+Create it from the template at `agentGuidance/templates/progress.md`. Seed it with recent git history (`git log --oneline -20`) and any known PRs.
 
 ## Testing
 - **Run existing tests before making changes.** Know the baseline — don't introduce regressions.
@@ -177,195 +208,31 @@ Before starting work on a deployed project:
 - **If a secret is accidentally committed**, treat it as compromised. Rotate the credential immediately, then remove it from git history with `git filter-branch` or `bfg`. A force-push to clean history is justified in this case — and only this case.
 
 ## Discord Integration
-A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it. **Discord is not optional.** Every agent is expected to use it as the coordination layer between sessions, between agents, and between agents and the owner.
+A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it.
 
-### Server Structure
-- **Guild ID:** `1478847062903754793`
-- **`#claude-agent-logs`** (ID: `1478862063777611828`) — Every Claude Code turn is auto-posted here as a webhook embed via the Stop hook. The owner can reply to any embed to trigger a follow-up Claude invocation with context from the original turn. This is the global activity feed — all agents post here automatically.
-- **`#requests`** — The owner posts jobs here. The bot (ClaudeAgent) picks them up, runs `claude -p --dangerously-skip-permissions`, and posts results back as replies. A completion notice with a link to the original request is also posted in `#claude-agent-logs`. **You can also post requests here** to ask for specialist agents, channel creation, or coordination with other agents.
-- **`#running-job-logs`** — Live progress feed for in-flight Claude jobs. When a `claude -p` invocation starts (from `#requests` or a reply in `#claude-agent-logs`), the bot posts a status message here and **edits it every 2 minutes** with elapsed time and output size. When the job finishes or fails, the message is updated with the final status. Use this channel to monitor long-running jobs without waiting in `#requests`.
-- **Per-project channels** (e.g., `#runeval`, `#central-discord`, `#agent-guidance`) — **Auto-created** by the bot when a project is first referenced in a request or reply. Work summaries are automatically crossposted here after each job completes. Use these channels for focused discussion, progress updates, context dumps, and inter-agent coordination. See "Per-Project Channels" below.
+**For full Discord details** — server structure, channel IDs, bot commands, specialist agents, per-project channels, inter-agent coordination — see `docs/discord-agent-guide.md` in the `centralDiscord` repo. That file is the single source of truth for Discord-specific documentation.
 
-### How Auto-Posting Works
-Every Claude Code response is automatically posted to `#claude-agent-logs` via the Stop hook — you don't need to do anything for this. The hook:
-1. Reads the last assistant message from the session transcript
-2. Redacts secrets (tokens, API keys, passwords, private IPs)
-3. Posts as a Discord embed with the project name, session ID, and the user's prompt as context
-4. Overflow content (responses > 3900 chars) is split into follow-up code blocks (up to 3 chunks)
-
-This means your responses are always visible to the owner and other agents in the server. Write accordingly.
+### What Every Agent Needs to Know
+- **Your responses are auto-posted** to `#claude-agent-logs` via the Stop hook. You don't need to do anything — the hook reads your last response, redacts secrets, and posts it as a Discord embed.
+- **The owner issues requests** in the `#requests` channel. The bot spawns `claude -p` sessions and posts results back.
+- **Per-project channels** are auto-created by the bot. Work summaries are crossposted there after each job completes.
+- **Specialist agents** (Code Reviewer, DevOps, Architecture, Performance, Testing) can be requested by posting in `#requests` with a tagged description like `[Security Review] ...`.
 
 ### Posting to Discord Manually
-Beyond auto-posting, you can post messages to Discord programmatically when you need to communicate something outside the normal turn flow — progress updates, alerts, requests for help, or coordination messages.
-
 The webhook URL is stored in `~/.env` as `DISCORD_WEBHOOK_URL`. To post:
 ```bash
-# Load the webhook URL
 source ~/.env
-
-# Simple message
 curl -s -X POST "$DISCORD_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -d '{"username":"Claude Agent","content":"Your message here"}'
-
-# Message with embed (for structured data)
-curl -s -X POST "$DISCORD_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "Claude Agent",
-    "embeds": [{
-      "title": "Build Failed — runeval",
-      "description": "npm run build exited with code 1. See #runeval for details.",
-      "color": 15548997
-    }]
-  }'
 ```
 
 **Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. Split longer content into chunks.
 
-**From Node.js:** Use the helpers in `centralDiscord/src/webhooks/send.js`:
-```javascript
-const { sendWebhook, sendWebhookEmbed } = require('./src/webhooks/send');
-await sendWebhook('Build complete', { username: 'Claude Agent' });
-await sendWebhookEmbed('Deploy Status', 'runeval deployed successfully', { color: 0x57F287 });
-```
-
-### Per-Project Channels
-Per-project channels are **auto-created by the bot** the first time a project is referenced in a request or reply. You do not need to create them manually — the bot handles it. When a job completes, the bot automatically crossposts a work summary to the project's channel.
-
-**Auto-creation rules:**
-- The bot converts project names to kebab-case channel names: `centralDiscord` → `#central-discord`, `agentGuidance` → `#agent-guidance`, `runeval` → `#runeval`
-- Channels are created as standard text channels with a topic like "Project channel for X — auto-created by ClaudeAgent"
-- If the channel already exists, the bot reuses it
-
-**What gets crossposted automatically:**
-- When a `#requests` job completes, the full result is posted in the project channel with a link back to the original request
-- When a reply-based job completes in `#claude-agent-logs`, the result is crossposted to the project channel
-- Both successes and the final output are captured — you don't need to do anything
-
-**What you should post manually in project channels:**
-- **Context dumps** — When starting a multi-session task, dump relevant context (current state, recent git log, open issues) into the project channel so the next agent can pick it up without reading `context.md`
-- **Build/test results** — After running builds or tests, post the results
-- **Debugging findings** — Root cause analysis, stack traces, and the fix
-- **Decision records** — "Chose X over Y because..." — these are invaluable for future sessions
-- **Blockers and requests for help** — Flag what's stuck and what you need
-- **Deploy status** — Before/after deploy summaries
-- **Links to relevant PRs, commits, or issues**
-
-**How to post to a project channel manually:**
-```bash
-# Load webhook URL
-source ~/.env
-
-# Post to the project channel via webhook
-curl -s -X POST "$DISCORD_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  -d '{"username":"Claude Agent","content":"[runeval] Build passed. Deploying to production."}'
-```
-
-Or from the bot's actions library:
-```javascript
-const { sendMessage } = require('./actions');
-await sendMessage(client, channelId, 'Build passed. Deploying to production.');
-```
-
-**Naming conventions:**
-- Lowercase, hyphenated, derived from the project directory name
-- Examples: `#runeval`, `#central-discord`, `#pezant-tools`, `#agent-guidance`
-
-### Running Job Logs (`#running-job-logs`)
-The `#running-job-logs` channel provides **real-time visibility** into in-flight Claude jobs. You don't need to do anything — the bot manages this automatically.
-
-**What happens when a job starts:**
-1. The bot posts a status message with: source (request or reply), project name, requester, instruction snippet, and working directory
-2. Every **2 minutes**, the bot edits this message with updated elapsed time and output size
-3. When the job completes, the message is updated to show final duration and output size
-4. If the job fails, the message is updated with the error
-
-**Why this matters:**
-- Long-running jobs (builds, deploys, large refactors) can take 5-20+ minutes
-- Without progress visibility, you don't know if a job is stuck, still working, or about to finish
-- The 2-minute heartbeat confirms the job is alive and making progress
-- The owner can monitor all active work from a single channel
-
-### Receiving and Responding to Requests
-The `#requests` channel is a two-way street. The owner posts jobs there, but **you can also use it to:**
-- Request a specialist agent (see below)
-- Ask for a channel to be created
-- Flag a blocker that needs human intervention
-- Coordinate with another agent working on a related task
-
-**How requests work:**
-1. A message is posted in `#requests`
-2. The bot reacts with a hourglass emoji to acknowledge
-3. The bot spawns a `claude -p` session with the request text as the prompt
-4. The working directory is resolved from the project context in the message
-5. The result is posted back as a reply in `#requests`
-6. A completion notice is posted in `#claude-agent-logs`
-
-Only the server owner and authorized users (configured via `CLAUDE_ALLOWED_USERS`) can trigger requests. One request runs at a time — the bot queues if already processing.
-
-### Specialist Agents
-When you encounter a problem outside your expertise — security review, performance profiling, database optimization, architecture decisions — you can request a specialist agent. These are independent `claude -p` sessions with tailored system prompts that bring focused expertise to a specific problem.
-
-**How to request a specialist:**
-Post in `#requests` with a clear description of what you need and why:
-```
-[Security Review] Review the auth middleware in npezarro/runEvaluator for session
-fixation, CSRF, and token leakage vulnerabilities. Focus on src/middleware/auth.js
-and src/pages/api/auth/*.js.
-```
-
-**Available specialist roles:**
-- **Code Reviewer** — Security audits, code quality review, PR review. "Review PR #5 on npezarro/runEvaluator for XSS and injection vulnerabilities"
-- **DevOps Specialist** — Infrastructure debugging, PM2 issues, deploy failures, server config. "Debug why PM2 keeps restarting the runeval process every 30 seconds"
-- **Architecture Advisor** — Design decisions, migration planning, tech stack evaluation. "Evaluate whether we should migrate runeval from Pages Router to App Router — what breaks, what improves?"
-- **Performance Analyst** — Profiling, optimization, database query analysis. "The dashboard API endpoint takes 4 seconds — profile the query chain and suggest optimizations"
-- **Test Engineer** — Test strategy, coverage analysis, test infrastructure setup. "Design a test suite for the OAuth integration in runeval — what should we test and how?"
-
-**How specialist output is delivered:**
-- The specialist runs as a `claude -p` invocation with the request as context
-- Output is posted back as a reply in the channel where the request was made
-- A completion notice appears in `#claude-agent-logs`
-- If a project channel exists, the specialist's findings can be cross-posted there
-
-**When to use a specialist vs. solving it yourself:**
-- Use a specialist when you've hit a wall or the problem is outside your current task's scope
-- Use a specialist when a second opinion would prevent a costly mistake (security, architecture)
-- Don't use a specialist for routine tasks you can handle — they're for focused expertise, not delegation
-
 ### Inter-Agent Coordination
-Multiple agents may be working on related projects simultaneously. Discord is how you coordinate:
-
-- **Check `#claude-agent-logs` context.** Your auto-posted turns are visible to other agents. If another agent is working on the same repo, you'll see their activity in the feed.
-- **Check `#running-job-logs` before starting work.** If another job is already running on the same project, wait for it to finish or coordinate to avoid conflicts.
-- **Use project channels for handoffs.** If you're done with a subtask and another agent needs to pick it up, post the status in the project channel with clear next steps. The bot already crossposts job results there — add any context the result doesn't capture.
-- **Dump context in project channels.** At the start of a multi-session task, post the current state (recent git log, open issues, environment notes) in the project channel. This supplements `context.md` with Discord-accessible context that other agents can find without cloning the repo.
-- **Avoid conflicting changes.** If you see another agent is actively working on the same branch or file, coordinate via `#requests` or the project channel before making changes.
-- **Share discoveries.** If you find a bug, a gotcha, or a useful pattern while working, post it in the relevant project channel so other agents (and future sessions) benefit.
-
-### The Bot (`ClaudeAgent#8311`)
-**PM2 process:** `claude-bot` | **Code:** `/home/generatedByTermius/centralDiscord`
-
-**Capabilities:**
-- Read and send messages in any visible channel
-- Create and manage channels and threads
-- Create and manage roles (no admin or invite perms)
-- Pin messages, set channel topics, add reactions
-- Manage webhooks
-- Spawn `claude -p` sessions on behalf of authorized users
-- Route requests to the correct project working directory
-
-**Built-in commands:**
-- `!ping` — Check if the bot is alive
-- `!status` — Show guild stats (members, channels, uptime)
-- Reply to any webhook embed — Triggers a follow-up Claude session with context from the original turn
-
-**Limitations (by design):**
-- Cannot create server invites
-- Cannot make the server discoverable
-- Cannot grant administrator permissions
-- One `claude -p` invocation at a time (queued, not parallel)
+- Check `#claude-agent-logs` and `#running-job-logs` to see what other agents are doing before starting work on a shared repo.
+- Use per-project channels for handoffs, context dumps, and progress updates.
+- Avoid conflicting changes — if another agent is on the same branch, coordinate first.
 
 ## Auto-Posting Awareness
 Every Claude Code response is automatically posted to **two destinations** via Stop hooks:
