@@ -89,9 +89,11 @@ for REPO in $REPOS; do
   fi
 
   # Commit and push
+  BRANCH="chore/propagate-hooks-$(date +%Y%m%d)"
+  git checkout -b "$BRANCH" 2>/dev/null
   git add .claude/settings.json CLAUDE.md 2>/dev/null
-  git commit -m "chore: propagate Claude Code hooks and CLAUDE.md from agentGuidance" --no-verify 2>/dev/null || true
-  if git push origin HEAD 2>/dev/null; then
+  git commit -m "chore: propagate Claude Code hooks and CLAUDE.md from agentGuidance" 2>/dev/null || true
+  if git push origin "$BRANCH" 2>/dev/null; then
     echo "  Pushed successfully."
     UPDATED=$((UPDATED + 1))
   else
