@@ -1,3 +1,4 @@
+<!-- agent.md v1.0.0 | Last updated: 2026-03-04 -->
 # Global Agent Rules
 
 > **THIS IS A PUBLIC REPOSITORY.** Everything committed here is visible to the entire internet. Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information — not in code, not in comments, not in examples, not in commit messages. If you need to reference a secret, use a placeholder like `YOUR_API_KEY_HERE` or `[REDACTED]`. When in doubt, leave it out. A leaked secret in a public repo cannot be un-leaked — it must be rotated immediately.
