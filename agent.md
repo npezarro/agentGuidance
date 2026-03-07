@@ -74,15 +74,16 @@ Keep it concise and current. This is a living status page, not a changelog.
 # context.md
 Last Updated: YYYY-MM-DD — one-line summary
 Current State: what works, what's deployed, known issues
-Recent Changes: what changed and why (keep brief, most recent first)
 Open Work: blockers, unfinished tasks, decisions needed
 Environment Notes: deploy target, process manager, ports, SSH user, config file paths
 Active Branch: current working branch name
 ```
 
+For change history, see `progress.md`.
+
 ### What NOT to include
 - Credentials, API keys, tokens, passwords, or `.env` contents — ever.
-- Verbose history — this isn't a git log. Keep "Recent Changes" to the last 3–5 entries. Older items can be removed.
+- Change history — that belongs in `progress.md`, not here. Keep `context.md` focused on current state.
 
 ### Environment Notes must include (when applicable)
 - SSH user and hostname
@@ -96,9 +97,10 @@ Active Branch: current working branch name
 Create it from the template at `agentGuidance/templates/context.md`. Fill in what you can from the repo's config files, `package.json`, and environment. Don't leave placeholder comments — either fill in the value or remove the line.
 
 ## Progress Log (`progress.md`)
-Every repo must have a `progress.md` at its root. This is the full chronological history of work done on the project — every PR merged, every deploy, every infrastructure change. Unlike `context.md` (which is a current-state snapshot), `progress.md` is a living changelog that grows over time.
+**This is not optional.** Every repo must have a `progress.md` at its root. This is the full chronological history of work done on the project — every commit that changes code or configuration, every PR merged, every deploy, every infrastructure change. Unlike `context.md` (which is a mutable snapshot of current state), `progress.md` is an append-only chronological log that grows over time. Together they form a complete handoff system: `context.md` tells the next agent *where things stand*, `progress.md` tells them *how they got there*.
 
 ### When to update
+- **Every commit that changes code or configuration.** Include the `progress.md` entry in the same commit — not as a separate follow-up. This is part of the commit workflow, not an afterthought.
 - **Every merged PR** — add an entry with the PR number and a one-line description.
 - **Every deploy** — note what was deployed and to where.
 - **Infrastructure changes** — env vars added, server config changed, dependencies updated.
@@ -119,8 +121,12 @@ Entries are reverse-chronological (newest first), one line per entry in a markdo
 
 ### Rules
 - Keep entries to 1-2 lines. This is a log, not a blog.
+- Describe the *purpose* of the change, not just the mechanics. Don't parrot the commit message — explain why it matters.
 - Never include secrets, credentials, or `.env` contents.
 - Include the entry in the same commit as the work it describes.
+
+### Archival
+When `progress.md` exceeds 100 entries, move everything except the most recent 50 to `progress-archive.md`. The archive is committed and searchable but not read on session startup. This preserves the full audit trail without bloating the hot path.
 
 ### If `progress.md` doesn't exist yet
 Create it from the template at `agentGuidance/templates/progress.md`. Seed it with recent git history (`git log --oneline -20`) and any known PRs.
@@ -334,6 +340,7 @@ Before every commit, run through this checklist:
 6. **File hygiene:** No unintended files staged (`.DS_Store`, `node_modules/`, build artifacts).
 7. **Naming:** Variables, functions, and files follow existing conventions in the codebase.
 8. **Edge cases:** Did you handle empty inputs, missing data, and error states?
+9. **`progress.md` entry:** Does the staged diff include a new entry in `progress.md` describing this commit's purpose?
 
 ## Communication
 - **Be concise.** Lead with the answer or action, then provide supporting detail.
