@@ -13,6 +13,9 @@ Also load any sub-guidance relevant to the current task:
 - `guidance/debugging.md` — when diagnosing issues
 - `guidance/code-review.md` — before committing or opening PRs
 - `guidance/dependencies.md` — when adding or updating packages
+- `guidance/session-lifecycle.md` — session ephemerality, output design, crash recovery
+- `guidance/resource-awareness.md` — checking server resources before heavy operations
+- `guidance/process-hygiene.md` — tracking spawned processes, temp file cleanup, port conflicts
 
 ## Fallback Rules (applied if remote fetch fails)
 

@@ -161,6 +161,16 @@ Unit tests alone are not enough. **After every change, verify that existing user
 - **Before declaring a task complete:** Run through the full regression checklist one final time. If you cannot verify a flow (e.g., OAuth requires real credentials), flag it explicitly in `context.md` as untested.
 
 ## Debugging
+
+For extended debugging procedures, see `guidance/debugging.md`.
+
+- **Step 0: Check logs first.** Before reading source code, before forming a hypothesis, check the logs. The answer is almost always there:
+  ```bash
+  pm2 logs <process> --lines 50       # PM2-managed apps
+  journalctl -u <service> --since "5 min ago"  # systemd services
+  # Browser: open DevTools → Console tab and Network tab
+  ```
+  Read the log output fully before touching code. Most debugging rabbit holes start because someone skipped the logs.
 - **Reproduce first.** Before changing code, confirm you can trigger the issue.
 - **Read the error.** Stack traces, error codes, and log output contain the answer more often than not. Read them fully.
 - **Isolate the problem.** Binary-search through the code path. Add targeted `console.log` or breakpoint, not scattered print statements.
@@ -193,6 +203,9 @@ Unit tests alone are not enough. **After every change, verify that existing user
 - **Error handling:** Handle errors at system boundaries (user input, API calls, file I/O). Use early returns for validation. Let internal errors propagate — don't swallow them with empty `catch` blocks.
 
 ## Environment Awareness
+
+For detailed resource checking procedures and concurrent job awareness, see `guidance/resource-awareness.md` and `guidance/process-hygiene.md`.
+
 Before starting work on a deployed project:
 - **Check what's already running:** `pm2 list`, `ss -tlnp | grep <port>`, `ps aux | grep <process>`.
 - **Check file ownership:** If `npm install` fails with EACCES, run `sudo chown -R $(whoami):$(whoami) <project-dir>` before retrying.
@@ -241,11 +254,27 @@ curl -s -X POST "$DISCORD_WEBHOOK_URL" \
 - Avoid conflicting changes — if another agent is on the same branch, coordinate first.
 
 ## Auto-Posting Awareness
+
+For detailed guidance on content architecture and session lifecycle, see `guidance/session-lifecycle.md`.
+
 Every Claude Code response is automatically posted to **two destinations** via Stop hooks:
 1. **WordPress** — as a private draft on your WordPress site (the blog post).
 2. **Discord** — as an embed in the `#claude-agent-logs` channel on the private Discord server.
 
 Your response IS the blog post and the Discord log entry. Write accordingly — both audiences are human readers.
+
+### Multi-Destination Design
+Your response renders in three viewports with different constraints. Design for the smallest first:
+- **Terminal** — monospace, full content, no length limit
+- **Discord embed** — your first `##` heading becomes the title, body truncated at ~3,900 chars
+- **WordPress** — full HTML rendering, blog post format
+
+This means:
+- **Front-load meaning.** If your first 500 characters are throat-clearing, the Discord embed is useless. Lead with what happened and why.
+- **First paragraph must stand alone.** It's what survives truncation — treat it as a self-contained summary.
+- **Avoid wide tables** — they break on mobile and in narrow embeds.
+- **Keep code blocks short.** A 50-line dump is unreadable in an embed. Show the key 5-10 lines.
+- **Target ~3,500 chars for primary content.** Depth beyond that is fine (WordPress gets all of it), but the core narrative should fit in the embed window.
 
 ### Security
 - **Never include raw secret values** — API keys, tokens, passwords, application passwords, database credentials, SMTP passwords, or `.env` file contents.
@@ -298,6 +327,9 @@ Before every commit, run through this checklist:
 - **Use structured output** for lists, comparisons, and multi-part answers. Bullet points and tables are easier to scan than paragraphs.
 
 ## Multi-Session Continuity
+
+For detailed guidance on session ephemerality, crash recovery, and output design, see `guidance/session-lifecycle.md`.
+
 When picking up work from a previous session (yours or another agent's):
 1. **Read `context.md` first.** It's the handoff document.
 2. **Check git log.** `git log --oneline -10` — understand recent changes.
@@ -307,6 +339,9 @@ When picking up work from a previous session (yours or another agent's):
 6. **Update `context.md` when you're done.** The next session depends on it.
 
 ## Session Wrap-Up
+
+For the reasoning behind these requirements, see `guidance/session-lifecycle.md` and `guidance/process-hygiene.md`.
+
 **Before ending any session where you wrote or changed code, you MUST complete all of these steps.** Do not wait to be asked — this is automatic.
 
 1. **Update `context.md`** — reflect the current state of the project, what changed, and any open work.
@@ -325,7 +360,10 @@ If the build is broken and you cannot fix it before the session ends, still comm
   4. `context.md` updated with deployment intent.
   5. No secrets exposed in repository history.
   6. Dependencies are locked (`package-lock.json` committed).
-- **Post-deploy:**
-  1. Verify the deployment is live and functioning.
-  2. Update `context.md` with deployment status.
-  3. Monitor for errors in the first few minutes if logs are accessible.
+- **Post-deploy verification** — "it built clean" is not "it works." Run these within 30 seconds of every deploy:
+  1. `pm2 show <process>` — confirm status is `online`, uptime is climbing, restart count hasn't spiked.
+  2. `curl -s -o /dev/null -w "%{http_code}" <url>` — confirm HTTP 200 from the live URL.
+  3. `pm2 logs <process> --lines 20` — scan for errors, uncaught exceptions, or crash loops in the first 30 seconds.
+  4. If the app has authentication, verify the sign-in flow works end-to-end.
+  5. Update `context.md` with deployment status and any issues observed.
+  6. If any check fails, **do not move on** — diagnose and fix before declaring the deploy complete.
