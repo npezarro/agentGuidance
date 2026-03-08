@@ -7,7 +7,7 @@ set -euo pipefail
 
 # --- Credential Resolution ---
 if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
-  for envfile in "$HOME/.env"; do
+  for envfile in "$HOME/.env" $HOME/.env $HOME/discord-bot/.env; do
     if [ -f "$envfile" ]; then
       source "$envfile"
       break
