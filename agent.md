@@ -1,4 +1,7 @@
+<!-- agent.md v1.0.0 | Last updated: 2026-03-04 -->
 # Global Agent Rules
+
+> **THIS IS A PUBLIC REPOSITORY.** Everything committed here is visible to the entire internet. Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information — not in code, not in comments, not in examples, not in commit messages. If you need to reference a secret, use a placeholder like `YOUR_API_KEY_HERE` or `[REDACTED]`. When in doubt, leave it out. A leaked secret in a public repo cannot be un-leaked — it must be rotated immediately.
 
 ## Identity & Default
 - **Primary stack:** JavaScript / Node.js, React (functional components + hooks, Tailwind), HTML/CSS, Google Apps Script, Tampermonkey userscripts.
@@ -39,6 +42,7 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
   2. `git diff` — review the actual changes.
   3. Confirm no `.env`, secrets, or key files are included.
   4. **Update `context.md`** — this is mandatory for any commit that changes code or configuration. See the Context File section below.
+  5. **Update `progress.md`** — add an entry for the work being committed. See the Progress Log section below.
 - Push: `git push -u origin HEAD`. Retry network failures up to 4× with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
 - **Creating PRs:**
   ```
@@ -70,15 +74,16 @@ Keep it concise and current. This is a living status page, not a changelog.
 # context.md
 Last Updated: YYYY-MM-DD — one-line summary
 Current State: what works, what's deployed, known issues
-Recent Changes: what changed and why (keep brief, most recent first)
 Open Work: blockers, unfinished tasks, decisions needed
 Environment Notes: deploy target, process manager, ports, SSH user, config file paths
 Active Branch: current working branch name
 ```
 
+For change history, see `progress.md`.
+
 ### What NOT to include
 - Credentials, API keys, tokens, passwords, or `.env` contents — ever.
-- Verbose history — this isn't a git log. Keep "Recent Changes" to the last 3–5 entries. Older items can be removed.
+- Change history — that belongs in `progress.md`, not here. Keep `context.md` focused on current state.
 
 ### Environment Notes must include (when applicable)
 - SSH user and hostname
@@ -90,6 +95,41 @@ Active Branch: current working branch name
 
 ### If `context.md` doesn't exist yet
 Create it from the template at `agentGuidance/templates/context.md`. Fill in what you can from the repo's config files, `package.json`, and environment. Don't leave placeholder comments — either fill in the value or remove the line.
+
+## Progress Log (`progress.md`)
+**This is not optional.** Every repo must have a `progress.md` at its root. This is the full chronological history of work done on the project — every commit that changes code or configuration, every PR merged, every deploy, every infrastructure change. Unlike `context.md` (which is a mutable snapshot of current state), `progress.md` is an append-only chronological log that grows over time. Together they form a complete handoff system: `context.md` tells the next agent *where things stand*, `progress.md` tells them *how they got there*.
+
+### When to update
+- **Every commit that changes code or configuration.** Include the `progress.md` entry in the same commit — not as a separate follow-up. This is part of the commit workflow, not an afterthought.
+- **Every merged PR** — add an entry with the PR number and a one-line description.
+- **Every deploy** — note what was deployed and to where.
+- **Infrastructure changes** — env vars added, server config changed, dependencies updated.
+- **Significant commits** that don't go through PRs (hotfixes, config changes pushed directly).
+
+### Format
+Entries are reverse-chronological (newest first), one line per entry in a markdown table:
+
+```
+| Date | Type | Description |
+|------|------|-------------|
+| 2026-03-07 | PR #18 | Gate upload page behind Google OAuth |
+| 2026-03-06 | deploy | Deployed geocoding fix to production |
+| 2026-03-05 | infra | Added MAPBOX_ACCESS_TOKEN env var |
+```
+
+**Types:** `PR #N`, `deploy`, `infra`, `fix`, `feat`, `refactor`, `docs`
+
+### Rules
+- Keep entries to 1-2 lines. This is a log, not a blog.
+- Describe the *purpose* of the change, not just the mechanics. Don't parrot the commit message — explain why it matters.
+- Never include secrets, credentials, or `.env` contents.
+- Include the entry in the same commit as the work it describes.
+
+### Archival
+When `progress.md` exceeds 100 entries, move everything except the most recent 50 to `progress-archive.md`. The archive is committed and searchable but not read on session startup. This preserves the full audit trail without bloating the hot path.
+
+### If `progress.md` doesn't exist yet
+Create it from the template at `agentGuidance/templates/progress.md`. Seed it with recent git history (`git log --oneline -20`) and any known PRs.
 
 ## Testing
 - **Run existing tests before making changes.** Know the baseline — don't introduce regressions.
@@ -103,6 +143,23 @@ Create it from the template at `agentGuidance/templates/context.md`. Fill in wha
   - The change is purely cosmetic (copy, styling, config).
 - **Test structure:** Arrange-Act-Assert. One assertion per behavior. Descriptive test names that read as sentences.
 - **Mocks:** Only mock external boundaries (network, file system, databases). Never mock the unit under test.
+
+### Regression & Functional Verification
+Unit tests alone are not enough. **After every change, verify that existing user flows still work.** Regressions — features that were working but break silently during development — are the most damaging bugs because they ship unnoticed.
+
+- **Identify critical user flows before coding.** Before making changes, list the key paths a user takes through the app (e.g., sign in → dashboard → connect integrations → view data). These are your regression checklist.
+- **Test every flow after changes, not just the one you touched.** A change to auth middleware can break the dashboard. A change to a shared component can break pages that import it. Assume your change has side effects until proven otherwise.
+- **For web apps:** After building, manually verify (or script verification of) these at minimum:
+  - Authentication works (sign up, sign in, sign out)
+  - Authenticated pages are accessible after sign-in (dashboard, settings, profile)
+  - Core integrations and connected services still function (OAuth flows, API callbacks, webhooks)
+  - Navigation between pages works without errors
+  - API endpoints return expected responses (use `curl` or the app itself)
+- **Check server logs after testing.** `pm2 logs`, browser console, or network tab — look for errors, 500s, redirects to wrong pages, and failed API calls that the UI might silently swallow.
+- **If the app has multiple user states, test each one.** Logged out vs. logged in. New user vs. returning user. User with connected services vs. without. Admin vs. regular user.
+- **Don't assume "it builds, so it works."** A clean build means the code compiles — it does not mean the app behaves correctly. Build success is necessary but not sufficient.
+- **When a regression is found:** Fix it before moving on to new work. Document what broke and why in the commit message — this prevents the same class of bug from recurring.
+- **Before declaring a task complete:** Run through the full regression checklist one final time. If you cannot verify a flow (e.g., OAuth requires real credentials), flag it explicitly in `context.md` as untested.
 
 ## Debugging
 - **Reproduce first.** Before changing code, confirm you can trigger the issue.
@@ -149,12 +206,96 @@ Before starting work on a deployed project:
 - Search for current docs before implementing anything version-sensitive (model APIs, SDK methods, breaking changes).
 
 ## Security
-- No secrets in commits, PRs, context files, or logs. Ever.
-- Environment-specific values belong in `.env` or local config, never in committed code.
+**This repo (`agentGuidance`) is public.** It is indexed by search engines and visible to anyone on the internet. Every other repo you work on may be private, but this one is not. Treat every commit, every file, every line as if it will be read by strangers — because it will be.
+
+- **No secrets in commits, PRs, context files, or logs. Ever.** This includes API keys, tokens, passwords, webhook URLs, Discord bot tokens, database credentials, private IPs, internal hostnames, and `.env` contents.
+- **Environment-specific values belong in `.env` or local config**, never in committed code. Use placeholders like `YOUR_API_KEY_HERE` or `$ENV_VAR_NAME` in examples.
+- **Audit before every commit to this repo.** Run `git diff --staged` and read every line. Ask yourself: "Would I be comfortable if a stranger read this?" If not, redact or remove it.
+- **Do not reference real infrastructure details** (server IPs, SSH usernames, ports, PM2 process names, domain-specific paths) in this repo. Those belong in each project's private `context.md` or `.env`, not in shared public guidance.
+- **If a secret is accidentally committed**, treat it as compromised. Rotate the credential immediately, then remove it from git history with `git filter-branch` or `bfg`. A force-push to clean history is justified in this case — and only this case.
+
+## Discord Integration
+A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it.
+
+**For full Discord details** — server structure, channel IDs, bot commands, specialist agents, per-project channels, inter-agent coordination — see `docs/discord-agent-guide.md` in the `centralDiscord` repo. That file is the single source of truth for Discord-specific documentation.
+
+### What Every Agent Needs to Know
+- **Your responses are auto-posted** to `#claude-agent-logs` via the Stop hook. You don't need to do anything — the hook reads your last response, redacts secrets, and posts it as a Discord embed.
+- **The owner issues requests** in the `#requests` channel. The bot spawns `claude -p` sessions and posts results back.
+- **Per-project channels** are auto-created by the bot. Work summaries are crossposted there after each job completes.
+- **Specialist agents** (Code Reviewer, DevOps, Architecture, Performance, Testing) can be requested by posting in `#requests` with a tagged description like `[Security Review] ...`.
+
+### Posting to Discord Manually
+The webhook URL is stored in `~/.env` as `DISCORD_WEBHOOK_URL`. To post:
+```bash
+source ~/.env
+curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"Claude Agent","content":"Your message here"}'
+```
+
+**Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. Split longer content into chunks.
+
+### Inter-Agent Coordination
+- Check `#claude-agent-logs` and `#running-job-logs` to see what other agents are doing before starting work on a shared repo.
+- Use per-project channels for handoffs, context dumps, and progress updates.
+- Avoid conflicting changes — if another agent is on the same branch, coordinate first.
+
+## Discord Integration
+A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it — your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it.
+
+### Server Structure
+- **Guild ID:** `REDACTED_GUILD_ID`
+- **`#claude-agent-logs`** — Every Claude Code turn is auto-posted here as a webhook embed via the Stop hook. The owner can reply to any embed to trigger a follow-up Claude invocation with context from the original turn.
+- **`#requests`** — The owner posts jobs here. The bot (ClaudeAgent) picks them up, runs `claude -p --dangerously-skip-permissions`, and posts results back as replies. A completion notice with a link to the original request is also posted in `#claude-agent-logs`.
+- **Per-project channels** — Agents may create project-specific channels (e.g., `#runeval`, `#pezant-tools`) for focused discussion, progress updates, or long-running task logs. Use `guild.channels.create()` via the bot or the Discord webhook. Name channels after the project directory.
+
+### Posting to Discord
+The webhook URL is stored in `~/.env` as `DISCORD_WEBHOOK_URL`. To post programmatically:
+```bash
+# Simple message
+curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"Claude Agent","content":"Your message here"}'
+
+# From Node.js (see centralDiscord/src/webhooks/send.js for helpers)
+```
+Discord messages have a **2000-character limit**. Split longer content into chunks. Embeds have a 4096-char description limit.
+
+### Creating Per-Project Channels
+When working on a project that would benefit from its own channel (long-running tasks, multi-session work, or tasks that generate lots of output), create one:
+```javascript
+// Via the bot's actions.js
+const { createChannel } = require('./actions');
+await createChannel(guild, 'project-name');
+```
+Or post a request in `#requests` asking the bot to create it. Keep channel names lowercase, hyphenated, matching the project directory name.
+
+### Specialist Agents
+The Discord bot can spawn Claude sessions with different system prompts for specialized roles. When you encounter a problem outside your expertise, you can request a specialist agent be invoked via `#requests`. Examples:
+- **Code reviewer** — "Review PR #5 on npezarro/runEvaluator for security issues"
+- **DevOps specialist** — "Debug why PM2 keeps restarting the runeval process"
+- **Architecture advisor** — "Evaluate whether we should migrate runeval from Pages Router to App Router"
+
+Specialist agents run as independent `claude -p` invocations with tailored system prompts. Their output is posted back to the requesting channel.
+
+### What the Bot Can Do
+The bot (`YourBot#0000`, PM2 process `your-bot-process`, code at `$HOME/centralDiscord`) has these capabilities:
+- Read and send messages in any visible channel
+- Create and manage channels and threads
+- Create and manage roles (no admin or invite perms)
+- Pin messages, set channel topics, add reactions
+- Manage webhooks
+- Spawn `claude -p` sessions on behalf of authorized users
+
+### What the Bot Cannot Do (by Design)
+- Create server invites
+- Make the server discoverable
+- Grant administrator permissions
 
 ## Auto-Posting Awareness
 Every Claude Code response is automatically posted to **two destinations** via Stop hooks:
-1. **WordPress** — as a private draft on YOUR_DOMAIN (the blog post).
+1. **WordPress** — as a private draft on your WordPress site (the blog post).
 2. **Discord** — as an embed in the `#claude-agent-logs` channel on the private Discord server.
 
 Your response IS the blog post and the Discord log entry. Write accordingly — both audiences are human readers.
@@ -199,6 +340,7 @@ Before every commit, run through this checklist:
 6. **File hygiene:** No unintended files staged (`.DS_Store`, `node_modules/`, build artifacts).
 7. **Naming:** Variables, functions, and files follow existing conventions in the codebase.
 8. **Edge cases:** Did you handle empty inputs, missing data, and error states?
+9. **`progress.md` entry:** Does the staged diff include a new entry in `progress.md` describing this commit's purpose?
 
 ## Communication
 - **Be concise.** Lead with the answer or action, then provide supporting detail.
