@@ -41,7 +41,7 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
   1. `git status` — verify no unintended files staged.
   2. `git diff` — review the actual changes.
   3. Confirm no `.env`, secrets, or key files are included.
-  4. **Update `context.md`** — this is mandatory for any commit that changes code or configuration. See the Context File section below.
+  4. **Update `context.md`** — mandatory on the final commit of a branch (before creating a PR) or during Session Wrap-Up. Not required on every intermediate commit. See the Context File section below.
   5. **Update `progress.md`** — add an entry for the work being committed. See the Progress Log section below.
 - Push: `git push -u origin HEAD`. Retry network failures up to 4× with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
 - **Creating PRs:**
@@ -63,9 +63,9 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
 **This is not optional.** Every repo must have a `context.md` at its root. It is the handoff document between sessions — the way the next agent (or the next you) picks up where the last one left off. Treat it like a relay baton: if you don't pass it, the next runner starts blind.
 
 ### When to update
-- **Every commit that changes code or configuration.** Include the `context.md` update in the same commit — not as a separate follow-up.
+- **On the final commit of a branch** before creating a PR. Include the `context.md` update in that commit — not as a separate follow-up. Do not update on every intermediate commit (this causes merge conflicts when multiple branches are active).
+- **During Session Wrap-Up**, even if you didn't push. If you investigated something, made a decision, or identified a blocker, capture it.
 - **When you discover something about the environment** — a port, a config path, a quirk that's not documented yet.
-- **At the end of a session**, even if you didn't push. If you investigated something, made a decision, or identified a blocker, capture it.
 
 ### What to write
 Keep it concise and current. This is a living status page, not a changelog.
@@ -318,6 +318,7 @@ Before every commit, run through this checklist:
 7. **Naming:** Variables, functions, and files follow existing conventions in the codebase.
 8. **Edge cases:** Did you handle empty inputs, missing data, and error states?
 9. **`progress.md` entry:** Does the staged diff include a new entry in `progress.md` describing this commit's purpose?
+10. **`.gitattributes` present:** Does the repo have a `.gitattributes` with `progress.md merge=union`? If not, copy from `agentGuidance/templates/.gitattributes`.
 
 ## Communication
 - **Be concise.** Lead with the answer or action, then provide supporting detail.
@@ -345,10 +346,13 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
 
 **Before ending any session where you wrote or changed code, you MUST complete all of these steps.** Do not wait to be asked — this is automatic.
 
-1. **Update `context.md`** — reflect the current state of the project, what changed, and any open work.
-2. **Commit all changes.** Stage relevant files (never `.env`, secrets, or build artifacts). Write a commit message that explains *why*, not just *what*.
-3. **Push to remote.** `git push -u origin HEAD`. Confirm the push succeeded.
-4. **Verify nothing was left behind.** Run `git status` after pushing — there should be no uncommitted changes related to the task.
+1. **Update `context.md`** — reflect the current state of the project, what changed, and any open work. (This is the final branch commit, so `context.md` must be updated here.)
+2. **Update `progress.md`** — add entries for any work committed this session.
+3. **Commit all changes.** Stage relevant files (never `.env`, secrets, or build artifacts). Write a commit message that explains *why*, not just *what*.
+4. **Push to remote.** `git push -u origin HEAD`. Confirm the push succeeded.
+5. **Verify nothing was left behind.** Run `git status` after pushing — there should be no uncommitted changes related to the task.
+
+**Key distinction:** `progress.md` is updated on every commit (it's an append-only log and uses `merge=union` in `.gitattributes` to avoid conflicts). `context.md` is updated only on the final branch commit or at session end (it's a mutable snapshot that can't be auto-merged).
 
 If the build is broken and you cannot fix it before the session ends, still commit and push with a clear note in the commit message and `context.md` explaining the broken state so the next session can pick it up. Uncommitted local changes are invisible to future sessions and effectively lost work.
 

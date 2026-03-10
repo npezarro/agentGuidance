@@ -1,7 +1,8 @@
 # context.md
 
 > Copy this template to the root of your project and fill it in.
-> Update before every push. The next agent depends on this document.
+> Update on the final commit of a branch (before creating a PR) or during Session Wrap-Up. Not needed on every intermediate commit.
+> The next agent depends on this document.
 
 ## Last Updated
 <!-- YYYY-MM-DD — one-line summary of the latest change -->
