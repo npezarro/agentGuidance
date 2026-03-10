@@ -5,18 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -sf --max-time 10 https://raw.githubusercontent.com/npezarro/agentGuidance/main/agent.md || echo 'Warning: Could not fetch global rules' >&2",
-            "timeout": 15000
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'I=$(cat); F=$(mktemp); trap \"rm -f $F\" EXIT; curl -sf --max-time 5 https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/post-to-wordpress.sh -o \"$F\" && printf \"%s\" \"$I\" | bash \"$F\"; exit 0'",
+            "command": "bash -c 'L=/home/generatedByTermius/agentGuidance/agent.md; if [ -f \"$L\" ]; then SHA=$(git -C /home/generatedByTermius/agentGuidance rev-parse --short HEAD 2>/dev/null || echo unknown); echo \"<!-- agent.md v1.0.0 | commit: $SHA | source: local -->\"; cat \"$L\"; elif R=$(curl -s --max-time 10 https://raw.githubusercontent.com/npezarro/agentGuidance/main/agent.md 2>/dev/null) && [ -n \"$R\" ]; then echo \"<!-- agent.md | source: network-fallback -->\"; echo \"$R\"; else echo \"<!-- WARNING: agent.md unavailable -->\"; echo \"# Minimal Safety Policy\"; echo \"- Never commit secrets or .env contents\"; echo \"- Never force-push without confirmation\"; echo \"- Update context.md with every code change\"; fi'",
             "timeout": 15000
           }
         ]

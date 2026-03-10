@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-10 | feat | Switch rule delivery to local-first: rewrite fetch-rules.sh to read from local clone, add cron sync script (every 15m), add version traceability (git SHA in context), update propagation template to remove curl-pipe-bash Stop hooks |
 | 2026-03-10 | feat | Add real-world examples to templates/context.md and templates/progress.md — 3 project-type examples each (bot, web app, CLI tool), all sanitized |
 | 2026-03-07 | feat | Add three guidance files (session-lifecycle, resource-awareness, process-hygiene) distilled from Discord bot development; expand agent.md with post-deploy verification, logs-first debugging, and multi-destination output design |
 | 2026-03-07 | docs | Elevate progress.md to mandatory core instruction — every commit requires an entry; remove "Recent Changes" from context.md spec to eliminate dual-source drift |
