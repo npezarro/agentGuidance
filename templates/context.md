@@ -5,7 +5,7 @@
 > The next agent depends on this document.
 
 ## Last Updated
-<!-- YYYY-MM-DD — one-line summary of the latest change -->
+<!-- YYYY-MM-DD | one-line summary of the latest change -->
 
 ## Current State
 <!-- What works, what's deployed, known issues -->
@@ -45,9 +45,9 @@ Below are three filled-in examples based on different project types. Use them as
 ### Example 1: Discord Bot (Node.js, PM2, VPS)
 
 ```markdown
-# Context — my-discord-bot
+# Context: my-discord-bot
 
-Last Updated: 2026-03-10 — Wired metrics instrumentation, added backup cron, thread auto-archiving
+Last Updated: 2026-03-10 | Wired metrics instrumentation, added backup cron, thread auto-archiving
 
 ## Current State
 - Bot is **online** via PM2
@@ -59,21 +59,21 @@ Last Updated: 2026-03-10 — Wired metrics instrumentation, added backup cron, t
 ## Architecture
 src/
   bot/
-    index.js          — Client, signal handlers, recovery on startup, message routing
-    actions.js         — Autonomous action library (send, create channels/threads, pin)
-    claudeReply.js     — Request/reply handlers, detached process spawning, job recovery
-    debate.js          — Multi-agent debate orchestrator with fault tolerance
-    personas.js        — Agent persona definitions and system prompts
-    jobStore.js        — Persistent job/queue state (atomic JSON writes)
-    metrics.js         — In-memory metrics logger with periodic persistence
+    index.js          # Client, signal handlers, recovery on startup, message routing
+    actions.js        # Autonomous action library (send, create channels/threads, pin)
+    claudeReply.js    # Request/reply handlers, detached process spawning, job recovery
+    debate.js         # Multi-agent debate orchestrator with fault tolerance
+    personas.js       # Agent persona definitions and system prompts
+    jobStore.js       # Persistent job/queue state (atomic JSON writes)
+    metrics.js        # In-memory metrics logger with periodic persistence
   webhooks/
-    send.js            — Standalone webhook sender with retry logic
+    send.js           # Standalone webhook sender with retry logic
 data/
-  jobs.json            — Persisted job state (gitignored, auto-created)
-  metrics.json         — Cumulative metrics (gitignored, auto-created)
+  jobs.json           # Persisted job state (gitignored, auto-created)
+  metrics.json        # Cumulative metrics (gitignored, auto-created)
 
 ## Open Work
-- API token flagged for rotation — user will replace manually
+- API token flagged for rotation (user will replace manually)
 
 ## Environment Notes
 - **Deploy target:** VPS
@@ -93,7 +93,7 @@ data/
 
 ```markdown
 # context.md
-Last Updated: 2026-03-06 — Fixed blank page and added geocoding fallback
+Last Updated: 2026-03-06 | Fixed blank page and added geocoding fallback
 
 ## Current State
 - App is live at example.com/myapp
@@ -103,7 +103,7 @@ Last Updated: 2026-03-06 — Fixed blank page and added geocoding fallback
 
 ## Open Work
 - MapView component is still a placeholder (no real map library integration)
-- JS bundle is ~726KB — could benefit from code splitting
+- JS bundle is ~726KB and could benefit from code splitting
 - MemoryStore for sessions should be replaced with connect-pg-simple for production
 - Receipt OCR: currently manual entry only
 
@@ -127,19 +127,19 @@ claude/fix-blank-page
 
 ```markdown
 # context.md
-Last Updated: 2026-03-08 — Initial build of job scraper CLI tool
+Last Updated: 2026-03-08 | Initial build of job scraper CLI tool
 
 ## Current State
 - All CLI commands functional: `check-links`, `scrape`, `discover`, `enrich`, `full`
 - Fetch-based adapters working for Greenhouse (JSON API), Ashby (GraphQL), Lever (JSON API)
 - Generic adapter for custom career pages (HTML + JSON-LD extraction)
-- Browser adapter (Playwright) defined but not yet installed — lazy-loaded on demand
+- Browser adapter (Playwright) defined but not yet installed; it lazy-loads on demand
 - Discovery tested: found 97 roles across configured companies
 
 ## Known Issues
-- Some companies returned 404 from their APIs — they may have migrated ATS platforms
-- Generic adapter cannot list roles (only scrape individual URLs) — needs Playwright for JS-rendered pages
-- Playwright not yet installed — `npx playwright install chromium` needed before using browser adapter
+- Some companies returned 404 from their APIs, possibly because they migrated ATS platforms
+- Generic adapter cannot list roles (only scrape individual URLs) and needs Playwright for JS-rendered pages
+- Playwright not yet installed: run `npx playwright install chromium` before using browser adapter
 
 ## Open Work
 - Install Playwright chromium if browser-rendered career pages are needed

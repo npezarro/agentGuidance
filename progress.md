@@ -1,6 +1,6 @@
 # Progress Log
 
-> Continuously updated log of all work done on this project. Add entries in reverse chronological order (newest first). One entry per PR, deploy, or significant change. Keep entries concise — 1-2 lines max.
+> Continuously updated log of all work done on this project. Add entries in reverse chronological order (newest first). One entry per PR, deploy, or significant change. Keep entries concise (1-2 lines max).
 >
 > **Update rules:**
 > - Add an entry for every merged PR or significant commit
@@ -13,13 +13,14 @@
 
 | Date | Type | Description |
 |------|------|-------------|
-| 2026-03-10 | fix | Prevent merge conflicts on context.md/progress.md — add `.gitattributes` with `merge=union` for progress.md, reduce context.md update frequency from every-commit to final-branch-commit, update propagation script to distribute `.gitattributes` |
+| 2026-03-11 | feat | Add no-em-dash writing convention to Communication section and Writing Style; rewrite all 61+ em dashes in agent.md and templates/context.md with contextual replacements (commas, colons, parentheses, semicolons, sentence restructuring) |
+| 2026-03-10 | fix | Prevent merge conflicts on context.md/progress.md by adding `.gitattributes` with `merge=union` for progress.md, reduce context.md update frequency from every-commit to final-branch-commit, update propagation script to distribute `.gitattributes` |
 | 2026-03-10 | feat | Switch rule delivery to local-first: rewrite fetch-rules.sh to read from local clone, add cron sync script (every 15m), add version traceability (git SHA in context), update propagation template to remove curl-pipe-bash Stop hooks |
-| 2026-03-10 | feat | Add real-world examples to templates/context.md and templates/progress.md — 3 project-type examples each (bot, web app, CLI tool), all sanitized |
+| 2026-03-10 | feat | Add real-world examples to templates/context.md and templates/progress.md, 3 project-type examples each (bot, web app, CLI tool), all sanitized |
 | 2026-03-07 | feat | Add three guidance files (session-lifecycle, resource-awareness, process-hygiene) distilled from Discord bot development; expand agent.md with post-deploy verification, logs-first debugging, and multi-destination output design |
-| 2026-03-07 | docs | Elevate progress.md to mandatory core instruction — every commit requires an entry; remove "Recent Changes" from context.md spec to eliminate dual-source drift |
+| 2026-03-07 | docs | Elevate progress.md to mandatory core instruction; every commit requires an entry; remove "Recent Changes" from context.md spec to eliminate dual-source drift |
 | 2026-03-07 | refactor | Extract Discord details from agent.md to centralDiscord repo, add progress.md system |
-| 2026-03-05 | PR #11 | Agent/Public Repo Warning — duplicate PR merged |
+| 2026-03-05 | PR #11 | Agent/Public Repo Warning (duplicate PR merged) |
 | 2026-03-04 | PR #10 | Add public repo warning and expand Security section |
 | 2026-03-04 | PR #7 | Expand Discord Integration for full agent-server interaction |
 | 2026-03-04 | PR #6 | Agent/Expand Discord Integration |
