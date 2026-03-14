@@ -59,6 +59,14 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
   ```
 - Do **not** enable auto-merge unless explicitly asked.
 
+### Branch Hygiene
+Open PRs that sit unmerged cause cascading merge conflicts across all other branches. Prevent this:
+- **Merge PRs promptly.** When a PR is ready and has no review requirements, merge it in the same session you created it. Use `gh pr merge <number> --merge --delete-branch`.
+- **Rebase before opening a PR.** Run `git rebase origin/main` and resolve any conflicts before pushing. A PR should be mergeable at the time it is created.
+- **One branch per task.** Don't create multiple branches for the same feature or leave abandoned branches behind.
+- **Clean up stale branches.** At session start, check `gh pr list --state open` and `git branch -a`. If a branch has been open for more than a few days without activity, either rebase and merge it or close it.
+- **Don't leave PRs for someone else to merge** unless the task explicitly requires review. Unmerged PRs are invisible debt that compounds with every new branch.
+
 ## Context File (`context.md`)
 **This is not optional.** Every repo must have a `context.md` at its root. It is the handoff document between sessions: the way the next agent (or the next you) picks up where the last one left off. Treat it like a relay baton: if you don't pass it, the next runner starts blind.
 
