@@ -13,7 +13,9 @@
 
 | Date | Type | Description |
 |------|------|-------------|
-| 2026-03-10 | feat | Add real-world examples to templates/context.md and templates/progress.md — 3 project-type examples each (bot, web app, CLI tool), all sanitized |
+| 2026-03-14 | fix | Prevent merge conflicts: add `.gitattributes` with `merge=union` for progress.md, reduce context.md update frequency to final-branch-commit only, add `.gitattributes` to self-review checklist, update propagation script |
+| 2026-03-14 | docs | Remove all em dashes from agent.md, add no-em-dash writing convention to Communication section |
+| 2026-03-10 | feat | Add real-world examples to templates/context.md and templates/progress.md, 3 project-type examples each (bot, web app, CLI tool), all sanitized |
 | 2026-03-07 | feat | Add three guidance files (session-lifecycle, resource-awareness, process-hygiene) distilled from Discord bot development; expand agent.md with post-deploy verification, logs-first debugging, and multi-destination output design |
 | 2026-03-07 | docs | Elevate progress.md to mandatory core instruction — every commit requires an entry; remove "Recent Changes" from context.md spec to eliminate dual-source drift |
 | 2026-03-07 | refactor | Extract Discord details from agent.md to centralDiscord repo, add progress.md system |
