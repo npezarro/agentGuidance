@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-14 | docs | Add Branch Hygiene section to Git Workflow: merge PRs promptly, rebase before opening PRs, clean up stale branches |
 | 2026-03-14 | fix | Prevent merge conflicts: add `.gitattributes` with `merge=union` for progress.md, reduce context.md update frequency to final-branch-commit only, add `.gitattributes` to self-review checklist, update propagation script |
 | 2026-03-14 | docs | Remove all em dashes from agent.md, add no-em-dash writing convention to Communication section |
 | 2026-03-10 | feat | Add real-world examples to templates/context.md and templates/progress.md, 3 project-type examples each (bot, web app, CLI tool), all sanitized |
