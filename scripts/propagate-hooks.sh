@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 TEMPLATE="${REPO_ROOT}/templates/claude-project/settings.json"
 CLAUDE_MD="${REPO_ROOT}/CLAUDE.md"
+GITATTRIBUTES="${REPO_ROOT}/templates/.gitattributes"
 DRY_RUN=false
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
@@ -71,6 +72,11 @@ for REPO in $REPOS; do
     cp "$CLAUDE_MD" "${REPO_DIR}/CLAUDE.md"
   fi
 
+  # Copy .gitattributes (merge=union for progress.md)
+  if [ -f "$GITATTRIBUTES" ]; then
+    cp "$GITATTRIBUTES" "${REPO_DIR}/.gitattributes"
+  fi
+
   # Check if there are actual changes
   cd "$REPO_DIR"
   if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
@@ -91,8 +97,8 @@ for REPO in $REPOS; do
   # Commit and push
   BRANCH="chore/propagate-hooks-$(date +%Y%m%d)"
   git checkout -b "$BRANCH" 2>/dev/null
-  git add .claude/settings.json CLAUDE.md 2>/dev/null
-  git commit -m "chore: propagate Claude Code hooks and CLAUDE.md from agentGuidance" 2>/dev/null || true
+  git add .claude/settings.json CLAUDE.md .gitattributes 2>/dev/null
+  git commit -m "chore: propagate Claude Code hooks, CLAUDE.md, and .gitattributes from agentGuidance" 2>/dev/null || true
   if git push origin "$BRANCH" 2>/dev/null; then
     echo "  Pushed successfully."
     UPDATED=$((UPDATED + 1))
