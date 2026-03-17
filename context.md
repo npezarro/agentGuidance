@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-03-14 | Merged all outstanding PRs, propagated .gitattributes, added Branch Hygiene rules
+2026-03-17 | Confirmed promptlibrary PR #5 already closed; removed from open work
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -15,7 +15,7 @@
 - Templates in `templates/` include filled-in examples from real projects (sanitized)
 
 ## Open Work
-- promptlibrary PR #5 ("Claude/Prompt Lifecycle") has complex code conflicts in extension files; needs manual resolution
+- promptlibrary PR #5 ("Claude/Prompt Lifecycle") was closed on 2026-03-15 due to stale conflicts across extension files; commits preserved in PR history for future cherry-picking if needed
 - Several repos still have local branches checked out on old feature branches (not blocking)
 
 ## Environment Notes
