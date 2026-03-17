@@ -213,7 +213,7 @@ For extended debugging procedures, see `guidance/debugging.md`.
 
 ## Environment Awareness
 
-For detailed resource checking procedures and concurrent job awareness, see `guidance/resource-awareness.md` and `guidance/process-hygiene.md`.
+For detailed resource checking procedures and concurrent job awareness, see `guidance/resource-awareness.md` and `guidance/process-hygiene.md`. For preventing self-deploy loops and restart storms, see `guidance/operational-safety.md`.
 
 Before starting work on a deployed project:
 - **Check what's already running:** `pm2 list`, `ss -tlnp | grep <port>`, `ps aux | grep <process>`.
