@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-17 | docs | Confirmed promptlibrary PR #5 already closed (2026-03-15) due to stale conflicts; updated context.md to reflect resolved status |
 | 2026-03-14 | infra | Propagated `.gitattributes` with `merge=union` to all 15 repos on main; rebased and merged 19 of 20 conflicting PRs across 7 repos |
 | 2026-03-14 | docs | Add Branch Hygiene section to Git Workflow: merge PRs promptly, rebase before opening PRs, clean up stale branches |
 | 2026-03-14 | fix | Prevent merge conflicts: add `.gitattributes` with `merge=union` for progress.md, reduce context.md update frequency to final-branch-commit only, add `.gitattributes` to self-review checklist, update propagation script |
