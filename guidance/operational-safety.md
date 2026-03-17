@@ -29,6 +29,31 @@ Prevent feedback loops, restart storms, and cascading failures in automated syst
 
 **Rule:** Never deploy or restart a service from within a job that service spawned. Make changes, commit, push, and note that a manual restart is needed.
 
+## Restart-Recovery Loop (Debate Jobs)
+
+**The scenario:** A debate job is running. The auto-merger merges a PR and calls `vm-ops.sh deploy claude-bot`. The deploy guard in vm-ops.sh sends SIGINT, but the bot ignores it (active jobs). PM2 escalates to SIGTERM, force-killing the bot. On restart, the bot loads `jobs.json`, finds the incomplete debate, re-queues it, and starts running it. Meanwhile the auto-merger retries the deploy (or another merge triggers it), creating an infinite loop of: deploy → kill → restart → recover debate → deploy.
+
+**This is distinct from the self-deploy loop** because the deploy is triggered externally by the auto-merger, not by the job itself. The vm-ops.sh guard doesn't help because PM2 force-kills after SIGINT is ignored.
+
+**Defenses (added 2026-03-17):**
+
+1. **Recovery attempt limit in claudeReply.js:** Debate jobs track `recoveryAttempts` in their `debateState`. Each restart increments the counter. After 3 attempts, the job is abandoned instead of re-queued. This breaks the loop even if other defenses fail.
+
+2. **Active-job check in auto-merger:** Before calling `vm-ops.sh deploy claude-bot`, the auto-merger reads `data/jobs.json` and checks for active jobs. If any are active, the deploy is deferred for 60 seconds and retried. This prevents the deploy from killing active jobs in the first place.
+
+3. **Existing vm-ops.sh guard:** Still in place as a third layer — refuses to restart if active jobs exist. But since PM2 force-kills after SIGINT, this guard only works when the bot process can actually be signaled gracefully.
+
+**If this loop happens again:**
+1. `pm2 stop claude-bot` — halt the cycle
+2. Edit `data/jobs.json` — set `"activeJobs": []` and `"queue": []`
+3. `pm2 start claude-bot` — clean restart with no recovery
+4. Check error logs to identify the root cause
+
+**Prevention rules:**
+- Never merge PRs to discord-bot while long-running jobs (debates, batch queues) are active
+- The auto-merger now handles this automatically, but be aware if manually deploying
+- If you must deploy during an active job: `pm2 stop claude-bot`, deploy, then `pm2 start claude-bot` (the job will be lost, but no loop)
+
 ## Restart Storm Detection
 
 A restart storm is when a PM2 process enters a rapid restart cycle (restarts > 5 in under 5 minutes).
