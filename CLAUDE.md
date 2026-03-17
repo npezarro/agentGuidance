@@ -16,6 +16,7 @@ Also load any sub-guidance relevant to the current task:
 - `guidance/session-lifecycle.md` — session ephemerality, output design, crash recovery
 - `guidance/resource-awareness.md` — checking server resources before heavy operations
 - `guidance/process-hygiene.md` — tracking spawned processes, temp file cleanup, port conflicts
+- `guidance/operational-safety.md` — preventing self-deploy loops, restart storms, hook loops
 
 ## Fallback Rules (applied if remote fetch fails)
 
