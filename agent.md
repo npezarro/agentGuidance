@@ -3,6 +3,14 @@
 
 > **THIS IS A PUBLIC REPOSITORY.** Everything committed here is visible to the entire internet. Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information, whether in code, comments, examples, or commit messages. If you need to reference a secret, use a placeholder like `YOUR_API_KEY_HERE` or `[REDACTED]`. When in doubt, leave it out. A leaked secret in a public repo cannot be un-leaked and must be rotated immediately.
 
+## Session Startup Confirmation
+
+**At the start of every session, before doing any work, output the following confirmation:**
+
+> **Agent ready.** Read agent.md, context.md, and progress.md. Stack: [primary stack from context]. Branch: [current branch]. Open work: [count] items. Private context: [available/not found].
+
+This confirms you have loaded and understood the core instruction set. If any file is missing or unreadable, say so explicitly in the confirmation. Do not skip this step.
+
 ## Identity & Default
 - **Primary stack:** JavaScript / Node.js, React (functional components + hooks, Tailwind), HTML/CSS, Google Apps Script, Tampermonkey userscripts.
 - **Secondary:** Python (scripting only), Bash, Markdown.
@@ -76,12 +84,14 @@ Large tasks (processing many files, writing long documents, multi-step deploymen
 - Do **not** enable auto-merge unless explicitly asked.
 
 ### Branch Hygiene
-Open PRs that sit unmerged cause cascading merge conflicts across all other branches. Prevent this:
+Open PRs that sit unmerged cause cascading merge conflicts across all other branches. **This is the #1 cause of stuck work.** Prevent this:
 - **Merge PRs promptly.** When a PR is ready and has no review requirements, merge it in the same session you created it. Use `gh pr merge <number> --merge --delete-branch`. If the merge fails (merge conflict, checks pending), retry once after 5s. If it still fails, report the specific error.
-- **Rebase before opening a PR.** Run `git rebase origin/main` and resolve any conflicts before pushing. A PR should be mergeable at the time it is created.
+- **Rebase before opening a PR.** Run `git fetch origin && git rebase origin/main` and resolve any conflicts before pushing. A PR should be mergeable at the time it is created.
 - **One branch per task.** Don't create multiple branches for the same feature or leave abandoned branches behind.
 - **Clean up stale branches.** At session start, check `gh pr list --state open` and `git branch -a`. If a branch has been open for more than a few days without activity, either rebase and merge it or close it.
 - **Don't leave PRs for someone else to merge** unless the task explicitly requires review. Unmerged PRs are invisible debt that compounds with every new branch.
+- **Never modify `context.md` or `progress.md` on a branch that other branches also modify.** These files conflict constantly. If you must update them, do it as the very last commit before merging, after rebasing on main. The auto-merger can resolve context.md/progress.md conflicts locally, but code conflicts in these files alongside real code conflicts will block the merge entirely.
+- **If a merge fails with code conflicts:** close the PR, delete the branch, and redo the work on a fresh branch from main. Don't waste time resolving complex merge conflicts on stale branches.
 
 ## Context File (`context.md`)
 **This is not optional.** Every repo must have a `context.md` at its root. It is the handoff document between sessions: the way the next agent (or the next you) picks up where the last one left off. Treat it like a relay baton: if you don't pass it, the next runner starts blind.
