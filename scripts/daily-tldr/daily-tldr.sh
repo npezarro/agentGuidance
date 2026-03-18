@@ -87,17 +87,18 @@ for REPO in $REPO_NAMES; do
   # --- Git activity ---
   if [ "$SUMMARIZE" = "true" ]; then
     COMMIT_COUNT=$(cd "$REPO_PATH" && git log --since="1 day ago" --oneline 2>/dev/null | wc -l)
-    COMMITS=""
+    COMMITS="[]"
     if [ "$COMMIT_COUNT" -gt 0 ]; then
       ACTIVE=$((ACTIVE + 1))
-      COMMITS=$(cd "$REPO_PATH" && git log --since="1 day ago" --max-count=20 --format="%h %s (%an)" 2>/dev/null)
+      # Structured commit objects for downstream formatters
+      COMMITS=$(cd "$REPO_PATH" && git log --since="1 day ago" --max-count=20 --format='{"hash":"%h","subject":"%s","author":"%an","timestamp":"%aI"}' 2>/dev/null | jq -s '.')
     fi
     BRANCH=$(cd "$REPO_PATH" && git branch --show-current 2>/dev/null || echo "unknown")
     ENTRY=$(echo "$ENTRY" | jq \
       --arg name "$REPO" \
       --arg branch "$BRANCH" \
       --argjson count "$COMMIT_COUNT" \
-      --arg commits "$COMMITS" \
+      --argjson commits "$COMMITS" \
       '. + {name: $name, branch: $branch, commit_count: $count, commits: $commits}')
   fi
 
@@ -196,13 +197,25 @@ REPORT=$(jq -n \
 echo "$REPORT" > "$REPORT_FILE"
 echo "Report saved to $REPORT_FILE"
 
-# --- Post to Discord ---
+# --- Post to Discord (#tldr) ---
 if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && [ "$DRY_RUN" = "false" ]; then
-  node "${SCRIPT_DIR}/format-report.js" "$REPORT_FILE"
-  echo "Discord report posted."
+  node "${SCRIPT_DIR}/format-report.js" "$REPORT_FILE" || echo "Warning: #tldr post failed (continuing)"
+  echo "Discord TLDR report posted."
 elif [ "$DRY_RUN" = "true" ]; then
   echo "[DRY RUN] Would post to Discord. Report preview:"
   echo "$REPORT" | jq '.repos[] | {name, commit_count, vuln_total, build_ok}'
 fi
+
+# --- Post to Discord (#daily-logs) ---
+if [ -n "${DISCORD_DAILY_LOGS_WEBHOOK_URL:-}" ] && [ "$DRY_RUN" = "false" ]; then
+  # Small delay to avoid Discord rate limits from two rapid webhook posts
+  sleep 2
+  node "${SCRIPT_DIR}/format-daily-log.js" "$REPORT_FILE" || echo "Warning: #daily-logs post failed (continuing)"
+elif [ "$DRY_RUN" = "true" ] && [ -n "${DISCORD_DAILY_LOGS_WEBHOOK_URL:-}" ]; then
+  echo "[DRY RUN] Would post daily log to #daily-logs."
+fi
+
+# --- Clean up old reports (90-day retention) ---
+find "$REPORT_DIR" -name "tldr-*.json" -mtime +90 -delete 2>/dev/null || true
 
 echo "Daily TLDR complete. Repos: $TOTAL | Active: $ACTIVE | Issues: $ISSUES"
