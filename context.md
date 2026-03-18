@@ -20,6 +20,7 @@
 
 ## Environment Notes
 - **Repo:** PUBLIC; do not commit secrets or infrastructure details
+- **Private context:** `~/repos/privateContext` (private repo) contains account details, infra specifics, env var lists, pending manual actions, and completed work log. Consult it for sensitive information instead of storing it here.
 - **Propagation script:** `scripts/propagate-hooks.sh` pushes `.claude/settings.json` + `CLAUDE.md` + `.gitattributes` to all repos
 
 ## Active Branch
