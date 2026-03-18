@@ -395,7 +395,11 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
 3. **Commit all changes.** Stage relevant files (never `.env`, secrets, or build artifacts). Write a commit message that explains *why*, not just *what*.
 4. **Push to remote.** `git push -u origin HEAD`. Confirm the push succeeded.
 5. **Verify nothing was left behind.** Run `git status` after pushing. There should be no uncommitted changes related to the task.
-6. **Post a work summary to Discord.** Use the webhook script at `~/repos/privateContext/discord-webhook.sh` to post a brief summary of what was done. This ensures context carries over even for CLI sessions that don't run through the Discord bot. Format: project name, what changed, and any follow-ups needed.
+6. **Post a work summary to Discord.** Use the webhook script at `~/repos/privateContext/discord-webhook.sh` to post to `#cli-interactions`. The script supports two modes:
+   - **Summary only:** `./discord-webhook.sh "top-line summary"`
+   - **Summary + thread detail:** `./discord-webhook.sh "top-line summary" "detailed breakdown"`
+   Always use the two-argument form: the first argument is a short top-line (project name + one-sentence summary), the second is a detailed thread reply covering what changed, why, key decisions, and follow-ups. This keeps the channel scannable while preserving full context in threads.
+7. **Update `~/repos/privateContext/completed-work.md`** with what was done this session. This is the cross-session deduplication log — without it, future sessions (autonomous or CLI) will repeat the same work. Include learnings and patterns discovered, not just tasks completed.
 
 **Key distinction:** `progress.md` is updated on every commit (it's an append-only log and uses `merge=union` in `.gitattributes` to avoid conflicts). `context.md` is updated only on the final branch commit or at session end (it's a mutable snapshot that can't be auto-merged).
 
