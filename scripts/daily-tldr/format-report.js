@@ -92,7 +92,12 @@ function buildEmbed(report) {
     .sort((a, b) => b.commit_count - a.commit_count)
     .slice(0, 5)
     .map(r => {
-      const lines = (r.commits || '').split('\n').filter(Boolean).slice(0, 3);
+      let lines;
+      if (Array.isArray(r.commits)) {
+        lines = r.commits.slice(0, 3).map(c => `${c.hash} ${c.subject} (${c.author})`);
+      } else {
+        lines = (r.commits || '').split('\n').filter(Boolean).slice(0, 3);
+      }
       return `**${r.name}** (${r.commit_count})\n${lines.map(l => `\`${l}\``).join('\n')}`;
     })
     .join('\n\n');
