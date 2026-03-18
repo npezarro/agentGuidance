@@ -237,6 +237,15 @@ Before starting work on a deployed project:
 - **Check if you're already on the target server** before SSH-ing anywhere.
 - **After changing `.env` values:** Rebuild (`npm run build`), not just restart. Static pages bake env vars at build time.
 - **Store environment metadata** (SSH user, hostname, PM2 name, port) in `context.md`, not in committed code or `.env`.
+- **Never hardcode absolute paths** that only exist on one machine. Code running on both VM and local PC must use environment variables or dynamic path detection.
+- **In WSL, `localhost` is WSL's network stack, not Windows.** For Windows services, resolve the host IP from `/etc/resolv.conf` dynamically.
+- **After creating/editing scripts in Windows/WSL:** Check for CRLF line endings (`file <script>`) and fix with `sed -i 's/\r$//'`.
+
+### discord-bot-Specific Rules
+- **Re-export chain:** `debate.js` imports from `claudeReply.js`, not `executor.js` directly. New executor exports must be added to claudeReply.js re-exports too.
+- **Command registration is two-step:** Add the handler to `commands.js` AND add the command name to the `isBuiltinCommand` regex in `index.js`.
+- **Strip mention prefixes:** `message.content` may start with `<@ID>` when users @ the bot. Always strip before regex matching.
+- **For detailed post-mortem:** See `guidance/local-worker-bridge.md`.
 
 ## Documentation Freshness
 - Assume internal knowledge of APIs, SDKs, and libraries may be outdated.
@@ -390,6 +399,7 @@ If the build is broken and you cannot fix it before the session ends, still comm
   4. `context.md` updated with deployment intent.
   5. No secrets exposed in repository history.
   6. Dependencies are locked (`package-lock.json` committed).
+  7. **If `package.json` or `package-lock.json` changed, run `npm install` on the target before restarting.** Missing this causes crash loops from missing modules.
 - **Post-deploy verification**: "it built clean" is not "it works." Run these within 30 seconds of every deploy:
   1. `pm2 show <process>` to confirm status is `online`, uptime is climbing, restart count hasn't spiked.
   2. `curl -s -o /dev/null -w "%{http_code}" <url>` to confirm HTTP 200 from the live URL.
