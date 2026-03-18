@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-18 | fix | Add retry logic for PR creation in agent.md: wait for branch registration, retry gh pr create 3x, never fall back to manual URLs |
 | 2026-03-17 | feat | Add shared ESLint 9 flat config (eslint/) with base JS rules and optional TypeScript overrides for cross-repo use |
 | 2026-03-17 | docs | Confirmed promptlibrary PR #5 already closed (2026-03-15) due to stale conflicts; updated context.md to reflect resolved status |
 | 2026-03-14 | infra | Propagated `.gitattributes` with `merge=union` to all 15 repos on main; rebased and merged 19 of 20 conflicting PRs across 7 repos |
