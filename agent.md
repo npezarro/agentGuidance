@@ -247,6 +247,16 @@ Before starting work on a deployed project:
 - **Strip mention prefixes:** `message.content` may start with `<@ID>` when users @ the bot. Always strip before regex matching.
 - **For detailed post-mortem:** See `guidance/local-worker-bridge.md`.
 
+## Private Context Repository
+
+A private companion repo exists at `~/repos/privateContext` with sensitive information that should not be in this public repo. **Consult it when you need:**
+- Service account details, OAuth app configurations, API key locations
+- Infrastructure specifics (ports, paths, database locations, env var lists)
+- Pending manual actions that require human intervention (credential rotations, external service setup)
+- Completed work log for deduplication (what's already been done across repos)
+
+Do not duplicate information from privateContext into this repo or any other public repo. Reference it by saying "see private context" or "check privateContext/accounts.md" when directing future sessions.
+
 ## Documentation Freshness
 - Assume internal knowledge of APIs, SDKs, and libraries may be outdated.
 - Search for current docs before implementing anything version-sensitive (model APIs, SDK methods, breaking changes).
