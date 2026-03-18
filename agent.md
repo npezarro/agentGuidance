@@ -395,6 +395,7 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
 3. **Commit all changes.** Stage relevant files (never `.env`, secrets, or build artifacts). Write a commit message that explains *why*, not just *what*.
 4. **Push to remote.** `git push -u origin HEAD`. Confirm the push succeeded.
 5. **Verify nothing was left behind.** Run `git status` after pushing. There should be no uncommitted changes related to the task.
+6. **Post a work summary to Discord.** Use the webhook script at `~/repos/privateContext/discord-webhook.sh` to post a brief summary of what was done. This ensures context carries over even for CLI sessions that don't run through the Discord bot. Format: project name, what changed, and any follow-ups needed.
 
 **Key distinction:** `progress.md` is updated on every commit (it's an append-only log and uses `merge=union` in `.gitattributes` to avoid conflicts). `context.md` is updated only on the final branch commit or at session end (it's a mutable snapshot that can't be auto-merged).
 
