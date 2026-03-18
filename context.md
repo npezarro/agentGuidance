@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-03-17 | Confirmed promptlibrary PR #5 already closed; removed from open work
+2026-03-18 | Added retry logic for PR creation to prevent "create manually" fallback messages
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -23,7 +23,7 @@
 - **Propagation script:** `scripts/propagate-hooks.sh` pushes `.claude/settings.json` + `CLAUDE.md` + `.gitattributes` to all repos
 
 ## Active Branch
-main
+claude/reliable-pr-creation
 
 ---
 **For change history**, see `progress.md`.
