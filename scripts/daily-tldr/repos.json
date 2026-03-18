@@ -1,0 +1,65 @@
+{
+  "repos_root": "/home/npezarro/repos",
+  "repos": {
+    "centralDiscord": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": true,
+      "auto_fix": false
+    },
+    "agentGuidance": {
+      "summarize": true,
+      "audit_deps": false,
+      "check_build": false,
+      "auto_fix": false
+    },
+    "runeval": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": true,
+      "auto_fix": false
+    },
+    "groceryGenius": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": true,
+      "auto_fix": false
+    },
+    "job-scraper": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": false,
+      "auto_fix": true
+    },
+    "youtubeSpeedSetAndRemember": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": false,
+      "auto_fix": false
+    },
+    "promptlibrary": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": false,
+      "auto_fix": false
+    },
+    "scripts": {
+      "summarize": true,
+      "audit_deps": false,
+      "check_build": false,
+      "auto_fix": false
+    },
+    "janQ4Site": {
+      "summarize": true,
+      "audit_deps": false,
+      "check_build": false,
+      "auto_fix": false
+    },
+    "pezantTools": {
+      "summarize": true,
+      "audit_deps": true,
+      "check_build": false,
+      "auto_fix": false
+    }
+  }
+}
