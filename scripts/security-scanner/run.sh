@@ -199,30 +199,37 @@ fi
 
 # ── Email alert for critical/high findings ───────────────────────────
 
-if [ "$GMAIL_ALERT_ENABLED" = "true" ] && [ "$CRITICAL_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ]; then
-  # Extract just the critical and high findings for the email
+if [ "$GMAIL_ALERT_ENABLED" = "true" ] && { [ "$CRITICAL_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ]; }; then
   CRITICAL_FINDINGS=$(echo "$RESULT" | sed -n '/SEVERITY: critical/,/^---/p' | head -60)
   HIGH_FINDINGS=$(echo "$RESULT" | sed -n '/SEVERITY: high/,/^---/p' | head -60)
 
   EMAIL_BODY="Security scan #$RUN_NUMBER ($DATE_TAG) found sensitive data in your public repositories.
 
-CRITICAL FINDINGS ($CRITICAL_COUNT):
+## Critical Findings ($CRITICAL_COUNT)
+
 $CRITICAL_FINDINGS
 
-HIGH FINDINGS ($HIGH_COUNT):
+## High Findings ($HIGH_COUNT)
+
 $HIGH_FINDINGS
 
-Full results posted to #security-risks on Discord.
-Scan cost: $COST
-
 ---
-Action required: Review and remediate these findings. Critical findings may include exposed secrets that should be rotated immediately."
 
-  # Write email body to file for Claude to pick up
+**Repos scanned:** $REPO_COUNT
+**Scan cost:** $COST
+
+**Action required:** Review and remediate these findings. Critical findings may include exposed secrets that should be rotated immediately."
+
   EMAIL_FILE="$LOGS_DIR/email-alert-${DATE_TAG}.txt"
   echo "$EMAIL_BODY" > "$EMAIL_FILE"
   chmod 600 "$EMAIL_FILE"
-  log "EMAIL: Alert written to $EMAIL_FILE (critical: $CRITICAL_COUNT, high: $HIGH_COUNT)"
+
+  SUBJECT="[Security Alert] Scan #$RUN_NUMBER — $CRITICAL_COUNT critical, $HIGH_COUNT high findings"
+  if node "$SCRIPT_DIR/send-email.js" "$SUBJECT" "$EMAIL_FILE" 2>&1; then
+    log "EMAIL: Alert sent (critical: $CRITICAL_COUNT, high: $HIGH_COUNT)"
+  else
+    log "EMAIL: Failed to send alert — check SMTP config"
+  fi
 fi
 
 # ── Clean up old logs (keep last 30) ────────────────────────────────
