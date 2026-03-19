@@ -405,10 +405,20 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
 3. **Commit all changes.** Stage relevant files (never `.env`, secrets, or build artifacts). Write a commit message that explains *why*, not just *what*.
 4. **Push to remote.** `git push -u origin HEAD`. Confirm the push succeeded.
 5. **Verify nothing was left behind.** Run `git status` after pushing. There should be no uncommitted changes related to the task.
-6. **Post a work summary to Discord.** Use the webhook script at `~/repos/privateContext/discord-webhook.sh` to post to `#cli-interactions`. The script supports two modes:
-   - **Summary only:** `./discord-webhook.sh "top-line summary"`
-   - **Summary + thread detail:** `./discord-webhook.sh "top-line summary" "detailed breakdown"`
-   Always use the two-argument form: the first argument is a short top-line (project name + one-sentence summary), the second is a detailed thread reply covering what changed, why, key decisions, and follow-ups. This keeps the channel scannable while preserving full context in threads.
+6. **Post a work summary to Discord.** Use `~/repos/privateContext/discord-webhook.sh` to post to `#cli-interactions`. **Always use the two-argument form** — the script creates a real Discord thread (via bot API) from the top-level message and posts the detail inside it:
+   ```bash
+   ./discord-webhook.sh "top-line summary" "detailed thread body"
+   ```
+   - **First argument (top-line):** Project name + 2-3 sentence summary of what changed and why. Should be enough context that someone scanning the channel understands the gist without opening the thread.
+   - **Second argument (thread detail):** This is the important part. Be **verbose and thorough**. Include:
+     - What was done, step by step — not just bullet points, but enough narrative that someone who wasn't in the session can follow the reasoning and decisions made
+     - Why each significant choice was made (e.g., "chose Claude CLI over SDK because it avoids needing a separate API key")
+     - What was tried that didn't work and what was done instead
+     - File paths and specific changes for traceability
+     - Current state after the session (what's working, what's not)
+     - Follow-ups and open items
+   - The script handles chunking (splits at 1990 chars) and posts multiple messages into the thread if needed. Don't hold back on length.
+   - You can also reply to an existing thread: `./discord-webhook.sh --thread <thread_id> "additional message"`
 7. **Update `~/repos/privateContext/completed-work.md`** with what was done this session. This is the cross-session deduplication log — without it, future sessions (autonomous or CLI) will repeat the same work. Include learnings and patterns discovered, not just tasks completed.
 
 **Key distinction:** `progress.md` is updated on every commit (it's an append-only log and uses `merge=union` in `.gitattributes` to avoid conflicts). `context.md` is updated only on the final branch commit or at session end (it's a mutable snapshot that can't be auto-merged).
