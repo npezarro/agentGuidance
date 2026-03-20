@@ -28,7 +28,7 @@ fi
 
 SECURITY_RISKS_WEBHOOK="${SECURITY_RISKS_WEBHOOK:-}"
 GMAIL_ALERT_ENABLED="${GMAIL_ALERT_ENABLED:-true}"
-ALERT_EMAIL="${ALERT_EMAIL:-ALERT_EMAIL_REDACTED}"
+ALERT_EMAIL="${ALERT_EMAIL:?ALERT_EMAIL must be set in .env}"
 
 # ── Logging ──────────────────────────────────────────────────────────
 
