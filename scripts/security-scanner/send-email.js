@@ -19,13 +19,6 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 
-// ── Allowed recipient (from env) ────────────────────────────────────
-const ALLOWED_RECIPIENT = process.env.ALERT_EMAIL;
-if (!ALLOWED_RECIPIENT) {
-  console.error('ALERT_EMAIL env var is required');
-  process.exit(1);
-}
-
 // ── Load .env ───────────────────────────────────────────────────────
 function loadEnv(envPath) {
   if (!fs.existsSync(envPath)) return;
@@ -47,6 +40,13 @@ function loadEnv(envPath) {
 // Load local .env, then runeval's .env on the VM for SMTP creds
 loadEnv(path.join(__dirname, '.env'));
 loadEnv('/var/www/runeval/.env');
+
+// ── Allowed recipient (loaded from .env above) ─────────────────────
+const ALLOWED_RECIPIENT = process.env.ALERT_EMAIL;
+if (!ALLOWED_RECIPIENT) {
+  console.error('ALERT_EMAIL env var is required (set in .env or environment)');
+  process.exit(1);
+}
 
 // ── Main ────────────────────────────────────────────────────────────
 async function main() {
