@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-20 | feat | Add Quick Review URLs block to private-content prompt: tier-grouped links in both PR body and context.md for fast bulk review |
 | 2026-03-19 | feat | Add recurring-tasks infrastructure: shared runner.sh with flock locking, scoped permissions, Discord notifications; 3 task configs (private-content, private-materials, private-ranking) with prompt templates; crontab generator |
 | 2026-03-18 | fix | Add retry logic for PR creation in agent.md: wait for branch registration, retry gh pr create 3x, never fall back to manual URLs |
 | 2026-03-17 | feat | Add shared ESLint 9 flat config (eslint/) with base JS rules and optional TypeScript overrides for cross-repo use |
