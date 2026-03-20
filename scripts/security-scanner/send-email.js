@@ -5,8 +5,11 @@
  * Reuses the same Gmail SMTP credentials as runeval.
  * Recipient is hardcoded to prevent misuse.
  *
- * Usage: node send-email.js <subject> <body-file>
+ * Usage: node send-email.js <subject> [body-file] [sender-name]
  *   or:  echo "body" | node send-email.js <subject>
+ *
+ * sender-name defaults to "Security Scanner" for backwards compatibility.
+ * Can also be set via SENDER_NAME env var.
  *
  * Requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.
  * Reads from .env file if present.
@@ -16,8 +19,12 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 
-// ── Hardcoded allowed recipient ─────────────────────────────────────
-const ALLOWED_RECIPIENT = 'n.pezarro@gmail.com';
+// ── Allowed recipient (from env) ────────────────────────────────────
+const ALLOWED_RECIPIENT = process.env.ALERT_EMAIL;
+if (!ALLOWED_RECIPIENT) {
+  console.error('ALERT_EMAIL env var is required');
+  process.exit(1);
+}
 
 // ── Load .env ───────────────────────────────────────────────────────
 function loadEnv(envPath) {
@@ -48,6 +55,8 @@ async function main() {
     console.error('Usage: node send-email.js <subject> [body-file]');
     process.exit(1);
   }
+
+  const senderName = process.argv[4] || process.env.SENDER_NAME || 'Security Scanner';
 
   // Read body from file arg or stdin
   let body;
@@ -99,17 +108,17 @@ async function main() {
 
   try {
     await transporter.sendMail({
-      from: `"Security Scanner" <${from}>`,
+      from: `"${senderName}" <${from}>`,
       to: ALLOWED_RECIPIENT,
       subject,
       text: body,
       html: [
         '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
-        `<h2 style="color: #e85d2f;">🔒 ${escapeHtml(subject)}</h2>`,
+        `<h2 style="color: #e85d2f;">${escapeHtml(subject)}</h2>`,
         '<div style="background: #fdf6f0; border-left: 4px solid #e85d2f; border-radius: 8px; padding: 20px; margin: 16px 0;">',
         htmlBody,
         '</div>',
-        '<p style="color: #999; font-size: 12px;">— Security Scanner (agentGuidance/scripts/security-scanner)</p>',
+        `<p style="color: #999; font-size: 12px;">— ${escapeHtml(senderName)}</p>`,
         '</div>',
       ].join('\n'),
     });
