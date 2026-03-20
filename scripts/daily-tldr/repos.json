@@ -25,12 +25,6 @@
       "check_build": true,
       "auto_fix": false
     },
-    "job-scraper": {
-      "summarize": true,
-      "audit_deps": true,
-      "check_build": false,
-      "auto_fix": true
-    },
     "youtubeSpeedSetAndRemember": {
       "summarize": true,
       "audit_deps": true,
