@@ -1,0 +1,64 @@
+name: PR Discord Notifications
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          MERGE_WEBHOOK: ${{ secrets.DISCORD_PR_MERGE_WEBHOOK }}
+          CLOSE_WEBHOOK: ${{ secrets.DISCORD_PR_CLOSE_WEBHOOK }}
+          OWNER_ID: ${{ secrets.DISCORD_OWNER_ID }}
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          PR_BODY=$(echo '${{ toJSON(github.event.pull_request.body) }}' | head -c 300)
+          REPO="${{ github.repository }}"
+          MERGED="${{ github.event.pull_request.merged }}"
+
+          if [ "$MERGED" = "true" ]; then
+            WEBHOOK_URL="$MERGE_WEBHOOK"
+            COLOR=3066993
+            ACTION="merged"
+            EMOJI="✅"
+          else
+            WEBHOOK_URL="$CLOSE_WEBHOOK"
+            COLOR=15158332
+            ACTION="closed"
+            EMOJI="❌"
+          fi
+
+          [ -z "$WEBHOOK_URL" ] && echo "No webhook configured" && exit 0
+
+          MENTION=""
+          if [ "$ACTION" = "closed" ] && [ -n "$OWNER_ID" ]; then
+            MENTION="<@${OWNER_ID}>"
+          fi
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "username": "GitHub",
+            "content": "${MENTION}",
+            "embeds": [{
+              "title": "${EMOJI} PR #${PR_NUMBER} ${ACTION}: ${PR_TITLE}",
+              "url": "${PR_URL}",
+              "color": ${COLOR},
+              "fields": [
+                {"name": "Repository", "value": "\`${REPO}\`", "inline": true},
+                {"name": "Author", "value": "${PR_AUTHOR}", "inline": true}
+              ],
+              "footer": {"text": "GitHub Actions"}
+            }]
+          }
+          EOF
+          )
+
+          curl -s -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
