@@ -23,13 +23,26 @@ Date: {{DATE}}
 
 5. **Update the summary line** at the top of the file with the new total count.
 
-6. **Update `context.md`** with what changed and any new high-priority additions.
+6. **Update `context.md`** with what changed and any new high-priority additions. Append a "Quick Review URLs" section at the bottom of the context update, grouped by fit tier, listing all newly added roles that have direct posting URLs. Use the format: `- Company | Title — URL`. Omit roles without direct application links. This section should reflect only the current run's additions, not a running total.
 
 7. **Update `progress.md`** with an entry for this commit.
 
 8. **Commit and push** to branch `claude/job-search-{{DATE}}`. Commit message should summarize the delta (e.g., "Expand AI PM catalogue from X to Y roles across Z companies").
 
-9. **Open a PR** to main using `gh pr create`. Title: "Job search: expand catalogue ({{DATE}})". Body should list notable additions.
+9. **Open a PR** to main using `gh pr create`. Title: "Job search: expand catalogue ({{DATE}})". Body should list notable additions, followed by a Quick Review URLs block at the bottom. Separate it with a horizontal rule (`---`), group by fit tier, and list all newly added roles with direct posting URLs. Use this format:
+
+   ```
+   ---
+   ## Quick Review URLs
+
+   **Strong Fit:**
+   - Company | Title — https://example.com/jobs/123
+
+   **Moderate Fit:**
+   - Company | Title — https://example.com/jobs/456
+   ```
+
+   Omit roles without direct application links from this block entirely.
 
 ## Constraints
 - Maintain the tiered structure (Tier 1: highest priority, Tier 2: strong fit, etc.)
