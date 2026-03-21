@@ -13,16 +13,14 @@ jobs:
           MERGE_WEBHOOK: ${{ secrets.DISCORD_PR_MERGE_WEBHOOK }}
           CLOSE_WEBHOOK: ${{ secrets.DISCORD_PR_CLOSE_WEBHOOK }}
           OWNER_ID: ${{ secrets.DISCORD_OWNER_ID }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          REPO_NAME: ${{ github.repository }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          PR_URL="${{ github.event.pull_request.html_url }}"
-          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          PR_BODY=$(echo '${{ toJSON(github.event.pull_request.body) }}' | head -c 300)
-          REPO="${{ github.repository }}"
-          MERGED="${{ github.event.pull_request.merged }}"
-
-          if [ "$MERGED" = "true" ]; then
+          if [ "$PR_MERGED" = "true" ]; then
             WEBHOOK_URL="$MERGE_WEBHOOK"
             COLOR=3066993
             ACTION="merged"
@@ -34,31 +32,48 @@ jobs:
             EMOJI="❌"
           fi
 
-          [ -z "$WEBHOOK_URL" ] && echo "No webhook configured" && exit 0
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "No webhook configured for $ACTION"
+            exit 0
+          fi
 
           MENTION=""
           if [ "$ACTION" = "closed" ] && [ -n "$OWNER_ID" ]; then
             MENTION="<@${OWNER_ID}>"
           fi
 
-          PAYLOAD=$(cat <<EOF
-          {
-            "username": "GitHub",
-            "content": "${MENTION}",
-            "embeds": [{
-              "title": "${EMOJI} PR #${PR_NUMBER} ${ACTION}: ${PR_TITLE}",
-              "url": "${PR_URL}",
-              "color": ${COLOR},
-              "fields": [
-                {"name": "Repository", "value": "\`${REPO}\`", "inline": true},
-                {"name": "Author", "value": "${PR_AUTHOR}", "inline": true}
-              ],
-              "footer": {"text": "GitHub Actions"}
-            }]
-          }
-          EOF
-          )
+          PAYLOAD=$(jq -n \
+            --arg username "GitHub" \
+            --arg mention "$MENTION" \
+            --arg title "$EMOJI PR #$PR_NUMBER $ACTION: $PR_TITLE" \
+            --arg url "$PR_URL" \
+            --argjson color "$COLOR" \
+            --arg repo "$REPO_NAME" \
+            --arg author "$PR_AUTHOR" \
+            '{
+              username: $username,
+              content: $mention,
+              embeds: [{
+                title: $title,
+                url: $url,
+                color: $color,
+                fields: [
+                  {name: "Repository", value: ("`" + $repo + "`"), inline: true},
+                  {name: "Author", value: $author, inline: true}
+                ],
+                footer: {text: "GitHub Actions"}
+              }]
+            }')
 
-          curl -s -X POST "$WEBHOOK_URL" \
+          HTTP_CODE=$(curl -s -o /tmp/discord_response.txt -w "%{http_code}" \
+            -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD"
+            -d "$PAYLOAD")
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Posted to Discord ($HTTP_CODE): $EMOJI PR #$PR_NUMBER $ACTION"
+          else
+            echo "Discord webhook failed ($HTTP_CODE):"
+            cat /tmp/discord_response.txt
+            exit 1
+          fi
