@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-03-20 | docs | Overhaul guidance/testing.md with testing pyramid strategy (failure audit, contract tests, integration tests, smoke tests, browser tests); add templates/failure-audit.md |
 | 2026-03-20 | feat | Parameterize send-email.js sender name (arg or SENDER_NAME env var), fix .env load order so ALERT_EMAIL resolves in cron context |
 | 2026-03-19 | feat | Add recurring-tasks infrastructure: shared runner.sh with flock locking, scoped permissions, Discord notifications; crontab generator |
 | 2026-03-18 | fix | Add retry logic for PR creation in agent.md: wait for branch registration, retry gh pr create 3x, never fall back to manual URLs |
