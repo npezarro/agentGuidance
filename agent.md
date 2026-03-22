@@ -463,6 +463,13 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
      - Follow-ups and open items
    - The script handles chunking (splits at 1990 chars) and posts multiple messages into the thread if needed. Don't hold back on length.
    - You can also reply to an existing thread: `./discord-webhook.sh --thread <thread_id> "additional message"`
+
+   **Ongoing reporting during long sessions:**
+   Don't wait until session end to report. Post to `#cli-interactions` as you complete distinct tasks:
+   - **New task = new top-level message.** When you start working on a distinctly different task (new project, new feature, switching repos), create a fresh top-level message + thread with `./discord-webhook.sh "summary" "detail"`. Do not keep threading under a stale message from an earlier task.
+   - **Updates within the same task = thread replies.** If you're continuing work on the same task (follow-up fix, deployment of something you just built), reply to the existing thread: `./discord-webhook.sh --thread <thread_id> "update"`.
+   - **Save the thread ID** from the webhook response so you can reply to it later. The script outputs the message JSON — extract the `id` field.
+   - This keeps `#cli-interactions` scannable: each top-level message is a distinct piece of work, and the thread under it has the full narrative.
 7. **Update `~/repos/privateContext/completed-work.md`** with what was done this session. This is the cross-session deduplication log — without it, future sessions (autonomous or CLI) will repeat the same work. Include learnings and patterns discovered, not just tasks completed.
 
 **Key distinction:** `progress.md` is updated on every commit (it's an append-only log and uses `merge=union` in `.gitattributes` to avoid conflicts). `context.md` is updated only on the final branch commit or at session end (it's a mutable snapshot that can't be auto-merged).
