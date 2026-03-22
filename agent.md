@@ -33,6 +33,7 @@ npx jest             # tests (when present)
 - **Targeted edits only.** Do not overwrite entire files. Use precise insertions and replacements. Re-read files post-edit to verify surrounding code integrity.
 - **Dry-run first.** Use `--dry-run` for destructive or bulk commands when available.
 - **Diagnose before retrying.** If a command fails, understand *why* before re-running. No blind retry loops.
+- **No external posting without explicit instruction.** Never post, submit, register, or publish to external sites, services, or APIs (e.g. BotLink, social media, forums, package registries) unless the user explicitly asks you to. Building features that *could* post externally is fine — actually calling external endpoints is not. This applies to all agents: session-based, autonomous, and fix-checker.
 
 ## Batching & Checkpointing
 Large tasks (processing many files, writing long documents, multi-step deployments) are the #1 cause of crashes and lost work.
