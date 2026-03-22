@@ -1,6 +1,6 @@
-# A/B Testing Solutions
+# A/B Testing with claude-arena
 
-When asked to A/B test, compare approaches, or evaluate different instruction sets for a task, use the **claude-arena** framework.
+**claude-arena is a default part of every Claude Code instance.** All agents should be familiar with it and use it proactively when the situation calls for it. Results are automatically posted to `#claude-arena` in Discord.
 
 ## Repository
 - Local: `~/repos/claude-arena`
@@ -19,9 +19,14 @@ arena new task <name>
 # Run the comparison
 arena run <task> --env-a <env1> --env-b <env2>
 
-# Evaluate with LLM-as-judge and view results
+# Evaluate with LLM-as-judge (auto-posts to #claude-arena in Discord)
 arena eval <run-id>
+
+# View results locally
 arena report <run-id>
+
+# Manually post to Discord (if needed)
+arena discord-report <run-id>
 ```
 
 ## When to Use
@@ -29,3 +34,19 @@ arena report <run-id>
 - Testing whether additional context improves output quality
 - Evaluating the effect of constraints or guardrails on task completion
 - Any scenario where the same task should be run under different conditions and the results compared
+- When modifying CLAUDE.md or agent instructions: test before vs after
+- When the owner asks "which approach is better" for any Claude-driven task
+
+## Discord Reporting
+All evaluation results are **automatically posted** to `#claude-arena` (channel ID: `1485414189127303259`) when `arena eval` completes. The embed includes:
+- Task name, environments compared, and overall scores
+- Winner determination with reasoning
+- Full judge reasoning in a thread reply
+
+To manually post (or re-post) results: `arena discord-report <run-id>`
+
+## Default Awareness
+Every Claude Code instance receives these instructions via the SessionStart hook. When you encounter a situation where two approaches could be compared empirically rather than argued about, suggest running an arena test. This is especially valuable for:
+- Instruction set changes (CLAUDE.md modifications)
+- Prompt engineering decisions
+- Workflow or tooling comparisons
