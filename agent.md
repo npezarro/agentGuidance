@@ -257,6 +257,24 @@ Before starting work on a deployed project:
 - **Strip mention prefixes:** `message.content` may start with `<@ID>` when users @ the bot. Always strip before regex matching.
 - **For detailed post-mortem:** See `guidance/local-worker-bridge.md`.
 
+## Claude Arena (A/B Testing)
+
+**claude-arena** is available to every Claude Code instance for empirical comparison of approaches. When two strategies, instruction sets, or prompting techniques could be compared rather than debated, use it.
+
+- **Repo:** `~/repos/claude-arena`
+- **Run a test:** `arena run <task> --env-a <env1> --env-b <env2>`
+- **Evaluate:** `arena eval <run-id>` (auto-posts results to `#claude-arena` in Discord)
+- **Full docs:** See `guidance/ab-testing.md`
+
+Use arena proactively when:
+- Modifying CLAUDE.md or agent instructions (test before vs after)
+- The owner asks which approach is better for a Claude-driven task
+- You want to validate that a prompt change actually improves output quality
+
+All results are reported to `#claude-arena` in Discord automatically.
+
+**Opting out:** If the owner says `--no-arena` at any point, do not suggest or use claude-arena for the remainder of the session. Acknowledge with: "Arena disabled for this session." This is useful for quick fixes, conversations that don't involve comparisons, or when the owner just wants to work without arena prompts.
+
 ## Private Context Repository
 
 A private companion repo exists at `~/repos/privateContext` with sensitive information that should not be in this public repo. **Consult it when you need:**
@@ -393,6 +411,31 @@ When picking up work from a previous session (yours or another agent's):
 4. **Check for open PRs.** `gh pr list` to avoid duplicating existing work.
 5. **Verify the environment.** Are dependencies installed? Is the build working? Are services running?
 6. **Update `context.md` when you're done.** The next session depends on it.
+
+## Mid-Session Instruction Refresh (`--refresh`)
+
+When the owner types `--refresh`, you must re-read the latest instructions without restarting the session. This preserves conversation context while picking up any changes made to agent.md, guidance files, or CLAUDE.md since the session started.
+
+**When you see `--refresh`:**
+1. Run the refetch script and read its output:
+   ```bash
+   bash ~/repos/agentGuidance/scripts/refetch-instructions.sh
+   ```
+   For a deeper refresh that includes all guidance files:
+   ```bash
+   bash ~/repos/agentGuidance/scripts/refetch-instructions.sh --with-guidance
+   ```
+2. Also re-read the current repo's `CLAUDE.md` if one exists (it may have changed).
+3. Confirm what was refreshed:
+   > **Instructions refreshed.** Re-read agent.md (v[version if visible]), [N] guidance files, and local CLAUDE.md. Changes noted: [brief summary of anything visibly different, or "no visible changes"].
+4. Apply the updated instructions for the remainder of the session.
+
+**When to suggest `--refresh`:**
+- If the owner mentions they've updated agent.md, CLAUDE.md, or any guidance files during this session
+- If you notice your behavior contradicts what the owner is describing as the expected behavior
+- After the owner merges a PR that modifies agentGuidance
+
+This is the mid-session equivalent of the SessionStart hook. It does not affect conversation history or context, only the instructions you follow going forward.
 
 ## Session Wrap-Up
 
