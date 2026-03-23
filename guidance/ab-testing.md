@@ -1,10 +1,10 @@
-# A/B Testing with claude-arena
+# A/B Testing with claude-bakeoff
 
-**claude-arena is a default part of every Claude Code instance.** All agents should be familiar with it and use it proactively when the situation calls for it. Results are automatically posted to `#claude-arena` in Discord.
+**claude-bakeoff is a default part of every Claude Code instance.** All agents should be familiar with it and use it proactively when the situation calls for it. Results are automatically posted to `#claude-bakeoff` in Discord.
 
 ## Repository
-- Local: `~/repos/claude-arena`
-- Remote: https://github.com/npezarro/claude-arena
+- Local: `~/repos/claude-bakeoff`
+- Remote: https://github.com/npezarro/claude-bakeoff
 
 ## Quick Usage
 ```bash
@@ -19,7 +19,7 @@ arena new task <name>
 # Run the comparison
 arena run <task> --env-a <env1> --env-b <env2>
 
-# Evaluate with LLM-as-judge (auto-posts to #claude-arena in Discord)
+# Evaluate with LLM-as-judge (auto-posts to #claude-bakeoff in Discord)
 arena eval <run-id>
 
 # View results locally
@@ -38,7 +38,7 @@ arena discord-report <run-id>
 - When the owner asks "which approach is better" for any Claude-driven task
 
 ## Discord Reporting
-All evaluation results are **automatically posted** to `#claude-arena` (channel ID: `1485414189127303259`) when `arena eval` completes. The embed includes:
+All evaluation results are **automatically posted** to `#claude-bakeoff` (channel ID: `1485414189127303259`) when `arena eval` completes. The embed includes:
 - Task name, environments compared, and overall scores
 - Winner determination with reasoning
 - Full judge reasoning in a thread reply
