@@ -260,11 +260,11 @@ Before starting work on a deployed project:
 
 ## Claude Arena (A/B Testing)
 
-**claude-arena** is available to every Claude Code instance for empirical comparison of approaches. When two strategies, instruction sets, or prompting techniques could be compared rather than debated, use it.
+**claude-bakeoff** is available to every Claude Code instance for empirical comparison of approaches. When two strategies, instruction sets, or prompting techniques could be compared rather than debated, use it.
 
-- **Repo:** `~/repos/claude-arena`
+- **Repo:** `~/repos/claude-bakeoff`
 - **Run a test:** `arena run <task> --env-a <env1> --env-b <env2>`
-- **Evaluate:** `arena eval <run-id>` (auto-posts results to `#claude-arena` in Discord)
+- **Evaluate:** `arena eval <run-id>` (auto-posts results to `#claude-bakeoff` in Discord)
 - **Full docs:** See `guidance/ab-testing.md`
 
 Use arena proactively when:
@@ -272,9 +272,9 @@ Use arena proactively when:
 - The owner asks which approach is better for a Claude-driven task
 - You want to validate that a prompt change actually improves output quality
 
-All results are reported to `#claude-arena` in Discord automatically.
+All results are reported to `#claude-bakeoff` in Discord automatically.
 
-**Opting out:** If the owner says `--no-arena` at any point, do not suggest or use claude-arena for the remainder of the session. Acknowledge with: "Arena disabled for this session." This is useful for quick fixes, conversations that don't involve comparisons, or when the owner just wants to work without arena prompts.
+**Opting out:** If the owner says `--no-arena` at any point, do not suggest or use claude-bakeoff for the remainder of the session. Acknowledge with: "Arena disabled for this session." This is useful for quick fixes, conversations that don't involve comparisons, or when the owner just wants to work without arena prompts.
 
 ## Private Context Repository
 
@@ -305,7 +305,13 @@ A private Discord server is the central communication hub for all Claude agents.
 **For full Discord details** (server structure, channel IDs, bot commands, specialist agents, per-project channels, inter-agent coordination), see `docs/discord-agent-guide.md` in the `centralDiscord` repo. That file is the single source of truth for Discord-specific documentation.
 
 ### What Every Agent Needs to Know
-- **Your responses are auto-posted** to `#claude-agent-logs` via the Stop hook. You don't need to do anything. The hook reads your last response, redacts secrets, and posts it as a Discord embed.
+- **Your responses are auto-posted** to `#cli-interactions` via the Stop hook. The hook reads your last response, redacts secrets, and posts it as a Discord embed. You don't need to do anything for this.
+- **Threading:** The first turn of a session creates a top-level embed with a thread. All subsequent turns in the same session are posted as thread replies. This keeps conversations grouped and the channel readable.
+- **New task = new thread.** When you start working on a distinctly different task within the same session, post a new top-level message to `#cli-interactions` using `discord-webhook.sh` to start a fresh thread. Then delete the session's thread state file (`~/.cache/discord-threads/<session_id>`) so the Stop hook creates a new thread from the next turn. This prevents unrelated work from being buried in the wrong thread.
+  ```bash
+  ~/repos/privateContext/discord-webhook.sh "Starting new task: <brief description>"
+  rm -f ~/.cache/discord-threads/"$CLAUDE_SESSION_ID"
+  ```
 - **The owner issues requests** in the `#requests` channel. The bot spawns `claude -p` sessions and posts results back.
 - **Per-project channels** are auto-created by the bot. Work summaries are crossposted there after each job completes.
 - **Specialist agents** (Code Reviewer, DevOps, Architecture, Performance, Testing) can be requested by posting in `#requests` with a tagged description like `[Security Review] ...`.
