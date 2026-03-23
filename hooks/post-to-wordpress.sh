@@ -99,7 +99,7 @@ except ImportError:
   echo "$converted"
 }
 
-WP_SITE="${WP_SITE:-https://YOUR_DOMAIN}"
+WP_SITE="${WP_SITE:-https://pezant.ca}"
 WP_API="${WP_SITE}/wp-json/wp/v2/posts"
 AUTH=$(echo -n "${WP_USER}:${WP_APP_PASSWORD}" | base64)
 
@@ -136,6 +136,26 @@ LAST_ASSISTANT_MSG=$(jq -r '.last_assistant_message // empty' < "$INPUT_FILE")
 
 # Skip if no transcript or no assistant message
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ] || [ -z "$LAST_ASSISTANT_MSG" ]; then
+  exit 0
+fi
+
+# --- Deduplication ---
+# Prevent duplicate posts from the same session or identical content.
+# Track by session_id and content hash in a local cache directory.
+WP_CACHE_DIR="$HOME/.cache/wp-posts"
+mkdir -p "$WP_CACHE_DIR"
+
+# Clean up cache entries older than 7 days
+find "$WP_CACHE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
+
+# Check session-based dedup: skip if this session already posted
+if [ -n "$SESSION_ID" ] && [ -f "$WP_CACHE_DIR/session-${SESSION_ID}" ]; then
+  exit 0
+fi
+
+# Check content-based dedup: skip if identical content was recently posted
+CONTENT_HASH=$(printf '%s' "$LAST_ASSISTANT_MSG" | sha256sum | cut -d' ' -f1)
+if [ -f "$WP_CACHE_DIR/hash-${CONTENT_HASH}" ]; then
   exit 0
 fi
 
@@ -235,12 +255,18 @@ PAYLOAD=$(jq -n \
   --arg status "private" \
   '{title: $title, content: $content, status: $status, categories: [16]}')
 
-curl -s -X POST "$WP_API" \
+HTTP_CODE=$(curl -s -X POST "$WP_API" \
   -H "Content-Type: application/json" \
   -H "Authorization: Basic ${AUTH}" \
   -d "$PAYLOAD" \
   -o /dev/null \
-  -w "" \
-  --max-time 10 2>/dev/null || true
+  -w "%{http_code}" \
+  --max-time 10 2>/dev/null) || true
+
+# Record successful post in dedup cache
+if [ "${HTTP_CODE:-0}" -ge 200 ] && [ "${HTTP_CODE:-0}" -lt 300 ]; then
+  [ -n "$SESSION_ID" ] && echo "$TIMESTAMP" > "$WP_CACHE_DIR/session-${SESSION_ID}"
+  echo "$TIMESTAMP" > "$WP_CACHE_DIR/hash-${CONTENT_HASH}"
+fi
 
 exit 0
