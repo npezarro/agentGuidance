@@ -26,6 +26,13 @@ npm run dev          # local dev server (when applicable)
 npx jest             # tests (when present)
 ```
 
+## Capture Every Learning
+**This is a top priority.** When a session produces a learning, correction, process change, or new convention, it must be captured in version-controlled guidance before the session ends. Learnings that stay only in conversation context are lost.
+- **Cross-project learnings** (process, conventions, tooling): update `agentGuidance` (agent.md for core rules, or the appropriate `guidance/*.md` file for detailed procedures).
+- **Project-specific learnings** (architecture decisions, gotchas, environment quirks): update that project's `CLAUDE.md`, `context.md`, or a relevant doc in the repo.
+- **If the owner corrects your approach or gives feedback that should apply going forward**, codify it immediately. Don't just acknowledge it for this session.
+- When in doubt about where a learning belongs, prefer `agentGuidance` (it's read by all sessions) over project-local files.
+
 ## Planning & Execution
 - **Plan before coding.** For anything beyond a single-file fix, outline the approach (files affected, sequence, risks) and confirm before implementing.
 - **Ask, don't guess.** If the prompt is ambiguous or missing constraints, stop and ask immediately.
