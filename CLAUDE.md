@@ -13,11 +13,21 @@ Also load any sub-guidance relevant to the current task:
 - `guidance/debugging.md` — when diagnosing issues
 - `guidance/code-review.md` — before committing or opening PRs
 - `guidance/dependencies.md` — when adding or updating packages
+- `guidance/git-workflow.md` — branching, PRs, merge procedures
+- `guidance/context-progress.md` — context.md and progress.md specs
+- `guidance/discord-integration.md` — Discord posting, threading, coordination
+- `guidance/auto-posting.md` — writing style, multi-destination design
+- `guidance/session-wrapup.md` — end-of-session checklist
+- `guidance/multi-session.md` — continuity and --refresh command
+- `guidance/deployment.md` — deploy checklists
 - `guidance/session-lifecycle.md` — session ephemerality, output design, crash recovery
 - `guidance/resource-awareness.md` — checking server resources before heavy operations
 - `guidance/process-hygiene.md` — tracking spawned processes, temp file cleanup, port conflicts
 - `guidance/operational-safety.md` — preventing self-deploy loops, restart storms, hook loops
 - `guidance/ab-testing.md` — when asked to A/B test or compare approaches (uses claude-bakeoff)
+- `guidance/wordpress-auto-posting.md` — WordPress hook setup details
+- `guidance/auth-basepath.md` — authentication and base path patterns
+- `guidance/local-worker-bridge.md` — local worker bridge post-mortem
 
 ## Fallback Rules (applied if remote fetch fails)
 
