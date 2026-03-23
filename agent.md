@@ -276,6 +276,15 @@ All results are reported to `#claude-bakeoff` in Discord automatically.
 
 **Opting out:** If the owner says `--no-arena` at any point, do not suggest or use claude-bakeoff for the remainder of the session. Acknowledge with: "Arena disabled for this session." This is useful for quick fixes, conversations that don't involve comparisons, or when the owner just wants to work without arena prompts.
 
+## Cowork Reporting
+
+Claude Cowork sessions are tracked in `~/repos/cowork-sessions` (private repo). Cowork produces structured session log artifacts; local scripts sync them to Discord `#cowork` and the GitHub repo.
+
+- **Session logs:** `cowork-sessions/sessions/YYYY-MM-DD/{slug}.md`
+- **Instructions for Cowork:** `cowork-sessions/cowork-instructions.md` (paste into claude.ai project settings)
+- **Sync to Discord + GitHub:** `cowork-sessions/scripts/sync-latest.sh`
+- **TaskCompleted hook** in `~/.claude/settings.json` posts CLI task completions to `#cowork` automatically
+
 ## Private Context Repository
 
 A private companion repo exists at `~/repos/privateContext` with sensitive information that should not be in this public repo. **Consult it when you need:**
