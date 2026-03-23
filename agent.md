@@ -41,6 +41,7 @@ npx jest             # tests (when present)
 - **Dry-run first.** Use `--dry-run` for destructive or bulk commands when available.
 - **Diagnose before retrying.** If a command fails, understand *why* before re-running. No blind retry loops.
 - **Always push to GitHub.** When working on code or producing written materials, commit and push to the relevant repo. The remote is the source of truth.
+- **Track prep in the pipeline.** When producing application or prep materials for a role, always: (1) commit materials to `assortedLLMTasks/applications/`, (2) push to GitHub, (3) append the role to the Job Data tab in the Google Sheet via Apps Script (see `privateContext/infrastructure.md` for API details), and (4) include a direct GitHub link to the materials in the "Application Materials" column.
 - **No external posting without explicit instruction.** Never post, submit, register, or publish to external sites or APIs unless the user explicitly asks. Building features that *could* post is fine; actually calling endpoints is not.
 
 ## Batching & Checkpointing
