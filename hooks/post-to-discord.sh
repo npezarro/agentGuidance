@@ -82,7 +82,13 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 # Extract the last user prompt from transcript
 USER_PROMPT=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-  USER_PROMPT=$(jq -rs '[.[] | select(.type == "user" and (.message.content | type == "string"))] | last | .message.content // empty' "$TRANSCRIPT_PATH" 2>/dev/null || true)
+  USER_PROMPT=$(jq -rs '
+    [.[] | select(.type == "user")] | last |
+    if .message.content | type == "string" then .message.content
+    elif .message.content | type == "array" then
+      [.message.content[] | select(.type == "text") | .text] | join("\n")
+    else empty end // empty
+  ' "$TRANSCRIPT_PATH" 2>/dev/null || true)
 fi
 
 # Redact sensitive info
@@ -205,28 +211,31 @@ else
     fi
   fi
 
-  # Post overflow as follow-up
+  # Post overflow into the thread (or channel if no thread was created)
   if [ -n "$OVERFLOW" ]; then
-    CHUNK_SIZE=1990
-    REMAINING="$OVERFLOW"
-    CHUNK_NUM=0
-    while [ -n "$REMAINING" ] && [ $CHUNK_NUM -lt 3 ]; do
-      CHUNK="${REMAINING:0:$CHUNK_SIZE}"
-      REMAINING="${REMAINING:$CHUNK_SIZE}"
-      CHUNK_NUM=$((CHUNK_NUM + 1))
+    OVERFLOW_THREAD_ID=""
+    [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ] && OVERFLOW_THREAD_ID=$(cat "$THREAD_FILE")
 
-      CHUNK_PAYLOAD=$(jq -n \
-        --arg username "Claude Agent" \
-        --arg content "\`\`\`\n${CHUNK}\n\`\`\`" \
-        '{username: $username, content: $content}')
+    if [ -n "$OVERFLOW_THREAD_ID" ]; then
+      post_to_thread "$OVERFLOW_THREAD_ID" "$OVERFLOW"
+    else
+      # Fallback: post to channel if thread creation failed
+      CHUNK_SIZE=1990
+      REMAINING="$OVERFLOW"
+      CHUNK_NUM=0
+      while [ -n "$REMAINING" ] && [ $CHUNK_NUM -lt 3 ]; do
+        CHUNK="${REMAINING:0:$CHUNK_SIZE}"
+        REMAINING="${REMAINING:$CHUNK_SIZE}"
+        CHUNK_NUM=$((CHUNK_NUM + 1))
 
-      sleep 0.5
-      curl -s -X POST "$DISCORD_WEBHOOK_URL" \
-        -H "Content-Type: application/json" \
-        -d "$CHUNK_PAYLOAD" \
-        -o /dev/null \
-        --max-time 10 2>/dev/null || true
-    done
+        sleep 0.5
+        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          -d "$(python3 -c "import json,sys; print(json.dumps({'username': 'Claude Agent', 'content': sys.argv[1]}))" "$CHUNK")" \
+          -o /dev/null \
+          --max-time 10 2>/dev/null || true
+      done
+    fi
   fi
 fi
 
