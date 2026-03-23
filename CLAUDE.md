@@ -17,7 +17,7 @@ Also load any sub-guidance relevant to the current task:
 - `guidance/resource-awareness.md` — checking server resources before heavy operations
 - `guidance/process-hygiene.md` — tracking spawned processes, temp file cleanup, port conflicts
 - `guidance/operational-safety.md` — preventing self-deploy loops, restart storms, hook loops
-- `guidance/ab-testing.md` — when asked to A/B test or compare approaches (uses claude-arena)
+- `guidance/ab-testing.md` — when asked to A/B test or compare approaches (uses claude-bakeoff)
 
 ## Fallback Rules (applied if remote fetch fails)
 
