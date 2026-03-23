@@ -1,18 +1,17 @@
 #!/bin/bash
-# Post each Claude Code turn to Discord via webhook
+# Post each Claude Code turn to Discord #cli-interactions via webhook
 # Triggered by the Stop hook event
 # Requires DISCORD_WEBHOOK_URL set in .env or environment
 #
-# Threading behavior:
-#   - First post in a session creates a new top-level message, then creates a
-#     thread on it using the Discord bot token (DISCORD_BOT_TOKEN)
-#   - Subsequent posts in the same session post into that thread
-#   - A new session always starts a new top-level message + thread
+# Threading model:
+#   - First turn of a session: new top-level embed + thread
+#   - Subsequent turns in same session: reply inside the thread
+#   - State persisted in ~/.cache/discord-threads/<session_id>
 
 set -euo pipefail
 
 # --- Credential Resolution ---
-if [ -z "${DISCORD_WEBHOOK_URL:-}" ] || [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
+if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
   for envfile in "$HOME/.env" $HOME/.env $HOME/centralDiscord/.env; do
     if [ -f "$envfile" ]; then
       source "$envfile"
@@ -22,13 +21,29 @@ if [ -z "${DISCORD_WEBHOOK_URL:-}" ] || [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
 fi
 
 if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
-  exit 0  # No webhook URL — skip silently
+  exit 0  # No webhook URL -- skip silently
 fi
 
-# --- Thread tracking ---
-# Store thread ID per session in a temp file
-THREAD_DIR="${TMPDIR:-/tmp}/claude-discord-threads"
-mkdir -p "$THREAD_DIR"
+# --- Bot token (needed for thread creation) ---
+BOT_TOKEN_CACHE="$HOME/.cache/discord-bot-token"
+_get_bot_token() {
+  if [ -f "$BOT_TOKEN_CACHE" ]; then
+    cat "$BOT_TOKEN_CACHE"
+    return
+  fi
+  local token
+  token=$(ssh REDACTED_HOST 'grep -oP "DISCORD_BOT_TOKEN=\K.*" /home/REDACTED_USER/centralDiscord/.env' 2>/dev/null) || true
+  if [ -n "$token" ]; then
+    mkdir -p "$(dirname "$BOT_TOKEN_CACHE")"
+    echo "$token" > "$BOT_TOKEN_CACHE"
+    chmod 600 "$BOT_TOKEN_CACHE"
+    echo "$token"
+  fi
+}
+
+# --- Thread state directory ---
+THREAD_STATE_DIR="$HOME/.cache/discord-threads"
+mkdir -p "$THREAD_STATE_DIR"
 
 # --- Redaction ---
 redact_sensitive() {
@@ -64,13 +79,6 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // "unknown"')
 PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
-# Check if we already have a thread for this session
-THREAD_FILE="${THREAD_DIR}/${SESSION_ID}"
-EXISTING_THREAD_ID=""
-if [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ]; then
-  EXISTING_THREAD_ID=$(cat "$THREAD_FILE" 2>/dev/null || true)
-fi
-
 # Extract the last user prompt from transcript
 USER_PROMPT=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
@@ -86,7 +94,13 @@ if [ ${#USER_PROMPT} -gt 200 ]; then
   USER_PROMPT="${USER_PROMPT:0:197}..."
 fi
 
-# Discord has a 2000-char message limit, 4096-char embed description limit
+# --- Threading logic ---
+THREAD_FILE="$THREAD_STATE_DIR/${SESSION_ID}"
+EXISTING_THREAD_ID=""
+if [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ]; then
+  EXISTING_THREAD_ID=$(cat "$THREAD_FILE")
+fi
+
 MAX_EMBED_DESC=3900
 RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
 OVERFLOW=""
@@ -96,104 +110,127 @@ if [ ${#LAST_ASSISTANT_MSG} -gt $MAX_EMBED_DESC ]; then
   OVERFLOW="${LAST_ASSISTANT_MSG:$MAX_EMBED_DESC}"
 fi
 
-# --- Build embed payload ---
-TITLE=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //' | head -c 256)
-if [ -z "$TITLE" ]; then
-  TITLE="${PROJECT} — ${TIMESTAMP}"
-fi
+# --- Helper: post chunked text to a thread via webhook ---
+post_to_thread() {
+  local thread_id="$1"
+  local text="$2"
+  local remaining="$text"
+  local chunk_num=0
 
-# Build fields array
-FIELDS="[]"
-if [ -n "$USER_PROMPT" ]; then
-  FIELDS=$(jq -n --arg prompt "$USER_PROMPT" '[{"name": "Prompt", "value": $prompt, "inline": false}]')
-fi
-FIELDS=$(echo "$FIELDS" | jq --arg proj "$PROJECT" --arg sid "${SESSION_ID:0:8}" '. + [{"name": "Project", "value": $proj, "inline": true}, {"name": "Session", "value": $sid, "inline": true}]')
+  while [ -n "$remaining" ] && [ $chunk_num -lt 5 ]; do
+    local chunk="${remaining:0:1990}"
+    remaining="${remaining:1990}"
+    chunk_num=$((chunk_num + 1))
 
-PAYLOAD=$(jq -n \
-  --arg username "Claude Agent" \
-  --arg title "$TITLE" \
-  --arg desc "$RESPONSE_DISPLAY" \
-  --argjson fields "$FIELDS" \
-  --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-  '{
-    username: $username,
-    embeds: [{
-      title: $title,
-      description: $desc,
-      color: 7879533,
-      fields: $fields,
-      timestamp: $ts,
-      footer: {"text": "Claude Code Agent"}
-    }]
-  }')
+    curl -s -X POST "${DISCORD_WEBHOOK_URL}?wait=true&thread_id=${thread_id}" \
+      -H "Content-Type: application/json" \
+      -d "$(python3 -c "import json,sys; print(json.dumps({'username': 'Claude Agent', 'content': sys.argv[1]}))" "$chunk")" \
+      -o /dev/null --max-time 10 2>/dev/null || true
 
-# --- Post logic ---
+    [ -n "$remaining" ] && sleep 0.5
+  done
+}
+
 if [ -n "$EXISTING_THREAD_ID" ]; then
-  # Post into existing thread via webhook
-  curl -s -X POST "${DISCORD_WEBHOOK_URL}?thread_id=${EXISTING_THREAD_ID}" \
-    -H "Content-Type: application/json" \
-    -d "$PAYLOAD" \
-    -o /dev/null \
-    --max-time 10 2>/dev/null || true
+  # --- Subsequent turn: post into existing thread ---
+  THREAD_MSG="**Prompt:** ${USER_PROMPT:-(none)}
+
+${RESPONSE_DISPLAY}"
+
+  post_to_thread "$EXISTING_THREAD_ID" "$THREAD_MSG"
+
+  if [ -n "$OVERFLOW" ]; then
+    post_to_thread "$EXISTING_THREAD_ID" "$OVERFLOW"
+  fi
+
 else
-  # First post — send as top-level message, then create a thread on it
+  # --- First turn: new top-level embed + create thread ---
+
+  TITLE=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //' | head -c 256)
+  if [ -z "$TITLE" ]; then
+    TITLE="${PROJECT} -- ${TIMESTAMP}"
+  fi
+
+  FIELDS="[]"
+  if [ -n "$USER_PROMPT" ]; then
+    FIELDS=$(jq -n --arg prompt "$USER_PROMPT" '[{"name": "Prompt", "value": $prompt, "inline": false}]')
+  fi
+  FIELDS=$(echo "$FIELDS" | jq --arg proj "$PROJECT" --arg sid "${SESSION_ID:0:8}" '. + [{"name": "Project", "value": $proj, "inline": true}, {"name": "Session", "value": $sid, "inline": true}]')
+
+  PAYLOAD=$(jq -n \
+    --arg username "Claude Agent" \
+    --arg title "$TITLE" \
+    --arg desc "$RESPONSE_DISPLAY" \
+    --argjson fields "$FIELDS" \
+    --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    '{
+      username: $username,
+      embeds: [{
+        title: $title,
+        description: $desc,
+        color: 7879533,
+        fields: $fields,
+        timestamp: $ts,
+        footer: {"text": "Claude Code Agent"}
+      }]
+    }')
+
   RESPONSE=$(curl -s -X POST "${DISCORD_WEBHOOK_URL}?wait=true" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" \
-    --max-time 10 2>/dev/null || echo '{}')
+    --max-time 10 2>/dev/null || echo "{}")
 
-  NEW_MSG_ID=$(echo "$RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
-  CHANNEL_ID=$(echo "$RESPONSE" | jq -r '.channel_id // empty' 2>/dev/null || true)
+  MSG_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
 
-  # Create a thread on the message using the bot token
-  if [ -n "$NEW_MSG_ID" ] && [ -n "$CHANNEL_ID" ] && [ -n "${DISCORD_BOT_TOKEN:-}" ]; then
-    THREAD_NAME="${PROJECT} — Session ${SESSION_ID:0:8}"
-    # Truncate thread name to 100 chars (Discord limit)
-    THREAD_NAME="${THREAD_NAME:0:100}"
+  # Create a thread from the top-level message
+  if [ -n "$MSG_ID" ] && [ -n "$SESSION_ID" ]; then
+    BOT_TOKEN=$(_get_bot_token)
+    if [ -n "$BOT_TOKEN" ]; then
+      CHANNEL_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('channel_id',''))" 2>/dev/null || true)
 
-    THREAD_RESPONSE=$(curl -s -X POST "https://discord.com/api/v10/channels/${CHANNEL_ID}/messages/${NEW_MSG_ID}/threads" \
-      -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "$(jq -n --arg name "$THREAD_NAME" '{name: $name, auto_archive_duration: 1440}')" \
-      --max-time 10 2>/dev/null || echo '{}')
+      if [ -n "$CHANNEL_ID" ]; then
+        THREAD_NAME="${PROJECT}: ${TITLE:0:80}"
+        THREAD_RESPONSE=$(curl -s -X POST "https://discord.com/api/v10/channels/${CHANNEL_ID}/messages/${MSG_ID}/threads" \
+          -H "Authorization: Bot ${BOT_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "$(python3 -c "import json,sys; print(json.dumps({'name': sys.argv[1][:100], 'auto_archive_duration': 1440}))" "$THREAD_NAME")" \
+          --max-time 10 2>/dev/null || echo "{}")
 
-    THREAD_ID=$(echo "$THREAD_RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
-    if [ -n "$THREAD_ID" ] && [ -n "$SESSION_ID" ]; then
-      echo "$THREAD_ID" > "$THREAD_FILE"
-      EXISTING_THREAD_ID="$THREAD_ID"
+        NEW_THREAD_ID=$(echo "$THREAD_RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+
+        if [ -n "$NEW_THREAD_ID" ]; then
+          echo "$NEW_THREAD_ID" > "$THREAD_FILE"
+        fi
+      fi
     fi
   fi
-fi
 
-# Post overflow chunks
-if [ -n "$OVERFLOW" ]; then
-  CHUNK_SIZE=1990
-  REMAINING="$OVERFLOW"
-  CHUNK_NUM=0
+  # Post overflow as follow-up
+  if [ -n "$OVERFLOW" ]; then
+    CHUNK_SIZE=1990
+    REMAINING="$OVERFLOW"
+    CHUNK_NUM=0
+    while [ -n "$REMAINING" ] && [ $CHUNK_NUM -lt 3 ]; do
+      CHUNK="${REMAINING:0:$CHUNK_SIZE}"
+      REMAINING="${REMAINING:$CHUNK_SIZE}"
+      CHUNK_NUM=$((CHUNK_NUM + 1))
 
-  # Determine where to post overflow
-  OVERFLOW_URL="${DISCORD_WEBHOOK_URL}?wait=true"
-  if [ -n "$EXISTING_THREAD_ID" ]; then
-    OVERFLOW_URL="${DISCORD_WEBHOOK_URL}?thread_id=${EXISTING_THREAD_ID}"
+      CHUNK_PAYLOAD=$(jq -n \
+        --arg username "Claude Agent" \
+        --arg content "\`\`\`\n${CHUNK}\n\`\`\`" \
+        '{username: $username, content: $content}')
+
+      sleep 0.5
+      curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+        -H "Content-Type: application/json" \
+        -d "$CHUNK_PAYLOAD" \
+        -o /dev/null \
+        --max-time 10 2>/dev/null || true
+    done
   fi
-
-  while [ -n "$REMAINING" ] && [ $CHUNK_NUM -lt 3 ]; do
-    CHUNK="${REMAINING:0:$CHUNK_SIZE}"
-    REMAINING="${REMAINING:$CHUNK_SIZE}"
-    CHUNK_NUM=$((CHUNK_NUM + 1))
-
-    CHUNK_PAYLOAD=$(jq -n \
-      --arg username "Claude Agent" \
-      --arg content "\`\`\`\n${CHUNK}\n\`\`\`" \
-      '{username: $username, content: $content}')
-
-    sleep 0.5
-    curl -s -X POST "$OVERFLOW_URL" \
-      -H "Content-Type: application/json" \
-      -d "$CHUNK_PAYLOAD" \
-      -o /dev/null \
-      --max-time 10 2>/dev/null || true
-  done
 fi
+
+# Clean up stale thread files (older than 7 days)
+find "$THREAD_STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 
 exit 0
