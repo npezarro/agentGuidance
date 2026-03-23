@@ -2,11 +2,17 @@
 # Post each Claude Code turn to Discord via webhook
 # Triggered by the Stop hook event
 # Requires DISCORD_WEBHOOK_URL set in .env or environment
+#
+# Threading behavior:
+#   - First post in a session creates a new top-level message, then creates a
+#     thread on it using the Discord bot token (DISCORD_BOT_TOKEN)
+#   - Subsequent posts in the same session post into that thread
+#   - A new session always starts a new top-level message + thread
 
 set -euo pipefail
 
 # --- Credential Resolution ---
-if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
+if [ -z "${DISCORD_WEBHOOK_URL:-}" ] || [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
   for envfile in "$HOME/.env" $HOME/.env $HOME/centralDiscord/.env; do
     if [ -f "$envfile" ]; then
       source "$envfile"
@@ -18,6 +24,11 @@ fi
 if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
   exit 0  # No webhook URL — skip silently
 fi
+
+# --- Thread tracking ---
+# Store thread ID per session in a temp file
+THREAD_DIR="${TMPDIR:-/tmp}/claude-discord-threads"
+mkdir -p "$THREAD_DIR"
 
 # --- Redaction ---
 redact_sensitive() {
@@ -53,6 +64,13 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // "unknown"')
 PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
+# Check if we already have a thread for this session
+THREAD_FILE="${THREAD_DIR}/${SESSION_ID}"
+EXISTING_THREAD_ID=""
+if [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ]; then
+  EXISTING_THREAD_ID=$(cat "$THREAD_FILE" 2>/dev/null || true)
+fi
+
 # Extract the last user prompt from transcript
 USER_PROMPT=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
@@ -69,19 +87,16 @@ if [ ${#USER_PROMPT} -gt 200 ]; then
 fi
 
 # Discord has a 2000-char message limit, 4096-char embed description limit
-# Use embed for the first chunk, follow-up messages for overflow
 MAX_EMBED_DESC=3900
 RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
 OVERFLOW=""
 
 if [ ${#LAST_ASSISTANT_MSG} -gt $MAX_EMBED_DESC ]; then
   RESPONSE_DISPLAY="${LAST_ASSISTANT_MSG:0:$MAX_EMBED_DESC}..."
-  # Capture overflow for follow-up messages (up to 6000 more chars, 3 messages)
   OVERFLOW="${LAST_ASSISTANT_MSG:$MAX_EMBED_DESC}"
 fi
 
 # --- Build embed payload ---
-# Title: extract first markdown heading or use project + timestamp
 TITLE=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //' | head -c 256)
 if [ -z "$TITLE" ]; then
   TITLE="${PROJECT} — ${TIMESTAMP}"
@@ -94,7 +109,6 @@ if [ -n "$USER_PROMPT" ]; then
 fi
 FIELDS=$(echo "$FIELDS" | jq --arg proj "$PROJECT" --arg sid "${SESSION_ID:0:8}" '. + [{"name": "Project", "value": $proj, "inline": true}, {"name": "Session", "value": $sid, "inline": true}]')
 
-# Post the embed
 PAYLOAD=$(jq -n \
   --arg username "Claude Agent" \
   --arg title "$TITLE" \
@@ -113,17 +127,56 @@ PAYLOAD=$(jq -n \
     }]
   }')
 
-curl -s -X POST "$DISCORD_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD" \
-  -o /dev/null \
-  --max-time 10 2>/dev/null || true
+# --- Post logic ---
+if [ -n "$EXISTING_THREAD_ID" ]; then
+  # Post into existing thread via webhook
+  curl -s -X POST "${DISCORD_WEBHOOK_URL}?thread_id=${EXISTING_THREAD_ID}" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    -o /dev/null \
+    --max-time 10 2>/dev/null || true
+else
+  # First post — send as top-level message, then create a thread on it
+  RESPONSE=$(curl -s -X POST "${DISCORD_WEBHOOK_URL}?wait=true" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    --max-time 10 2>/dev/null || echo '{}')
 
-# Post overflow chunks as follow-up messages (plain text, 2000 char limit each)
+  NEW_MSG_ID=$(echo "$RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
+  CHANNEL_ID=$(echo "$RESPONSE" | jq -r '.channel_id // empty' 2>/dev/null || true)
+
+  # Create a thread on the message using the bot token
+  if [ -n "$NEW_MSG_ID" ] && [ -n "$CHANNEL_ID" ] && [ -n "${DISCORD_BOT_TOKEN:-}" ]; then
+    THREAD_NAME="${PROJECT} — Session ${SESSION_ID:0:8}"
+    # Truncate thread name to 100 chars (Discord limit)
+    THREAD_NAME="${THREAD_NAME:0:100}"
+
+    THREAD_RESPONSE=$(curl -s -X POST "https://discord.com/api/v10/channels/${CHANNEL_ID}/messages/${NEW_MSG_ID}/threads" \
+      -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg name "$THREAD_NAME" '{name: $name, auto_archive_duration: 1440}')" \
+      --max-time 10 2>/dev/null || echo '{}')
+
+    THREAD_ID=$(echo "$THREAD_RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
+    if [ -n "$THREAD_ID" ] && [ -n "$SESSION_ID" ]; then
+      echo "$THREAD_ID" > "$THREAD_FILE"
+      EXISTING_THREAD_ID="$THREAD_ID"
+    fi
+  fi
+fi
+
+# Post overflow chunks
 if [ -n "$OVERFLOW" ]; then
   CHUNK_SIZE=1990
   REMAINING="$OVERFLOW"
   CHUNK_NUM=0
+
+  # Determine where to post overflow
+  OVERFLOW_URL="${DISCORD_WEBHOOK_URL}?wait=true"
+  if [ -n "$EXISTING_THREAD_ID" ]; then
+    OVERFLOW_URL="${DISCORD_WEBHOOK_URL}?thread_id=${EXISTING_THREAD_ID}"
+  fi
+
   while [ -n "$REMAINING" ] && [ $CHUNK_NUM -lt 3 ]; do
     CHUNK="${REMAINING:0:$CHUNK_SIZE}"
     REMAINING="${REMAINING:$CHUNK_SIZE}"
@@ -134,9 +187,8 @@ if [ -n "$OVERFLOW" ]; then
       --arg content "\`\`\`\n${CHUNK}\n\`\`\`" \
       '{username: $username, content: $content}')
 
-    # Small delay to maintain message order
     sleep 0.5
-    curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+    curl -s -X POST "$OVERFLOW_URL" \
       -H "Content-Type: application/json" \
       -d "$CHUNK_PAYLOAD" \
       -o /dev/null \
