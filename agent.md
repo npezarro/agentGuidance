@@ -155,6 +155,12 @@ When picking up work from a previous session: read `context.md`, check git log/s
 ## Deployment
 Infer deploy commands from repo config. See `guidance/deployment.md` for pre-deploy and post-deploy checklists.
 
+## Maintaining This File
+**Keep `agent.md` under 200 lines.** This file is fetched at the start of every session (including Cowork, which has limited context). It should contain only core rules and concise summaries with pointers to guidance files. When adding new guidance:
+- If the content is more than 5-10 lines of procedure, create a new `guidance/<topic>.md` file and add a 1-2 line summary + pointer here.
+- Never inline detailed procedures, code blocks longer than 5 lines, or step-by-step checklists into this file.
+- Add the new guidance file to the index below and to `CLAUDE.md`.
+
 ## Guidance File Index
 Load these on-demand based on the current task:
 - `guidance/testing.md` -- writing or running tests
