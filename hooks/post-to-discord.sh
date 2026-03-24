@@ -13,7 +13,7 @@
 #     from the transcript and formats them as an activity log between
 #     the user prompt and the assistant response.
 
-set -euo pipefail
+set -uo pipefail
 
 # --- Credential Resolution ---
 if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
@@ -85,14 +85,17 @@ PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 # --- Extract rich turn data from transcript using Python ---
+# Write the extraction script to a temp file to avoid heredoc-in-subshell issues
 TURN_DATA=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-  TURN_DATA=$(TRANSCRIPT="$TRANSCRIPT_PATH" python3 << 'PYEOF' 2>/dev/null || true)
+  PY_SCRIPT=$(mktemp /tmp/turn-extract-XXXXXX.py)
+  cat > "$PY_SCRIPT" << 'PYEOF'
 import json, sys, os
 
-transcript_path = os.environ['TRANSCRIPT']
+transcript_path = os.environ.get('TRANSCRIPT', '')
+if not transcript_path:
+    sys.exit(0)
 
-# Read all lines from the JSONL transcript
 entries = []
 with open(transcript_path, 'r') as f:
     for line in f:
@@ -103,10 +106,8 @@ with open(transcript_path, 'r') as f:
             except json.JSONDecodeError:
                 continue
 
-# Filter to user and assistant messages only
 messages = [e for e in entries if e.get('type') in ('user', 'assistant')]
 
-# Find the last user message that contains actual text (not just tool_results)
 last_prompt_idx = -1
 for i in range(len(messages) - 1, -1, -1):
     msg = messages[i]
@@ -122,7 +123,6 @@ for i in range(len(messages) - 1, -1, -1):
             last_prompt_idx = i
             break
 
-# Extract the user prompt text
 user_prompt = ""
 if last_prompt_idx >= 0:
     content = messages[last_prompt_idx].get('message', {}).get('content')
@@ -134,7 +134,6 @@ if last_prompt_idx >= 0:
             if isinstance(c, dict) and c.get('type') == 'text'
         )
 
-# Collect all tool_use blocks from assistant messages after the last user prompt
 tool_calls = []
 if last_prompt_idx >= 0:
     for msg in messages[last_prompt_idx + 1:]:
@@ -149,7 +148,6 @@ if last_prompt_idx >= 0:
             if block.get('type') == 'tool_use':
                 tool_calls.append(block)
 
-# Also collect tool_result blocks to get outcomes (success/error)
 tool_results = {}
 if last_prompt_idx >= 0:
     for msg in messages[last_prompt_idx + 1:]:
@@ -170,19 +168,15 @@ if last_prompt_idx >= 0:
                     result_content = result_content[:200]
                 tool_results[tid] = {'is_error': is_error, 'preview': str(result_content)[:200]}
 
-# Format each tool call into a readable line
 def shorten_path(p, max_len=60):
-    """Shorten file paths for display."""
     if not p or len(p) <= max_len:
         return p
-    parts = p.split('/')
-    # Try removing home prefix
     home = os.path.expanduser('~')
     if p.startswith(home):
         p = '~' + p[len(home):]
     if len(p) <= max_len:
         return p
-    # Show last 2 path components
+    parts = p.split('/')
     return '.../' + '/'.join(parts[-2:])
 
 def format_tool(tc):
@@ -203,7 +197,6 @@ def format_tool(tc):
                 range_str += f'-{(offset or 1) + limit}'
             range_str += ')'
         return f'📖 Read `{fp}`{range_str}{err_marker}'
-
     elif name == 'Edit':
         fp = shorten_path(inp.get('file_path', '?'))
         old_len = len(inp.get('old_string', ''))
@@ -211,72 +204,57 @@ def format_tool(tc):
         replace_all = inp.get('replace_all', False)
         ra = ' (all)' if replace_all else ''
         return f'✏️ Edit `{fp}` (-{old_len}/+{new_len} chars){ra}{err_marker}'
-
     elif name == 'Write':
         fp = shorten_path(inp.get('file_path', '?'))
         content_len = len(inp.get('content', ''))
         return f'📝 Write `{fp}` ({content_len} chars){err_marker}'
-
     elif name == 'Bash':
         cmd = inp.get('command', '?')
         desc = inp.get('description', '')
         bg = ' [bg]' if inp.get('run_in_background') else ''
         if desc:
             return f'⚡ Bash: {desc}{bg}{err_marker}'
-        # Truncate long commands
         if len(cmd) > 80:
             cmd = cmd[:77] + '...'
         return f'⚡ `{cmd}`{bg}{err_marker}'
-
     elif name == 'Grep':
         pattern = inp.get('pattern', '?')
         path = shorten_path(inp.get('path', '.'))
         mode = inp.get('output_mode', 'files')
         return f'🔍 Grep `{pattern}` in `{path}` ({mode}){err_marker}'
-
     elif name == 'Glob':
         pattern = inp.get('pattern', '?')
         path = shorten_path(inp.get('path', '.'))
         return f'📂 Glob `{pattern}` in `{path}`{err_marker}'
-
     elif name == 'Agent':
         desc = inp.get('description', inp.get('prompt', '?')[:60])
         atype = inp.get('subagent_type', 'general')
         bg = ' [bg]' if inp.get('run_in_background') else ''
         return f'🤖 Agent({atype}): {desc}{bg}{err_marker}'
-
     elif name == 'WebFetch':
         url = inp.get('url', '?')
         if len(url) > 60:
             url = url[:57] + '...'
         return f'🌐 Fetch `{url}`{err_marker}'
-
     elif name == 'WebSearch':
         query = inp.get('query', '?')
         return f'🔎 Search: {query}{err_marker}'
-
     elif name == 'Skill':
         skill = inp.get('skill', '?')
         return f'⚙️ Skill: /{skill}{err_marker}'
-
     elif name == 'TaskCreate':
         subj = inp.get('subject', '?')
         return f'📋 TaskCreate: {subj}{err_marker}'
-
     elif name == 'TaskUpdate':
-        tid = inp.get('taskId', '?')
+        ttid = inp.get('taskId', '?')
         status = inp.get('status', '')
-        return f'📋 TaskUpdate #{tid} → {status}{err_marker}'
-
+        return f'📋 TaskUpdate #{ttid} → {status}{err_marker}'
     elif name == 'SendMessage':
         to = inp.get('to', '?')
         summary = inp.get('summary', '')
         return f'💬 Msg → {to}: {summary}{err_marker}'
-
     elif name.startswith('mcp__'):
-        # MCP tool calls — show the tool name cleanly
         short_name = name.replace('mcp__', '').replace('__', '.')
-        # Extract a useful detail from input
         detail_keys = ['q', 'query', 'documentId', 'spreadsheetId', 'fileId', 'calendarId', 'messageId']
         detail = ''
         for k in detail_keys:
@@ -284,13 +262,11 @@ def format_tool(tc):
                 detail = f' ({k}={str(inp[k])[:40]})'
                 break
         return f'🔌 {short_name}{detail}{err_marker}'
-
     else:
         return f'🔧 {name}{err_marker}'
 
 activity_lines = [format_tool(tc) for tc in tool_calls]
 
-# Output as JSON for the shell to consume
 output = {
     'user_prompt': user_prompt,
     'activity': '\n'.join(activity_lines),
@@ -298,6 +274,8 @@ output = {
 }
 print(json.dumps(output))
 PYEOF
+  TURN_DATA=$(TRANSCRIPT="$TRANSCRIPT_PATH" python3 "$PY_SCRIPT" 2>/dev/null || true)
+  rm -f "$PY_SCRIPT"
 fi
 
 # Parse the Python output
@@ -382,7 +360,7 @@ if [ -n "$EXISTING_THREAD_ID" ]; then
 else
   # --- First turn: new top-level embed + create thread ---
 
-  TITLE=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //' | head -c 256)
+  TITLE=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //' | head -c 256 || true)
   if [ -z "$TITLE" ]; then
     TITLE="${PROJECT} -- ${TIMESTAMP}"
   fi
