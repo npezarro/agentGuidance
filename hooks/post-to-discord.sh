@@ -442,7 +442,13 @@ find "$THREAD_STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 # Sends a structured event to the centralDiscord bot's /ingest endpoint
 # so prompts reach #prompts and everything reaches #logging.
 # Failure is non-fatal — the existing webhook posting above is preserved.
-INGEST_URL="http://127.0.0.1:${HEALTH_PORT:-9090}/ingest"
+#
+# The health server binds to 127.0.0.1 on the VM, so we try local first
+# (works when CLI runs on the VM), then fall back to SSH (local PC → VM).
+INGEST_PORT="${HEALTH_PORT:-9090}"
+INGEST_URL="http://127.0.0.1:${INGEST_PORT}/ingest"
+VM_SSH_KEY="$HOME/.ssh/vm_key"
+VM_HOST="REDACTED_VM_USER@pezant.ca"
 
 INGEST_PAYLOAD=$(_EB_PROMPT="$USER_PROMPT" \
   _EB_ACTIVITY="$ACTIVITY" \
@@ -476,11 +482,24 @@ if [ -n "$INGEST_PAYLOAD" ]; then
   if [ -n "${INGEST_SECRET:-}" ]; then
     _AUTH_HEADER="Authorization: Bearer ${INGEST_SECRET}"
   fi
+
+  # Try localhost first (works when running on the VM itself)
+  _INGEST_OK=0
   curl -s -X POST "$INGEST_URL" \
     -H "Content-Type: application/json" \
     ${_AUTH_HEADER:+-H "$_AUTH_HEADER"} \
     -d "$INGEST_PAYLOAD" \
-    --max-time 5 -o /dev/null 2>/dev/null || true
+    --max-time 3 -o /dev/null 2>/dev/null && _INGEST_OK=1
+
+  # If local failed and SSH key exists, relay via SSH to the VM
+  # Pipes payload via stdin to avoid shell-escaping issues with arbitrary content
+  if [ "$_INGEST_OK" -eq 0 ] && [ -f "$VM_SSH_KEY" ]; then
+    echo "$INGEST_PAYLOAD" | ssh -i "$VM_SSH_KEY" -o StrictHostKeyChecking=no \
+      -o ConnectTimeout=5 -o BatchMode=yes "$VM_HOST" \
+      "curl -s -X POST 'http://127.0.0.1:${INGEST_PORT}/ingest' \
+        -H 'Content-Type: application/json' \
+        --max-time 5 -o /dev/null -d @-" 2>/dev/null || true
+  fi
 fi
 
 exit 0
