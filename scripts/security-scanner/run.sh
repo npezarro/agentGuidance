@@ -110,7 +110,7 @@ fi
 
 RESULT=$(grep -m1 '"type":"result"' "$RUN_LOG" 2>/dev/null \
   | jq -r '.result // "No result extracted"' 2>/dev/null \
-  | head -c 4000 \
+  | head -c 16000 \
   || echo "No result extracted")
 
 COST=$(grep '"type":"result"' "$RUN_LOG" 2>/dev/null \
@@ -155,12 +155,17 @@ fi
 post_to_discord() {
   local webhook="$1" msg="$2"
   [ -z "$webhook" ] && return 0
-  msg="${msg:0:1990}"
-  local payload
-  payload=$(jq -n --arg content "$msg" '{"username": "Security Scanner", "content": $content}')
-  curl -s -X POST "$webhook" \
-    -H "Content-Type: application/json" \
-    -d "$payload" > /dev/null 2>&1 || true
+  # Chunk messages at 1990 chars to stay under Discord's 2000 char limit
+  while [ -n "$msg" ]; do
+    local chunk="${msg:0:1990}"
+    msg="${msg:1990}"
+    local payload
+    payload=$(jq -n --arg content "$chunk" '{"username": "Security Scanner", "content": $content}')
+    curl -s -X POST "$webhook" \
+      -H "Content-Type: application/json" \
+      -d "$payload" > /dev/null 2>&1 || true
+    [ -n "$msg" ] && sleep 1
+  done
 }
 
 if [ -z "$SECURITY_RISKS_WEBHOOK" ]; then
@@ -183,7 +188,7 @@ if [ $EXIT_CODE -eq 0 ]; then
 **Critical:** $CRITICAL_COUNT | **High:** $HIGH_COUNT | **Medium:** $MEDIUM_COUNT | **Low:** $LOW_COUNT
 **Cost:** $COST | **Repos scanned:** $REPO_COUNT
 
-${RESULT:0:1400}"
+$RESULT"
   else
     post_to_discord "$SECURITY_RISKS_WEBHOOK" "✅ **Security Scan #$RUN_NUMBER** ($DATE_TAG) — **All clear**
 
@@ -199,19 +204,10 @@ fi
 
 # ── Email alert for critical/high findings ───────────────────────────
 
-if [ "$GMAIL_ALERT_ENABLED" = "true" ] && { [ "$CRITICAL_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ]; }; then
-  CRITICAL_FINDINGS=$(echo "$RESULT" | sed -n '/SEVERITY: critical/,/^---/p' | head -60)
-  HIGH_FINDINGS=$(echo "$RESULT" | sed -n '/SEVERITY: high/,/^---/p' | head -60)
-
+if [ "$GMAIL_ALERT_ENABLED" = "true" ] && [ "$TOTAL_FINDINGS" -gt 0 ]; then
   EMAIL_BODY="Security scan #$RUN_NUMBER ($DATE_TAG) found sensitive data in your public repositories.
 
-## Critical Findings ($CRITICAL_COUNT)
-
-$CRITICAL_FINDINGS
-
-## High Findings ($HIGH_COUNT)
-
-$HIGH_FINDINGS
+$RESULT
 
 ---
 

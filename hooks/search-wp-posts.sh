@@ -11,10 +11,17 @@ set -euo pipefail
 QUERY="${1:-}"
 MAX="${2:-10}"
 
-VM_HOST="REDACTED_IP"
-VM_USER="npezarro"
-SSH_KEY="$HOME/.ssh/vm_key"
-WP_PATH="/var/www/REDACTED_PATH"  # adjust if WP is installed elsewhere
+# Infrastructure config — sourced from environment or ~/.config/agent-guidance/.env
+AG_ENV_FILE="${AG_ENV_FILE:-$HOME/.config/agent-guidance/.env}"
+if [ -f "$AG_ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$AG_ENV_FILE"
+fi
+
+VM_HOST="${AG_VM_HOST:?AG_VM_HOST not set — see .env.example}"
+VM_USER="${AG_VM_USER:?AG_VM_USER not set — see .env.example}"
+SSH_KEY="${AG_SSH_KEY:-$HOME/.ssh/vm_key}"
+WP_PATH="${AG_WP_PATH:-/var/www/REDACTED_PATH}"
 
 # --- Try SSH + WP-CLI first ---
 try_wp_cli() {
@@ -57,7 +64,7 @@ try_rest_api() {
     return 1
   fi
 
-  local WP_SITE="${WP_SITE:-https://pezant.ca}"
+  local WP_SITE="${AG_WP_SITE:-https://${AG_VM_HOST}}"
   local WP_API="${WP_SITE}/wp-json/wp/v2/posts"
   local AUTH
   AUTH=$(echo -n "${WP_USER}:${WP_APP_PASSWORD}" | base64)
@@ -99,6 +106,6 @@ elif result=$(try_rest_api 2>/dev/null) && [ -n "$result" ]; then
   echo "$result"
 else
   echo "Could not connect to WordPress. Tried SSH+WP-CLI and REST API."
-  echo "Ensure SSH key exists at $SSH_KEY or WP credentials are in ~/.env"
+  echo "Check ~/.config/agent-guidance/.env or see .env.example for required variables."
   exit 1
 fi
