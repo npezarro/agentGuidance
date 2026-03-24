@@ -32,18 +32,15 @@ fi
 # --- Bot token (needed for thread creation) ---
 BOT_TOKEN_CACHE="$HOME/.cache/discord-bot-token"
 _get_bot_token() {
+  if [ -n "${DISCORD_BOT_TOKEN:-}" ]; then
+    echo "$DISCORD_BOT_TOKEN"
+    return
+  fi
   if [ -f "$BOT_TOKEN_CACHE" ]; then
     cat "$BOT_TOKEN_CACHE"
     return
   fi
-  local token
-  token=$(ssh REDACTED_HOST 'grep -oP "DISCORD_BOT_TOKEN=\K.*" /home/REDACTED_USER/discord-bot/.env' 2>/dev/null) || true
-  if [ -n "$token" ]; then
-    mkdir -p "$(dirname "$BOT_TOKEN_CACHE")"
-    echo "$token" > "$BOT_TOKEN_CACHE"
-    chmod 600 "$BOT_TOKEN_CACHE"
-    echo "$token"
-  fi
+  return 1
 }
 
 # --- Thread state directory ---
