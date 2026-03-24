@@ -8,7 +8,7 @@ set -euo pipefail
 echo "=== Session Start ==="
 
 # 1. Check if local agentGuidance repo is current
-REPO_DIR="/home/REDACTED_USER/agentGuidance"
+REPO_DIR="${AG_REPO_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 if [ -d "$REPO_DIR/.git" ]; then
     BEHIND=$(git -C "$REPO_DIR" rev-list HEAD..origin/main --count 2>/dev/null || echo "?")
     if [ "$BEHIND" = "0" ]; then
