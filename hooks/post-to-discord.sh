@@ -96,8 +96,8 @@ LAST_ASSISTANT_MSG=$(echo "$LAST_ASSISTANT_MSG" | redact_sensitive)
 USER_PROMPT=$(echo "$USER_PROMPT" | redact_sensitive)
 
 # Truncate prompt for embed field (Discord field value limit: 1024 chars)
-if [ ${#USER_PROMPT} -gt 200 ]; then
-  USER_PROMPT="${USER_PROMPT:0:197}..."
+if [ ${#USER_PROMPT} -gt 1000 ]; then
+  USER_PROMPT="${USER_PROMPT:0:997}..."
 fi
 
 # --- Threading logic ---
