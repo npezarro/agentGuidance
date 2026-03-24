@@ -21,7 +21,7 @@ fi
 VM_HOST="${AG_VM_HOST:?AG_VM_HOST not set — see .env.example}"
 VM_USER="${AG_VM_USER:?AG_VM_USER not set — see .env.example}"
 SSH_KEY="${AG_SSH_KEY:-$HOME/.ssh/vm_key}"
-WP_PATH="${AG_WP_PATH:-/var/www/REDACTED_PATH}"
+WP_PATH="${AG_WP_PATH:-/var/www/html}"
 
 # --- Try SSH + WP-CLI first ---
 try_wp_cli() {
