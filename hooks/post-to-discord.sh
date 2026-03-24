@@ -438,4 +438,49 @@ fi
 # Clean up stale thread files (older than 7 days)
 find "$THREAD_STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 
+# ── POST to bot event bus (if running) ────────────────────────────
+# Sends a structured event to the discord-bot bot's /ingest endpoint
+# so prompts reach #prompts and everything reaches #logging.
+# Failure is non-fatal — the existing webhook posting above is preserved.
+INGEST_URL="http://127.0.0.1:${HEALTH_PORT:-9090}/ingest"
+
+INGEST_PAYLOAD=$(_EB_PROMPT="$USER_PROMPT" \
+  _EB_ACTIVITY="$ACTIVITY" \
+  _EB_TOOL_COUNT="$TOOL_COUNT" \
+  _EB_RESPONSE="$LAST_ASSISTANT_MSG" \
+  _EB_PROJECT="$PROJECT" \
+  _EB_SESSION="$SESSION_ID" \
+  _EB_CWD="$CWD" \
+  python3 -c "
+import json, os
+payload = {
+    'source': 'cli',
+    'type': 'interaction',
+    'content': {
+        'user_prompt': os.environ.get('_EB_PROMPT', ''),
+        'activity': os.environ.get('_EB_ACTIVITY', ''),
+        'tool_count': int(os.environ.get('_EB_TOOL_COUNT', '0')),
+        'response': os.environ.get('_EB_RESPONSE', '')[:4000]
+    },
+    'metadata': {
+        'project': os.environ.get('_EB_PROJECT', ''),
+        'session_id': os.environ.get('_EB_SESSION', ''),
+        'cwd': os.environ.get('_EB_CWD', '')
+    }
+}
+print(json.dumps(payload))
+" 2>/dev/null) || true
+
+if [ -n "$INGEST_PAYLOAD" ]; then
+  _AUTH_HEADER=""
+  if [ -n "${INGEST_SECRET:-}" ]; then
+    _AUTH_HEADER="Authorization: Bearer ${INGEST_SECRET}"
+  fi
+  curl -s -X POST "$INGEST_URL" \
+    -H "Content-Type: application/json" \
+    ${_AUTH_HEADER:+-H "$_AUTH_HEADER"} \
+    -d "$INGEST_PAYLOAD" \
+    --max-time 5 -o /dev/null 2>/dev/null || true
+fi
+
 exit 0
