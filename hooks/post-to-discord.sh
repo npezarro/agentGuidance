@@ -7,6 +7,11 @@
 #   - First turn of a session: new top-level embed + thread
 #   - Subsequent turns in same session: reply inside the thread
 #   - State persisted in ~/.cache/discord-threads/<session_id>
+#
+# Rich logging:
+#   - Extracts tool calls (Read, Edit, Bash, Grep, Glob, Write, Agent, etc.)
+#     from the transcript and formats them as an activity log between
+#     the user prompt and the assistant response.
 
 set -euo pipefail
 
@@ -79,21 +84,236 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // "unknown"')
 PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
-# Extract the last user prompt from transcript
-USER_PROMPT=""
+# --- Extract rich turn data from transcript using Python ---
+TURN_DATA=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-  USER_PROMPT=$(jq -rs '
-    [.[] | select(.type == "user")] | last |
-    if .message.content | type == "string" then .message.content
-    elif .message.content | type == "array" then
-      [.message.content[] | select(.type == "text") | .text] | join("\n")
-    else empty end // empty
-  ' "$TRANSCRIPT_PATH" 2>/dev/null || true)
+  TURN_DATA=$(TRANSCRIPT="$TRANSCRIPT_PATH" python3 << 'PYEOF' 2>/dev/null || true)
+import json, sys, os
+
+transcript_path = os.environ['TRANSCRIPT']
+
+# Read all lines from the JSONL transcript
+entries = []
+with open(transcript_path, 'r') as f:
+    for line in f:
+        line = line.strip()
+        if line:
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+# Filter to user and assistant messages only
+messages = [e for e in entries if e.get('type') in ('user', 'assistant')]
+
+# Find the last user message that contains actual text (not just tool_results)
+last_prompt_idx = -1
+for i in range(len(messages) - 1, -1, -1):
+    msg = messages[i]
+    if msg.get('type') != 'user':
+        continue
+    content = msg.get('message', {}).get('content')
+    if isinstance(content, str):
+        last_prompt_idx = i
+        break
+    if isinstance(content, list):
+        has_text = any(c.get('type') == 'text' for c in content if isinstance(c, dict))
+        if has_text:
+            last_prompt_idx = i
+            break
+
+# Extract the user prompt text
+user_prompt = ""
+if last_prompt_idx >= 0:
+    content = messages[last_prompt_idx].get('message', {}).get('content')
+    if isinstance(content, str):
+        user_prompt = content
+    elif isinstance(content, list):
+        user_prompt = "\n".join(
+            c.get('text', '') for c in content
+            if isinstance(c, dict) and c.get('type') == 'text'
+        )
+
+# Collect all tool_use blocks from assistant messages after the last user prompt
+tool_calls = []
+if last_prompt_idx >= 0:
+    for msg in messages[last_prompt_idx + 1:]:
+        if msg.get('type') != 'assistant':
+            continue
+        content = msg.get('message', {}).get('content')
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get('type') == 'tool_use':
+                tool_calls.append(block)
+
+# Also collect tool_result blocks to get outcomes (success/error)
+tool_results = {}
+if last_prompt_idx >= 0:
+    for msg in messages[last_prompt_idx + 1:]:
+        content = msg.get('message', {}).get('content')
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get('type') == 'tool_result':
+                tid = block.get('tool_use_id', '')
+                is_error = block.get('is_error', False)
+                result_content = block.get('content', '')
+                if isinstance(result_content, list):
+                    result_content = ' '.join(
+                        c.get('text', '')[:200] for c in result_content
+                        if isinstance(c, dict) and c.get('type') == 'text'
+                    )
+                elif isinstance(result_content, str):
+                    result_content = result_content[:200]
+                tool_results[tid] = {'is_error': is_error, 'preview': str(result_content)[:200]}
+
+# Format each tool call into a readable line
+def shorten_path(p, max_len=60):
+    """Shorten file paths for display."""
+    if not p or len(p) <= max_len:
+        return p
+    parts = p.split('/')
+    # Try removing home prefix
+    home = os.path.expanduser('~')
+    if p.startswith(home):
+        p = '~' + p[len(home):]
+    if len(p) <= max_len:
+        return p
+    # Show last 2 path components
+    return '.../' + '/'.join(parts[-2:])
+
+def format_tool(tc):
+    name = tc.get('name', '?')
+    inp = tc.get('input', {})
+    tid = tc.get('id', '')
+    result = tool_results.get(tid, {})
+    err_marker = ' **ERR**' if result.get('is_error') else ''
+
+    if name == 'Read':
+        fp = shorten_path(inp.get('file_path', '?'))
+        offset = inp.get('offset', '')
+        limit = inp.get('limit', '')
+        range_str = ''
+        if offset or limit:
+            range_str = f' (L{offset or 1}'
+            if limit:
+                range_str += f'-{(offset or 1) + limit}'
+            range_str += ')'
+        return f'📖 Read `{fp}`{range_str}{err_marker}'
+
+    elif name == 'Edit':
+        fp = shorten_path(inp.get('file_path', '?'))
+        old_len = len(inp.get('old_string', ''))
+        new_len = len(inp.get('new_string', ''))
+        replace_all = inp.get('replace_all', False)
+        ra = ' (all)' if replace_all else ''
+        return f'✏️ Edit `{fp}` (-{old_len}/+{new_len} chars){ra}{err_marker}'
+
+    elif name == 'Write':
+        fp = shorten_path(inp.get('file_path', '?'))
+        content_len = len(inp.get('content', ''))
+        return f'📝 Write `{fp}` ({content_len} chars){err_marker}'
+
+    elif name == 'Bash':
+        cmd = inp.get('command', '?')
+        desc = inp.get('description', '')
+        bg = ' [bg]' if inp.get('run_in_background') else ''
+        if desc:
+            return f'⚡ Bash: {desc}{bg}{err_marker}'
+        # Truncate long commands
+        if len(cmd) > 80:
+            cmd = cmd[:77] + '...'
+        return f'⚡ `{cmd}`{bg}{err_marker}'
+
+    elif name == 'Grep':
+        pattern = inp.get('pattern', '?')
+        path = shorten_path(inp.get('path', '.'))
+        mode = inp.get('output_mode', 'files')
+        return f'🔍 Grep `{pattern}` in `{path}` ({mode}){err_marker}'
+
+    elif name == 'Glob':
+        pattern = inp.get('pattern', '?')
+        path = shorten_path(inp.get('path', '.'))
+        return f'📂 Glob `{pattern}` in `{path}`{err_marker}'
+
+    elif name == 'Agent':
+        desc = inp.get('description', inp.get('prompt', '?')[:60])
+        atype = inp.get('subagent_type', 'general')
+        bg = ' [bg]' if inp.get('run_in_background') else ''
+        return f'🤖 Agent({atype}): {desc}{bg}{err_marker}'
+
+    elif name == 'WebFetch':
+        url = inp.get('url', '?')
+        if len(url) > 60:
+            url = url[:57] + '...'
+        return f'🌐 Fetch `{url}`{err_marker}'
+
+    elif name == 'WebSearch':
+        query = inp.get('query', '?')
+        return f'🔎 Search: {query}{err_marker}'
+
+    elif name == 'Skill':
+        skill = inp.get('skill', '?')
+        return f'⚙️ Skill: /{skill}{err_marker}'
+
+    elif name == 'TaskCreate':
+        subj = inp.get('subject', '?')
+        return f'📋 TaskCreate: {subj}{err_marker}'
+
+    elif name == 'TaskUpdate':
+        tid = inp.get('taskId', '?')
+        status = inp.get('status', '')
+        return f'📋 TaskUpdate #{tid} → {status}{err_marker}'
+
+    elif name == 'SendMessage':
+        to = inp.get('to', '?')
+        summary = inp.get('summary', '')
+        return f'💬 Msg → {to}: {summary}{err_marker}'
+
+    elif name.startswith('mcp__'):
+        # MCP tool calls — show the tool name cleanly
+        short_name = name.replace('mcp__', '').replace('__', '.')
+        # Extract a useful detail from input
+        detail_keys = ['q', 'query', 'documentId', 'spreadsheetId', 'fileId', 'calendarId', 'messageId']
+        detail = ''
+        for k in detail_keys:
+            if k in inp:
+                detail = f' ({k}={str(inp[k])[:40]})'
+                break
+        return f'🔌 {short_name}{detail}{err_marker}'
+
+    else:
+        return f'🔧 {name}{err_marker}'
+
+activity_lines = [format_tool(tc) for tc in tool_calls]
+
+# Output as JSON for the shell to consume
+output = {
+    'user_prompt': user_prompt,
+    'activity': '\n'.join(activity_lines),
+    'tool_count': len(tool_calls),
+}
+print(json.dumps(output))
+PYEOF
+fi
+
+# Parse the Python output
+USER_PROMPT=""
+ACTIVITY=""
+TOOL_COUNT=0
+if [ -n "$TURN_DATA" ]; then
+  USER_PROMPT=$(echo "$TURN_DATA" | jq -r '.user_prompt // empty')
+  ACTIVITY=$(echo "$TURN_DATA" | jq -r '.activity // empty')
+  TOOL_COUNT=$(echo "$TURN_DATA" | jq -r '.tool_count // 0')
 fi
 
 # Redact sensitive info
 LAST_ASSISTANT_MSG=$(echo "$LAST_ASSISTANT_MSG" | redact_sensitive)
 USER_PROMPT=$(echo "$USER_PROMPT" | redact_sensitive)
+ACTIVITY=$(echo "$ACTIVITY" | redact_sensitive)
 
 # Truncate prompt for embed field (Discord field value limit: 1024 chars)
 if [ ${#USER_PROMPT} -gt 1000 ]; then
@@ -107,14 +327,32 @@ if [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ]; then
   EXISTING_THREAD_ID=$(cat "$THREAD_FILE")
 fi
 
-MAX_EMBED_DESC=3900
-RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
-OVERFLOW=""
+# Build the full turn message with activity log
+build_turn_message() {
+  local prompt="$1"
+  local activity="$2"
+  local response="$3"
+  local tool_count="$4"
+  local msg=""
 
-if [ ${#LAST_ASSISTANT_MSG} -gt $MAX_EMBED_DESC ]; then
-  RESPONSE_DISPLAY="${LAST_ASSISTANT_MSG:0:$MAX_EMBED_DESC}..."
-  OVERFLOW="${LAST_ASSISTANT_MSG:$MAX_EMBED_DESC}"
-fi
+  msg="**Prompt:** ${prompt:-(none)}"
+
+  if [ -n "$activity" ] && [ "$tool_count" -gt 0 ]; then
+    msg="${msg}
+
+**Activity** (${tool_count} tool calls):
+${activity}"
+  fi
+
+  msg="${msg}
+
+**Response:**
+${response}"
+
+  echo "$msg"
+}
+
+FULL_TURN_MSG=$(build_turn_message "$USER_PROMPT" "$ACTIVITY" "$LAST_ASSISTANT_MSG" "$TOOL_COUNT")
 
 # --- Helper: post chunked text to a thread via webhook ---
 post_to_thread() {
@@ -123,7 +361,7 @@ post_to_thread() {
   local remaining="$text"
   local chunk_num=0
 
-  while [ -n "$remaining" ] && [ $chunk_num -lt 5 ]; do
+  while [ -n "$remaining" ] && [ $chunk_num -lt 10 ]; do
     local chunk="${remaining:0:1990}"
     remaining="${remaining:1990}"
     chunk_num=$((chunk_num + 1))
@@ -138,16 +376,8 @@ post_to_thread() {
 }
 
 if [ -n "$EXISTING_THREAD_ID" ]; then
-  # --- Subsequent turn: post into existing thread ---
-  THREAD_MSG="**Prompt:** ${USER_PROMPT:-(none)}
-
-${RESPONSE_DISPLAY}"
-
-  post_to_thread "$EXISTING_THREAD_ID" "$THREAD_MSG"
-
-  if [ -n "$OVERFLOW" ]; then
-    post_to_thread "$EXISTING_THREAD_ID" "$OVERFLOW"
-  fi
+  # --- Subsequent turn: post full turn into existing thread ---
+  post_to_thread "$EXISTING_THREAD_ID" "$FULL_TURN_MSG"
 
 else
   # --- First turn: new top-level embed + create thread ---
@@ -157,9 +387,24 @@ else
     TITLE="${PROJECT} -- ${TIMESTAMP}"
   fi
 
+  # For the embed, show response only (activity goes in thread)
+  MAX_EMBED_DESC=3900
+  RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
+  if [ ${#LAST_ASSISTANT_MSG} -gt $MAX_EMBED_DESC ]; then
+    RESPONSE_DISPLAY="${LAST_ASSISTANT_MSG:0:$MAX_EMBED_DESC}..."
+  fi
+
   FIELDS="[]"
   if [ -n "$USER_PROMPT" ]; then
     FIELDS=$(jq -n --arg prompt "$USER_PROMPT" '[{"name": "Prompt", "value": $prompt, "inline": false}]')
+  fi
+  if [ -n "$ACTIVITY" ] && [ "$TOOL_COUNT" -gt 0 ]; then
+    # Truncate activity for embed field (1024 char limit)
+    ACTIVITY_FIELD="$ACTIVITY"
+    if [ ${#ACTIVITY_FIELD} -gt 1000 ]; then
+      ACTIVITY_FIELD="${ACTIVITY_FIELD:0:997}..."
+    fi
+    FIELDS=$(echo "$FIELDS" | jq --arg act "$ACTIVITY_FIELD" --arg tc "$TOOL_COUNT" '. + [{"name": ("Activity (" + $tc + " tools)"), "value": $act, "inline": false}]')
   fi
   FIELDS=$(echo "$FIELDS" | jq --arg proj "$PROJECT" --arg sid "${SESSION_ID:0:8}" '. + [{"name": "Project", "value": $proj, "inline": true}, {"name": "Session", "value": $sid, "inline": true}]')
 
@@ -206,35 +451,11 @@ else
 
         if [ -n "$NEW_THREAD_ID" ]; then
           echo "$NEW_THREAD_ID" > "$THREAD_FILE"
+
+          # Post the full turn (with activity) as the first thread message
+          post_to_thread "$NEW_THREAD_ID" "$FULL_TURN_MSG"
         fi
       fi
-    fi
-  fi
-
-  # Post overflow into the thread (or channel if no thread was created)
-  if [ -n "$OVERFLOW" ]; then
-    OVERFLOW_THREAD_ID=""
-    [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ] && OVERFLOW_THREAD_ID=$(cat "$THREAD_FILE")
-
-    if [ -n "$OVERFLOW_THREAD_ID" ]; then
-      post_to_thread "$OVERFLOW_THREAD_ID" "$OVERFLOW"
-    else
-      # Fallback: post to channel if thread creation failed
-      CHUNK_SIZE=1990
-      REMAINING="$OVERFLOW"
-      CHUNK_NUM=0
-      while [ -n "$REMAINING" ] && [ $CHUNK_NUM -lt 3 ]; do
-        CHUNK="${REMAINING:0:$CHUNK_SIZE}"
-        REMAINING="${REMAINING:$CHUNK_SIZE}"
-        CHUNK_NUM=$((CHUNK_NUM + 1))
-
-        sleep 0.5
-        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
-          -H "Content-Type: application/json" \
-          -d "$(python3 -c "import json,sys; print(json.dumps({'username': 'Claude Agent', 'content': sys.argv[1]}))" "$CHUNK")" \
-          -o /dev/null \
-          --max-time 10 2>/dev/null || true
-      done
     fi
   fi
 fi
