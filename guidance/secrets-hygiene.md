@@ -72,10 +72,28 @@ When documenting internal systems in a public repo:
 - Keep incident details focused on the **lesson**, not the infrastructure layout
 - If specifics are needed, put them in a private repo or local notes
 
+## History Rewriting — Collateral Damage
+
+`git filter-repo` replaces strings across **all commits including the current working tree**. This causes collateral damage when the replacement is too broad:
+
+- A replacement for `/var/www/html` will also hit `.env.example` defaults, inline comments, and config fallbacks — even though the path itself isn't a secret (it's a standard Apache default).
+- A replacement for a username in paths (e.g., `/home/someuser/`) will break any SSH fallback or token-fetch command that references that path, even in scripts that are otherwise fine.
+
+**After any history rewrite:**
+1. Diff the working tree against what you expect — `git diff HEAD` should be empty, but check for REDACTED_ artifacts in non-secret locations.
+2. Run every script that changed. Syntax checks (`bash -n`) catch parse errors but not broken runtime behavior.
+3. Check that gitignored files (`.env`, caches, state files) survived — `git reset --hard` and `git filter-repo` both wipe untracked/ignored files. Re-deploy them.
+4. Verify on every machine the repo is cloned to (local + VM). A hard reset on the VM to match the rewritten remote will wipe gitignored `.env` files there too.
+
+**Scope replacements narrowly.** Replace the full string (e.g., the complete webhook URL) rather than substrings that appear in innocent contexts (e.g., a username that's also part of standard paths).
+
 ## When a Secret is Accidentally Committed
 
 1. **Rotate immediately** — the secret is compromised the moment it's pushed
 2. **Rewrite history** — `git filter-repo` to remove from all commits
 3. **Force-push** — update the remote
-4. **Check GitHub cache** — PRs, issues, and cached pages may still show the secret
-5. **Verify** — `git log --all -p | grep <secret>` should return 0 matches
+4. **Verify the rewrite** — `git log --all -p | grep <secret>` should return 0 matches
+5. **Check for collateral** — grep for `REDACTED_` in the working tree; fix any unintended replacements
+6. **Restore gitignored files** — `.env` files, caches, and state files are wiped by history rewrites and hard resets; re-deploy them to all machines
+7. **Re-verify functionality** — run every affected script on every machine (local + VM); don't trust syntax checks alone
+8. **Check GitHub cache** — PRs, issues, and cached pages may still show the secret
