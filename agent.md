@@ -30,7 +30,7 @@ npx jest             # tests (when present)
 **This is a top priority.** When a session produces a learning, correction, process change, or new convention, it must be captured in version-controlled guidance before the session ends. Learnings that stay only in conversation context are lost.
 - **Cross-project learnings** (process, conventions, tooling): update `agentGuidance` (agent.md for core rules, or the appropriate `guidance/*.md` file for detailed procedures).
 - **Project-specific learnings** (architecture decisions, gotchas, environment quirks): update that project's `CLAUDE.md`, `context.md`, or a relevant doc in the repo.
-- **If the owner corrects your approach or gives feedback that should apply going forward**, codify it immediately. Don't just acknowledge it for this session.
+- **If the owner corrects your approach or gives feedback that should apply going forward**, codify it immediately in both places: (1) save to Claude Code memory (`~/.claude/projects/*/memory/`) so it persists across conversations, and (2) update the appropriate `agentGuidance` file so all agents pick it up. Don't just acknowledge it for this session.
 - When in doubt about where a learning belongs, prefer `agentGuidance` (it's read by all sessions) over project-local files.
 
 ## Planning & Execution
@@ -43,6 +43,7 @@ npx jest             # tests (when present)
 - **Always push to GitHub.** When working on code or producing written materials, commit and push to the relevant repo. The remote is the source of truth.
 - **Track prep in the pipeline.** When producing application materials for a role: (1) create a prep file in `assortedLLMTasks/applications/` with experience mapping, STAR stories, interview questions, cover letter, referral blurb, and outreach draft; (2) create a company folder (e.g., `applications/adobe/`) with tailored resume and cover letter as both markdown and PDF, named `Resume - Company, Role Title` and `Cover Letter - Company, Role Title`; (3) include resume tweak notes explaining what was changed and why for each role; (4) push to GitHub; (5) append the role to the Job Data tab in the Google Sheet (see `privateContext/infrastructure.md`) with a link in the "Application Materials" column. Use the latest dated resume in `resumes/` as the baseline. Convert to PDF via `pandoc file.md -o file.pdf --pdf-engine=pdflatex -V geometry:margin=0.75in -V fontsize=10pt -V linkcolor=blue`.
 - **No external posting without explicit instruction.** Never post, submit, register, or publish to external sites or APIs unless the user explicitly asks. Building features that *could* post is fine; actually calling endpoints is not.
+- **Research/analysis output goes to `assortedLLMTasks/tasks/`.** When a task produces a written deliverable (not code), save it as a dated markdown file: `~/repos/assortedLLMTasks/tasks/YYYY-MM-DD-topic-slug.md`. Push to GitHub.
 
 ## Batching & Checkpointing
 Large tasks (processing many files, writing long documents, multi-step deployments) are the #1 cause of crashes and lost work.
