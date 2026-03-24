@@ -108,6 +108,15 @@ Claude Cowork sessions are tracked in `~/repos/my-claude-cowork` (private repo).
 - **Instructions for Cowork:** `my-claude-cowork/cowork-instructions-global.md` (paste into claude.ai global custom instructions)
 - **Sync to Discord + GitHub:** `my-claude-cowork/scripts/sync-latest.sh`
 
+## Cowork Reporting
+
+Claude Cowork sessions are tracked in `~/repos/my-claude-cowork` (private repo). Cowork produces structured session log artifacts; local scripts sync them to Discord `#cowork` and the GitHub repo.
+
+- **Session logs:** `my-claude-cowork/sessions/YYYY-MM-DD/{slug}.md`
+- **Instructions for Cowork:** `my-claude-cowork/cowork-instructions.md` (paste into claude.ai project settings)
+- **Sync to Discord + GitHub:** `my-claude-cowork/scripts/sync-latest.sh`
+- **TaskCompleted hook** in `~/.claude/settings.json` posts CLI task completions to `#cowork` automatically
+
 ## Private Context Repository
 
 A private companion repo exists at `~/repos/privateContext` with sensitive information that should not be in this public repo. **Consult it when you need:**
