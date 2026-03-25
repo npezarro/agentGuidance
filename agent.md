@@ -200,3 +200,4 @@ Load these on-demand based on the current task:
 - `guidance/wordpress-auto-posting.md` -- WordPress hook setup
 - `guidance/auth-basepath.md` -- authentication and base path patterns
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
+- `guidance/browser-page-reader.md` -- page-reader CLI for JS-heavy page content extraction
