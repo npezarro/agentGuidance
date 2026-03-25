@@ -195,3 +195,13 @@ Load these on-demand based on the current task:
 - `guidance/browser-page-reader.md` -- page-reader CLI for JS-heavy page content extraction
 - `guidance/secrets-hygiene.md` -- secret rotation, history rewrite, detection patterns
 - `guidance/job-pipeline.md` -- application materials, resume tailoring, PDF conversion
+- `guidance/agent-journal.md` -- async cross-session journal system
+
+## Agent Journal
+
+Post observations, unfinished work, and suggestions for future sessions:
+```bash
+~/repos/privateContext/journal-post.sh "<category>" "<entry text>"
+# Categories: observation, half-done, suggestion, blocker, discovery
+```
+Recent journal entries appear at session start. See `guidance/agent-journal.md` for details.
