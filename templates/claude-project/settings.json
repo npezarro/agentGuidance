@@ -16,16 +16,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'I=$(cat); F=$(mktemp); trap \"rm -f $F\" EXIT; curl -sf --max-time 5 https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/post-to-wordpress.sh -o \"$F\" && printf \"%s\" \"$I\" | bash \"$F\"; exit 0'",
+            "command": "bash -c 'I=$(cat); F=$(mktemp); trap \"rm -f $F\" EXIT; curl -sf --max-time 5 https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/post-to-discord.sh -o \"$F\" && printf \"%s\" \"$I\" | bash \"$F\"; exit 0'",
             "timeout": 15000
-          }
-        ]
-      },
-      {
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "bash -c 'I=$(cat); F=$(mktemp); trap \"rm -f $F\" EXIT; curl -sf --max-time 5 https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/post-to-discord.sh -o \"$F\" && printf \"%s\" \"$I\" | bash \"$F\"; exit 0'",
+            "command": "bash -c 'I=$(cat); F=$(mktemp); trap \"rm -f $F\" EXIT; curl -sf --max-time 5 https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/post-closeout.sh -o \"$F\" && printf \"%s\" \"$I\" | bash \"$F\"; exit 0'",
             "timeout": 15000
           }
         ]
