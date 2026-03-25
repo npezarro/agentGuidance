@@ -10,6 +10,13 @@ A CLI utility that loads URLs in a headless Chromium browser with full JavaScrip
 - **Any page where WebFetch or Cheerio returns incomplete/broken content** because the page relies on client-side rendering
 - **Getting full visible text** from a page for analysis
 
+## CRITICAL: Use page-reader, NOT WebFetch, for Link Liveness Checks
+**WebFetch cannot determine if a JS-rendered page is live or closed.** Google Careers, Workday, Greenhouse, and most modern job boards are SPAs that render via JavaScript. WebFetch returns raw HTML without executing JS, so every page looks "empty" — leading to false "closed" results. This has caused full-session wasted work.
+
+**For bulk URL checks:** Use `curl + data-attribute parsing` as a fast first pass (e.g., Google Careers embeds `data-title="undefined"` for closed jobs), then use page-reader for ambiguous results. **Always test your detection method on 1 known-live, 1 known-dead, and 1 fake URL before running a bulk check.**
+
+**Never delegate link-checking to sub-agents using WebFetch** — they'll hit the same SPA rendering wall. Use page-reader or curl in the main thread.
+
 ## When NOT to Use It
 - Static HTML pages where WebFetch works fine
 - Pages you need to interact with (click, fill forms, navigate); use the Playwright MCP for those
