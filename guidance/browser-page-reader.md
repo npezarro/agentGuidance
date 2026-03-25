@@ -24,7 +24,7 @@ A CLI utility that loads URLs in a headless Chromium browser with full JavaScrip
 
 ## Where It Lives
 - **Local (WSL):** `~/repos/page-reader/`
-- **VM:** `~/repos/page-reader/`
+- **VM:** `~/page-reader/` (home dir is `/home/REDACTED_VM_USER/`)
 
 ## Usage
 
