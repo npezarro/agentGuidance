@@ -12,6 +12,9 @@
   5. **Update `progress.md`**: add an entry for the work being committed. See `guidance/context-progress.md`.
 - Push: `git push -u origin HEAD`. Retry network failures up to 4x with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
 
+## All Deliverables Go in Repos
+When creating scripts, tools, or project assets, **ALWAYS put them in a git repo under `~/repos/`** and push to GitHub. Never leave files as loose filesystem artifacts — the user doesn't want to dig around the filesystem for deliverables. GitHub is the source of truth. If a new project or tool set doesn't have a repo yet, create one with `gh repo create`.
+
 ## Always Push After Committing
 When committing to any repo, **ALWAYS push to the GitHub remote branch as well**. Never leave commits unpushed. Unpushed commits are invisible to other sessions, collaborators, and the deploy pipeline. Treat `git commit` + `git push` as a single atomic operation — if the push fails, diagnose and fix it before moving on.
 
