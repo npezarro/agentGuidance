@@ -28,6 +28,9 @@ Also load any sub-guidance relevant to the current task:
 - `guidance/wordpress-auto-posting.md` — WordPress hook setup details
 - `guidance/auth-basepath.md` — authentication and base path patterns
 - `guidance/local-worker-bridge.md` — local worker bridge post-mortem
+- `guidance/browser-page-reader.md` — page-reader CLI for JS-heavy page content extraction
+- `guidance/secrets-hygiene.md` — secret rotation, history rewrite, detection patterns
+- `guidance/private-guidance.md` — application materials, private documents, PDF conversion
 
 ## Fallback Rules (applied if remote fetch fails)
 

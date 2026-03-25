@@ -41,7 +41,7 @@ npx jest             # tests (when present)
 - **Dry-run first.** Use `--dry-run` for destructive or bulk commands when available.
 - **Diagnose before retrying.** If a command fails, understand *why* before re-running. No blind retry loops.
 - **Always push to GitHub.** When working on code or producing written materials, commit and push to the relevant repo. The remote is the source of truth.
-- **Track prep in the pipeline.** When producing application materials for a role: (1) create a prep file in `assortedLLMTasks/applications/` with experience mapping, STAR stories, interview questions, cover letter, referral blurb, and outreach draft; (2) create a company folder (e.g., `applications/adobe/`) with tailored resume and cover letter as both markdown and PDF, named `Resume - Company, Role Title` and `Cover Letter - Company, Role Title`; (3) include resume tweak notes explaining what was changed and why for each role; (4) push to GitHub; (5) append the role to the Job Data tab in the Google Sheet (see `privateContext/infrastructure.md`) with a link in the "Application Materials" column. Use the latest dated resume in `resumes/` as the baseline. Convert to PDF via `pandoc file.md -o file.pdf --pdf-engine=pdflatex -V geometry:margin=0.75in -V fontsize=10pt -V linkcolor=blue`.
+- **Track prep in the pipeline.** See `guidance/private-guidance.md` for the full procedure (prep files, private documents, PDF conversion, Google Sheet tracking).
 - **No external posting without explicit instruction.** Never post, submit, register, or publish to external sites or APIs unless the user explicitly asks. Building features that *could* post is fine; actually calling endpoints is not.
 - **Research/analysis output goes to `assortedLLMTasks/tasks/`.** When a task produces a written deliverable (not code), save it as a dated markdown file: `~/repos/assortedLLMTasks/tasks/YYYY-MM-DD-topic-slug.md`. Push to GitHub.
 
@@ -100,14 +100,6 @@ Before starting work on a deployed project:
 - **Full docs:** See `guidance/ab-testing.md`
 
 **Opting out:** If the owner says `--no-arena`, do not suggest or use claude-bakeoff for the remainder of the session.
-
-## Cowork Reporting
-
-Claude Cowork sessions are tracked in `~/repos/my-claude-cowork` (private repo). Cowork produces structured session log artifacts; local scripts sync them to Discord `#cowork` and GitHub.
-
-- **Session logs:** `my-claude-cowork/sessions/YYYY-MM-DD/{slug}.md`
-- **Instructions for Cowork:** `my-claude-cowork/cowork-instructions-global.md` (paste into claude.ai global custom instructions)
-- **Sync to Discord + GitHub:** `my-claude-cowork/scripts/sync-latest.sh`
 
 ## Cowork Reporting
 
@@ -201,3 +193,5 @@ Load these on-demand based on the current task:
 - `guidance/auth-basepath.md` -- authentication and base path patterns
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/browser-page-reader.md` -- page-reader CLI for JS-heavy page content extraction
+- `guidance/secrets-hygiene.md` -- secret rotation, history rewrite, detection patterns
+- `guidance/private-guidance.md` -- application materials, private documents, PDF conversion
