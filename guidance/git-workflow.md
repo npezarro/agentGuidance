@@ -15,8 +15,12 @@
 ## All Deliverables Go in Repos
 When creating scripts, tools, or project assets, **ALWAYS put them in a git repo under `~/repos/`** and push to GitHub. Never leave files as loose filesystem artifacts — the user doesn't want to dig around the filesystem for deliverables. GitHub is the source of truth. If a new project or tool set doesn't have a repo yet, create one with `gh repo create`.
 
-## Always Push After Committing
-When committing to any repo, **ALWAYS push to the GitHub remote branch as well**. Never leave commits unpushed. Unpushed commits are invisible to other sessions, collaborators, and the deploy pipeline. Treat `git commit` + `git push` as a single atomic operation — if the push fails, diagnose and fix it before moving on.
+## Always Commit and Push Written Files
+When creating or modifying files in any repo (via Write, Edit, or any other method), **ALWAYS commit and push in the same step**. Don't move on to other work with untracked or uncommitted files sitting in a repo. The Write tool doesn't commit — you must do it explicitly.
+
+When committing to any repo, **ALWAYS push to the GitHub remote branch as well**. Never leave commits unpushed. Unpushed commits are invisible to other sessions, collaborators, and the deploy pipeline. Treat file creation + `git commit` + `git push` as a single atomic operation — if any step fails, diagnose and fix it before moving on.
+
+**Common gap:** When working across multiple repos in one session (e.g., agentGuidance + assortedLLMTasks + my-voice), it's easy to push some and forget others. After finishing a multi-repo task, verify all repos are clean: `git status` in each one.
 
 ## Creating PRs (with retry)
 
