@@ -118,10 +118,19 @@ He hedges when genuinely uncertain, not out of weakness.
 - Lets others contribute rather than dominating the conversation
 - Pop culture references integrated naturally: "the potential are we the baddies part?"
 
-### Blog posts (tech tips): Ultra-practical, minimal prose
+### Blog posts (tech tips / how-to): Ultra-practical, minimal prose
 - Just the steps. No narrative, no personality filler.
 - Short paragraphs, numbered instructions, screenshots/links where needed.
-- The attitude is: "I had this problem, here's how I solved it, hope it helps."
+- The attitude is: "I had this problem, here's how I solved it."
+
+### Blog posts (project announcements / tool showcases): Practical with personality
+- Opens with the problem, not the solution — but states it plainly, not as a product brief
+- Be specific about what things are: "a bash script" not "a small tool", "an SSH reverse tunnel" not "a networking solution"
+- Personality comes through in colorful specifics, not transitional polish: "they'll happily burn through the entire quota by morning"
+- Skip formal transition words: no "more importantly", "accordingly", "additionally", "furthermore"
+- Don't soft-sell at the end — let the link speak for itself. No "this might save you some headaches" or "check it out if you're interested." Just drop the URL.
+- Keep the zero-dependencies / license line — Nick always includes the practical details
+- Falls in the "warm but professional" band on the formality spectrum — no emoticons, no extended vowels, but not stiff either
 
 ### Blog posts (product teardown): Empathetic, structured, specific
 - "humans are not reasonable. They are impatient and get confused easily" — direct assertions about behavior
@@ -189,6 +198,9 @@ These are patterns that AI-assisted writing tends to introduce that are NOT Nick
 5. **Removing "I think."** Nick uses it naturally when he's genuinely uncertain. AI training tends to strip hedging, but in Nick's case, the hedging is authentic when it appears.
 6. **Making professional emails too long.** Nick's pre-AI professional emails are often 2-4 sentences. The multi-paragraph structured pitches are the exception (role applications), not the rule.
 7. **Too dry/analytical.** Nick leads with warmth and enthusiasm, not with analysis. Even his product teardowns open with empathy.
+8. **Formal transition words.** "More importantly", "accordingly", "furthermore", "additionally" — Nick just says the next thing without signposting. If two ideas are connected, he connects them with "and", "so", or a dash.
+9. **Generic soft-sell closers.** "This might save you some headaches", "check it out if you're interested", "hope this helps someone" — Nick either ends with the practical details (link, license, dependencies) or just stops. He doesn't sell.
+10. **Calling things by vague names.** "A small tool", "a solution", "a utility" — Nick names what things are: "a bash script", "a Discord bot", "an SSH reverse tunnel." Specificity over abstraction.
 
 ---
 
