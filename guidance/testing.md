@@ -161,6 +161,70 @@ Mocks that diverge from production are worse than no mocks -- they give false co
 - **Never hand-write mock data** for external APIs -- use recorded fixtures
 - **If a mock test passes but the feature is broken in prod**, the mock is the bug -- fix the mock, not the test
 
+## Cross-Layer Invariant Tests
+
+The highest-value tests are often not about individual functions — they're about **invariants between layers** that silently break when one layer changes without updating the other.
+
+### What Are Invariants?
+
+An invariant is a property that must hold for the system to work, even though no single function enforces it. Examples:
+
+| Invariant | Producer | Consumer | What Breaks |
+|-----------|----------|----------|-------------|
+| Stores must have lat/lng | Pipeline creates stores | Trip planner filters by `storesWithCoords` | Pipeline creates stores without coords → trip planner returns 0 plans |
+| Price records must include unit | Pipeline ingests prices | UI formats as `$2.99/lb` | Missing unit → UI shows `$2.99` with no context |
+| Shopping list items serialize to JSON | Frontend `setItems()` | Backend PATCH `/api/shopping-lists/:id` | Shape mismatch → silent data loss on save |
+| API response includes store name | Backend joins tables | Frontend sparkline display | Missing join → UI shows price with no store attribution |
+
+### When to Write Invariant Tests
+
+Write an invariant test whenever:
+1. **You just fixed a cross-layer bug.** The fix goes in the code; the invariant test goes in the test suite. This is the regression test for the *class of bug*, not just the specific instance.
+2. **One system produces data another consumes.** Pipeline → database → API → UI. Each boundary is an invariant.
+3. **A filter or query depends on data shape.** If `WHERE lat IS NOT NULL` is used anywhere, test that the data producer always sets lat.
+4. **Display formatting depends on API response shape.** If the UI expects `storeName` in the response, test that the API actually returns it.
+
+### How to Write Them
+
+Invariant tests don't need a database. Test the **contract** — the shape and constraints of data flowing between layers:
+
+```typescript
+describe("Pipeline → Trip Planner invariant", () => {
+  it("pipeline-created stores must have coordinates", () => {
+    // This is the shape the pipeline produces
+    const store = createPipelineStore("kroger", "94102");
+    // This is the filter the trip planner applies
+    const visible = [store].filter(s => s.lat != null && s.lng != null);
+    expect(visible).toHaveLength(1); // Would have caught the bug
+  });
+});
+
+describe("API → UI invariant", () => {
+  it("price history response includes storeName and unit", () => {
+    const response = buildPriceHistoryResponse(priceRecord);
+    expect(response).toHaveProperty("storeName");
+    expect(response).toHaveProperty("unit");
+  });
+});
+```
+
+### Naming Convention
+
+Name invariant tests after the boundary they guard:
+- `pipeline-stores.test.ts` — pipeline → database shape
+- `price-display.test.ts` — API response → UI formatting
+- `trip-planner.test.ts` — database query assumptions
+
+### Common Patterns Across Projects
+
+These invariants recur in every full-stack project:
+
+1. **Geocoding completeness:** Any entity with lat/lng that gets filtered by location queries must have coordinates populated at creation time.
+2. **API response shape:** If the frontend destructures `response.storeName`, the backend must include it in the SELECT/JOIN.
+3. **Serialization roundtrip:** Data written to localStorage/database must survive JSON.parse(JSON.stringify(data)) without losing fields.
+4. **Auth-gated endpoints:** Every endpoint behind `requireAuth` must return 401 for unauthenticated requests, not 500.
+5. **Unit/format consistency:** If prices are stored as strings (`"2.99"`) but displayed as numbers (`2.99`), test the parseFloat boundary.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
