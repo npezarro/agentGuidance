@@ -1,4 +1,4 @@
-<!-- agent.md v2.0.0 | Last updated: 2026-03-22 -->
+<!-- agent.md v3.0.0 | Last updated: 2026-03-26 -->
 # Global Agent Rules
 
 > **THIS IS A PUBLIC REPOSITORY.** Everything committed here is visible to the entire internet. Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information. Use placeholders like `YOUR_API_KEY_HERE` or `[REDACTED]`.
@@ -30,7 +30,6 @@ npx jest             # tests (when present)
 **This is a top priority.** When a session produces a learning, correction, process change, or new convention, it must be captured in version-controlled guidance before the session ends. Learnings that stay only in conversation context are lost.
 - **Cross-project learnings** (process, conventions, tooling): update `agentGuidance` (agent.md for core rules, or the appropriate `guidance/*.md` file for detailed procedures).
 - **Project-specific learnings** (architecture decisions, gotchas, environment quirks): update that project's `CLAUDE.md`, `context.md`, or a relevant doc in the repo.
-- **If the owner corrects your approach or gives feedback that should apply going forward**, codify it immediately in both places: (1) save to Claude Code memory (`~/.claude/projects/*/memory/`) so it persists across conversations, and (2) update the appropriate `agentGuidance` file so all agents pick it up. Don't just acknowledge it for this session.
 - When in doubt about where a learning belongs, prefer `agentGuidance` (it's read by all sessions) over project-local files.
 
 ## Planning & Execution
@@ -41,7 +40,6 @@ npx jest             # tests (when present)
 - **Dry-run first.** Use `--dry-run` for destructive or bulk commands when available.
 - **Diagnose before retrying.** If a command fails, understand *why* before re-running. No blind retry loops.
 - **Always push to GitHub.** When working on code or producing written materials, commit and push to the relevant repo. The remote is the source of truth.
-- **Track prep in the pipeline.** See `guidance/private-guidance.md` for the full procedure (prep files, private documents, PDF conversion, Google Sheet tracking).
 - **No external posting without explicit instruction.** Never post, submit, register, or publish to external sites or APIs unless the user explicitly asks. Building features that *could* post is fine; actually calling endpoints is not.
 - **Research/analysis output goes to `assortedLLMTasks/tasks/`.** When a task produces a written deliverable (not code), save it as a dated markdown file: `~/repos/assortedLLMTasks/tasks/YYYY-MM-DD-topic-slug.md`. Push to GitHub.
 
@@ -59,7 +57,15 @@ Never commit directly to `main`. Use assigned branch or create `agent/<task-name
 Every repo must have `context.md` (current state snapshot) and `progress.md` (append-only changelog). Update `context.md` on final branch commits and session end. Update `progress.md` on every commit. See `guidance/context-progress.md` for full specs and templates.
 
 ## Testing
-Run existing tests before and after changes. Write tests for bug fixes and non-trivial logic. See `guidance/testing.md` for regression verification procedures and testing standards.
+Run existing tests before and after changes. Write tests for bug fixes and non-trivial logic. For cross-layer changes, write invariant tests that verify the contract between producer and consumer (see `guidance/testing.md` — "Cross-Layer Invariant Tests" section).
+
+## Iteration & Data Quality
+When iterating on a deployed app, follow this priority order every turn:
+1. **Data correctness > feature completeness > visual polish.** If a feature exists but shows wrong or missing data, fix the data first.
+2. **No placeholder data in user-facing UI.** Generic addresses ("94102 area"), missing units ($2.99 without /lb), raw IDs, or "Coming Soon" for features that could work — fix these before adding new features.
+3. **Every database record must have required fields at creation time.** Stores need coordinates and real addresses. Prices need units. Don't create records that downstream queries will silently filter out.
+4. **Every button must have a meaningful result.** If "Choose This Plan" just shows a toast, it needs a real action (detail view, navigation, etc.).
+5. **Verify end-to-end after every change.** TypeScript compiles clean, all tests pass, deploy succeeds, site returns 200.
 
 ## Debugging
 Check logs first (`pm2 logs`, DevTools console). Reproduce, isolate, then fix. See `guidance/debugging.md` for full procedures.
@@ -84,39 +90,13 @@ Before starting work on a deployed project:
 - **In WSL, `localhost` is WSL's network stack, not Windows.** Resolve host IP from `/etc/resolv.conf` dynamically.
 - **After creating/editing scripts in Windows/WSL:** Check for CRLF line endings (`file <script>`) and fix with `sed -i 's/\r$//'`.
 
-### centralDiscord-Specific Rules
-- **Re-export chain:** `debate.js` imports from `claudeReply.js`, not `executor.js` directly. New executor exports must be added to claudeReply.js re-exports too.
-- **Command registration is two-step:** Add the handler to `commands.js` AND add the command name to the `isBuiltinCommand` regex in `index.js`.
-- **Strip mention prefixes:** `message.content` may start with `<@ID>` when users @ the bot. Always strip before regex matching.
-- **For detailed post-mortem:** See `guidance/local-worker-bridge.md`.
+## Private Context & Discord Logs
 
-## Claude Arena (A/B Testing)
+**Before asking the user for credentials, env vars, API keys, or infrastructure details, search `~/repos/privateContext` first.** It contains everything sensitive that cannot live in public repos. Grep it, read its files, check its scripts. Only ask the user if you've searched and confirmed the information isn't there.
 
-**claude-bakeoff** is available for empirical comparison of approaches. When two strategies could be compared rather than debated, use it.
+Similarly, **when you're missing context about recent work, decisions, or project state**, check Discord logs via the bot token at `~/.cache/discord-bot-token`. Recent session reports, task completions, and agent journal entries are all posted there.
 
-- **Repo:** `~/repos/claude-bakeoff`
-- **Run a test:** `arena run <task> --env-a <env1> --env-b <env2>`
-- **Evaluate:** `arena eval <run-id>` (auto-posts results to `#claude-bakeoff`)
-- **Full docs:** See `guidance/ab-testing.md`
-
-**Opting out:** If the owner says `--no-arena`, do not suggest or use claude-bakeoff for the remainder of the session.
-
-## Cowork Reporting
-
-Claude Cowork sessions are tracked in `~/repos/my-claude-cowork` (private repo). Cowork produces structured session log artifacts; local scripts sync them to Discord `#cowork` and the GitHub repo.
-
-- **Session logs:** `my-claude-cowork/sessions/YYYY-MM-DD/{slug}.md`
-- **Instructions for Cowork:** `my-claude-cowork/cowork-instructions.md` (paste into claude.ai project settings)
-- **Sync to Discord + GitHub:** `my-claude-cowork/scripts/sync-latest.sh`
-- **TaskCompleted hook** in `~/.claude/settings.json` posts CLI task completions to `#cowork` automatically
-
-## Private Context Repository
-
-A private companion repo exists at `~/repos/privateContext` with sensitive information that should not be in this public repo. **Consult it when you need:**
-- Service account details, OAuth app configurations, API key locations
-- Infrastructure specifics (ports, paths, database locations, env var lists)
-- Pending manual actions that require human intervention
-- Completed work log for deduplication
+This is not optional. The owner should never have to answer a question that privateContext or Discord already answers.
 
 Do not duplicate information from privateContext into this repo or any other public repo.
 
@@ -130,12 +110,6 @@ Do not duplicate information from privateContext into this repo or any other pub
 - **Audit before every commit to this repo.** Run `git diff --staged` and read every line.
 - **Do not reference real infrastructure details** in this repo. Those belong in private `context.md` or `.env`.
 - **If a secret is accidentally committed**, rotate the credential immediately, then remove from git history.
-
-## Discord Integration
-Your responses are auto-posted to `#cli-interactions` via the Stop hook. The owner issues requests in `#requests`. See `guidance/discord-integration.md` for threading, manual posting, and inter-agent coordination.
-
-## Auto-Posting Awareness
-Every response is auto-posted to WordPress (private draft) and Discord (embed). Write accordingly: front-load meaning, first paragraph must stand alone, target ~3,500 chars for primary content. See `guidance/auto-posting.md` for writing style, multi-destination design, and security rules.
 
 ## Code Review (Self-Review Before Committing)
 1. **Diff review:** `git diff --staged` and read every line.
@@ -166,10 +140,7 @@ When picking up work from a previous session: read `context.md`, check git log/s
 Infer deploy commands from repo config. See `guidance/deployment.md` for pre-deploy and post-deploy checklists.
 
 ## Maintaining This File
-**Keep `agent.md` under 200 lines.** This file is fetched at the start of every session (including Cowork, which has limited context). It should contain only core rules and concise summaries with pointers to guidance files. When adding new guidance:
-- If the content is more than 5-10 lines of procedure, create a new `guidance/<topic>.md` file and add a 1-2 line summary + pointer here.
-- Never inline detailed procedures, code blocks longer than 5 lines, or step-by-step checklists into this file.
-- Add the new guidance file to the index below and to `CLAUDE.md`.
+**Keep `agent.md` under 200 lines.** This file is fetched at the start of every session (including Cowork, which has limited context). It should contain only universal behavioral rules with pointers to guidance files. Project-specific rules belong in the project's CLAUDE.md, not here.
 
 ## Guidance File Index
 Load these on-demand based on the current task:
@@ -196,12 +167,4 @@ Load these on-demand based on the current task:
 - `guidance/secrets-hygiene.md` -- secret rotation, history rewrite, detection patterns
 - `guidance/private-guidance.md` -- application materials, private documents, PDF conversion
 - `guidance/agent-journal.md` -- async cross-session journal system
-
-## Agent Journal
-
-Post observations, unfinished work, and suggestions for future sessions:
-```bash
-~/repos/privateContext/journal-post.sh "<category>" "<entry text>"
-# Categories: observation, half-done, suggestion, blocker, discovery
-```
-Recent journal entries appear at session start. See `guidance/agent-journal.md` for details.
+- `guidance/written-voice.md` -- writing in the owner's voice
