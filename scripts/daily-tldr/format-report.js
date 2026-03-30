@@ -145,6 +145,31 @@ function buildEmbed(report) {
     });
   }
 
+  // Autonomous dev runs (last 24h)
+  const autodev = report.autonomous_dev || [];
+  if (autodev.length > 0) {
+    const totalCost = autodev.reduce((sum, r) => {
+      const c = parseFloat((r.cost || '$0').replace('$', ''));
+      return sum + (isNaN(c) ? 0 : c);
+    }, 0);
+    const reposHit = [...new Set(autodev.map(r => r.repo).filter(Boolean))];
+    const prs = autodev.filter(r => r.pr).length;
+    const features = autodev.filter(r => r.feature_run).length;
+    const standard = autodev.length - features;
+
+    let summary = `${autodev.length} runs across ${reposHit.length} repo${reposHit.length !== 1 ? 's' : ''}`;
+    summary += ` · ${prs} PR${prs !== 1 ? 's' : ''} created`;
+    if (features > 0) summary += ` · ${features} feature, ${standard} standard`;
+    summary += ` · $${totalCost.toFixed(2)} total`;
+    summary += `\n${reposHit.join(', ')}`;
+
+    fields.push({
+      name: '🤖 Autonomous Dev',
+      value: summary.slice(0, 1024),
+      inline: false,
+    });
+  }
+
   // Color: green if no issues, yellow if issues
   const color = issues_found > 0 ? 0xf59e0b : 0x22c55e;
 

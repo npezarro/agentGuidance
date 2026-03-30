@@ -184,6 +184,19 @@ Generated at $(date -Iseconds)" \
   RESULTS=$(echo "$RESULTS" | jq --argjson entry "$ENTRY" '. + [$entry]')
 done
 
+# --- Collect autonomous dev run summaries (last 24h) ---
+AUTODEV_OUTCOMES="[]"
+AUTODEV_LOG="${HOME}/repos/auto-dev/logs/outcomes.jsonl"
+if [ -f "$AUTODEV_LOG" ]; then
+  YESTERDAY=$(date -d "1 day ago" -Iseconds 2>/dev/null || date -v-1d -Iseconds 2>/dev/null || echo "")
+  if [ -n "$YESTERDAY" ]; then
+    # outcomes.jsonl is pretty-printed — compact to single-line records, then filter by timestamp
+    AUTODEV_OUTCOMES=$(jq -c '.' "$AUTODEV_LOG" 2>/dev/null \
+      | jq -s --arg since "$YESTERDAY" '[.[] | select(.timestamp >= $since)]' 2>/dev/null || echo "[]")
+  fi
+  echo "[auto-dev] Collected $(echo "$AUTODEV_OUTCOMES" | jq 'length') runs from last 24h."
+fi
+
 # --- Write JSON report ---
 REPORT=$(jq -n \
   --arg date "$DATE_TAG" \
@@ -192,7 +205,8 @@ REPORT=$(jq -n \
   --argjson active "$ACTIVE" \
   --argjson issues "$ISSUES" \
   --argjson repos "$RESULTS" \
-  '{date: $date, generated: $generated, total_repos: $total, active_repos: $active, issues_found: $issues, repos: $repos}')
+  --argjson autodev "$AUTODEV_OUTCOMES" \
+  '{date: $date, generated: $generated, total_repos: $total, active_repos: $active, issues_found: $issues, repos: $repos, autonomous_dev: $autodev}')
 
 echo "$REPORT" > "$REPORT_FILE"
 echo "Report saved to $REPORT_FILE"
