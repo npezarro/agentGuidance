@@ -1,19 +1,16 @@
 #!/usr/bin/env node
 /**
- * send-email.js — Send security scan alert emails via SMTP.
+ * DEPRECATED — Use ~/repos/email-tools/send-email.sh instead.
  *
- * Reuses the same Gmail SMTP credentials as runeval.
- * Recipient is hardcoded to prevent misuse.
+ * This file is kept for reference only. The security scanner's run.sh
+ * has been updated to use the email-tools repo directly.
  *
- * Usage: node send-email.js <subject> [body-file] [sender-name]
- *   or:  echo "body" | node send-email.js <subject>
+ * Migration: ~/repos/email-tools/send-email.sh "Subject" --body-file file.txt --sender-name "Security Scanner"
  *
- * sender-name defaults to "Security Scanner" for backwards compatibility.
- * Can also be set via SENDER_NAME env var.
- *
- * Requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.
- * Reads from .env file if present.
+ * Original: send-email.js — Send security scan alert emails via SMTP.
  */
+console.error('DEPRECATED: Use ~/repos/email-tools/send-email.sh instead');
+process.exit(1);
 
 const nodemailer = require('nodemailer');
 const fs = require('fs');
