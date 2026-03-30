@@ -13,7 +13,9 @@
 - Push: `git push -u origin HEAD`. Retry network failures up to 4x with backoff (2s, 4s, 8s, 16s). Do not retry auth failures.
 
 ## All Deliverables Go in Repos
-When creating scripts, tools, or project assets, **ALWAYS put them in a git repo under `~/repos/`** and push to GitHub. Never leave files as loose filesystem artifacts — the user doesn't want to dig around the filesystem for deliverables. GitHub is the source of truth. If a new project or tool set doesn't have a repo yet, create one with `gh repo create`.
+When creating scripts, tools, project assets, analysis docs, reference files, or any other output, **ALWAYS put them in a git repo under `~/repos/`** and push to GitHub. Never leave files as loose filesystem artifacts — the user doesn't want to dig around the filesystem for deliverables. GitHub is the source of truth. If a new project or tool set doesn't have a repo yet, create one with `gh repo create`.
+
+**This is the most common mistake.** Sessions routinely create useful files (summaries, configs, scripts, reference docs) and then either forget to commit, forget to push, or save them outside a repo. The user cannot access local-only files between sessions. Treat every `Write` or `Edit` call as incomplete until the file is committed and pushed.
 
 ## Always Commit and Push Written Files
 When creating or modifying files in any repo (via Write, Edit, or any other method), **ALWAYS commit and push in the same step**. Don't move on to other work with untracked or uncommitted files sitting in a repo. The Write tool doesn't commit — you must do it explicitly.

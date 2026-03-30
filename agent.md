@@ -39,7 +39,7 @@ npx jest             # tests (when present)
 - **Targeted edits only.** Do not overwrite entire files. Use precise insertions and replacements. Re-read files post-edit to verify surrounding code integrity.
 - **Dry-run first.** Use `--dry-run` for destructive or bulk commands when available.
 - **Diagnose before retrying.** If a command fails, understand *why* before re-running. No blind retry loops.
-- **Always push to GitHub.** When working on code or producing written materials, commit and push to the relevant repo. The remote is the source of truth.
+- **Always push to GitHub.** Every file you create or modify — code, scripts, docs, analysis, reference materials — must be committed and pushed before the task is considered done. Local-only files are invisible to the user and other sessions. If the file doesn't belong in an existing repo, put it in `assortedLLMTasks` or create a new repo. The remote is the source of truth; if it's not on GitHub, it doesn't exist.
 - **No external posting without explicit instruction.** Never post, submit, register, or publish to external sites or APIs unless the user explicitly asks. Building features that *could* post is fine; actually calling endpoints is not.
 - **Research/analysis output goes to `assortedLLMTasks/tasks/`.** When a task produces a written deliverable (not code), save it as a dated markdown file: `~/repos/assortedLLMTasks/tasks/YYYY-MM-DD-topic-slug.md`. Push to GitHub.
 
