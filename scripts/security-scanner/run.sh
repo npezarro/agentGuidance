@@ -221,10 +221,15 @@ $RESULT
   chmod 600 "$EMAIL_FILE"
 
   SUBJECT="[Security Alert] Scan #$RUN_NUMBER — $CRITICAL_COUNT critical, $HIGH_COUNT high findings"
-  if node "$SCRIPT_DIR/send-email.js" "$SUBJECT" "$EMAIL_FILE" 2>&1; then
-    log "EMAIL: Alert sent (critical: $CRITICAL_COUNT, high: $HIGH_COUNT)"
+  EMAIL_SENDER="$HOME/repos/email-sender/send-email.sh"
+  if [ -x "$EMAIL_SENDER" ]; then
+    if "$EMAIL_SENDER" "$SUBJECT" --body-file "$EMAIL_FILE" --sender-name "Security Scanner" 2>&1; then
+      log "EMAIL: Alert sent (critical: $CRITICAL_COUNT, high: $HIGH_COUNT)"
+    else
+      log "EMAIL: Failed to send alert — check email-sender config"
+    fi
   else
-    log "EMAIL: Failed to send alert — check SMTP config"
+    log "EMAIL: email-sender not found at $EMAIL_SENDER"
   fi
 fi
 
