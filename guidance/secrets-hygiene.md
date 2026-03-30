@@ -54,6 +54,17 @@ token=$(ssh myhost 'grep TOKEN /path/to/.env')
 2. **`.env.example`** — documents required variables with placeholder values
 3. **No inline defaults that leak specifics** — use `YOUR_VALUE` or `:?` to require the var
 
+## Sensitive Identifiers (Non-Secret Leaks)
+
+Not all leaks are credentials. Usernames, private repo names, internal hostnames, and home directory paths also reveal infrastructure layout and should not appear in public repos — including in test fixtures, JSDoc examples, and documentation.
+
+Before making a repo public or writing example code in a public repo:
+1. Check the **private reference database** for identifiers that must be sanitized
+2. Replace real usernames, paths, and private project names with generic alternatives
+3. Verify that repo names referenced in tests/docs are actually public
+
+The reference database lists every known private identifier and its safe replacement. If you don't have access to it, use generic placeholders: `/home/user/`, `myProject`, `example.com`.
+
 ## Pre-Commit Checklist
 
 Before committing to any public repo, verify:
@@ -61,8 +72,9 @@ Before committing to any public repo, verify:
 1. `grep -rn 'ssh.*@\|BEGIN.*KEY\|api.key\|webhook' .` — no secrets in staged files
 2. No IP addresses in code (check: `grep -rn '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' .`)
 3. No absolute paths to home directories
-4. `.gitignore` covers `.env*` files
-5. Config files use environment variables, not hardcoded values
+4. No private repo names or usernames in test fixtures, docs, or comments (check against the private reference database)
+5. `.gitignore` covers `.env*` files
+6. Config files use environment variables, not hardcoded values
 
 ## Architecture Documentation
 
