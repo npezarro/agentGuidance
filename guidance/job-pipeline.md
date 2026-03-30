@@ -36,6 +36,31 @@ When building or updating role catalogues / digest files:
   - OpenAI: `https://openai.com/careers/{slug}/`
 - If no specific ID is available, use a **filtered search URL** with the role name as query params (e.g., `?query=agent+harness`) — still better than a bare career page.
 
+### Liveness Verification
+
+Before listing a role as active, verify the link is live:
+
+1. **First pass: curl redirect detection.** Greenhouse closed roles redirect to `?error=true`. Google/Figma redirect to generic career pages. Check with:
+   ```bash
+   curl -sL -o /dev/null -w "%{url_effective}" --max-time 10 "$url"
+   ```
+2. **Bot-blocking sites (OpenAI, etc.): use headless Chromium.** Some sites return 403 to curl but work in a real browser. Use playwright via page-reader's node_modules:
+   ```bash
+   cd ~/repos/page-reader && node -e "
+   const { chromium } = require('playwright');
+   (async () => {
+     const browser = await chromium.launch({ headless: true });
+     const ctx = await browser.newContext({ userAgent: 'Mozilla/5.0 ...' });
+     const page = await ctx.newPage();
+     const resp = await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+     console.log(resp.status(), await page.title());
+     await browser.close();
+   })();
+   "
+   ```
+   A 404 or title mismatch = dead. A 200 with the role title in `<title>` = live.
+3. **Never trust HTTP 200 alone.** Google Careers returns 200 for closed roles (JS SPA). Always check the rendered content or redirect target.
+
 ## Resume Baseline
 
 Use the latest dated resume in `resumes/` as the baseline.
