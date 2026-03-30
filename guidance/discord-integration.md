@@ -27,7 +27,7 @@ curl -s -X POST "$DISCORD_WEBHOOK_URL" \
   -d '{"username":"Claude Agent","content":"Your message here"}'
 ```
 
-**Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. Split longer content into chunks.
+**Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. When any message exceeds the limit, overflow goes into a thread — `discord-webhook.sh` handles this automatically. For manual posts (raw curl), split into chunks at 1990 chars and post overflow as thread replies.
 
 ## Inter-Agent Coordination
 
