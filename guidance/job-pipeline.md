@@ -26,7 +26,7 @@ When producing application materials for a role, follow this procedure:
 
 When building or updating role catalogues / digest files:
 
-- **Always use direct links to specific job postings.** Never link to generic career pages (e.g., `https://company.com/careers/`). These are useless — the user needs to land directly on the role.
+- **Always use direct links to specific job postings.** Never link to generic career pages (e.g., `https://company.com/careers/`) or query-only search URLs (e.g., `?query=agent+harness`). Every link must resolve to a single specific role.
 - **Source job IDs from existing catalogue files** in `role-catalogues/` (e.g., `ai_pm_roles_march2026_refresh.md`, `google_pm_roles_march2026_refresh.md`) which contain Greenhouse job IDs, Ashby UUIDs, and deep link URLs.
 - **URL patterns by ATS:**
   - Greenhouse: `https://job-boards.greenhouse.io/{company}/jobs/{id}` or `https://boards.greenhouse.io/{company}/jobs/{id}`
@@ -34,7 +34,26 @@ When building or updating role catalogues / digest files:
   - Scale AI: `https://scale.com/careers/{id}`
   - Google Careers: `https://www.google.com/about/careers/applications/jobs/results/{id}-{slug}/`
   - OpenAI: `https://openai.com/careers/{slug}/`
-- If no specific ID is available, use a **filtered search URL** with the role name as query params (e.g., `?query=agent+harness`) — still better than a bare career page.
+  - Roblox (Greenhouse): `https://careers.roblox.com/jobs/{id}?gh_jid={id}`
+- **If no ID exists in the catalogues, scrape the job board directly** using page-reader's `--stealth` mode to extract the UUID/ID from the listing page. See "Scraping Direct Links" below.
+
+### Scraping Direct Links from Job Boards
+
+When catalogue files don't have the specific ID for a role, scrape it from the company's job board:
+
+```bash
+# Extract all PM role links with UUIDs from an Ashby board
+cd ~/repos/page-reader && node src/index.js --stealth --compact "https://jobs.ashbyhq.com/{company}" | \
+  node -e "const j=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
+  j.links.filter(l => /product manager/i.test(l.text)).forEach(l => \
+  console.log(l.text.replace(/\n/g,' ').replace(/\s+/g,' ').trim(), '|', l.href));"
+
+# Query Greenhouse API directly (faster than scraping)
+curl -s "https://boards-api.greenhouse.io/v1/boards/{company}/jobs" | \
+  node -e "const j=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
+  j.jobs.filter(job => /search term/i.test(job.title)).forEach(job => \
+  console.log(job.title, '|', job.absolute_url, '| ID:', job.id));"
+```
 
 ### Liveness Verification
 
@@ -44,22 +63,20 @@ Before listing a role as active, verify the link is live:
    ```bash
    curl -sL -o /dev/null -w "%{url_effective}" --max-time 10 "$url"
    ```
-2. **Bot-blocking sites (OpenAI, etc.): use headless Chromium.** Some sites return 403 to curl but work in a real browser. Use playwright via page-reader's node_modules:
+2. **Bot-blocking sites (OpenAI, etc.): use page-reader `--stealth`.** Some sites return 403 to curl but work in a real browser:
    ```bash
-   cd ~/repos/page-reader && node -e "
-   const { chromium } = require('playwright');
-   (async () => {
-     const browser = await chromium.launch({ headless: true });
-     const ctx = await browser.newContext({ userAgent: 'Mozilla/5.0 ...' });
-     const page = await ctx.newPage();
-     const resp = await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
-     console.log(resp.status(), await page.title());
-     await browser.close();
-   })();
-   "
+   cd ~/repos/page-reader && node src/index.js --stealth --compact "$url" | \
+     node -e "const j=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
+     console.log('status:', j.httpStatus, 'title:', j.title);"
    ```
    A 404 or title mismatch = dead. A 200 with the role title in `<title>` = live.
-3. **Never trust HTTP 200 alone.** Google Careers returns 200 for closed roles (JS SPA). Always check the rendered content or redirect target.
+3. **Greenhouse API for bulk checks** (Roblox, Discord, etc.):
+   ```bash
+   curl -s "https://boards-api.greenhouse.io/v1/boards/{company}/jobs" | \
+     node -e "const j=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
+     console.log(j.jobs.filter(job => /search/i.test(job.title)).map(j => j.title));"
+   ```
+4. **Never trust HTTP 200 alone.** Google Careers returns 200 for closed roles (JS SPA). Always check the rendered content or redirect target.
 
 ## Resume Baseline
 
