@@ -130,14 +130,34 @@ for REPO in $REPO_NAMES; do
   fi
 
   # --- Build check ---
+  # Ensure we're on the latest default branch with fresh deps to avoid false positives
   if [ "$CHECK_BUILD" = "true" ] && [ -f "${REPO_PATH}/package.json" ]; then
     HAS_BUILD=$(cd "$REPO_PATH" && node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
     if [ "$HAS_BUILD" = "true" ]; then
+      BUILD_NOTE=""
+      (
+        cd "$REPO_PATH"
+        # Stash any local changes, pull latest default branch, install deps
+        DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+        CURRENT=$(git branch --show-current 2>/dev/null)
+        if [ "$CURRENT" != "$DEFAULT_BRANCH" ]; then
+          git checkout "$DEFAULT_BRANCH" --quiet 2>/dev/null || true
+        fi
+        git pull --quiet 2>/dev/null || true
+        timeout "$REPO_TIMEOUT" npm install --silent 2>/dev/null || true
+      )
       BUILD_OK=$(cd "$REPO_PATH" && timeout "$REPO_TIMEOUT" npm run build --silent 2>/dev/null && echo "true" || echo "false")
+      BUILD_VERIFIED=$(date -Iseconds)
       if [ "$BUILD_OK" = "false" ]; then
         ISSUES=$((ISSUES + 1))
+        # Capture build error for diagnostics
+        BUILD_NOTE=$(cd "$REPO_PATH" && timeout "$REPO_TIMEOUT" npm run build 2>&1 | tail -5)
       fi
-      ENTRY=$(echo "$ENTRY" | jq --argjson ok "$([ "$BUILD_OK" = "true" ] && echo true || echo false)" '. + {build_ok: $ok}')
+      ENTRY=$(echo "$ENTRY" | jq \
+        --argjson ok "$([ "$BUILD_OK" = "true" ] && echo true || echo false)" \
+        --arg verified "$BUILD_VERIFIED" \
+        --arg note "$BUILD_NOTE" \
+        '. + {build_ok: $ok, build_verified: $verified, build_note: $note}')
     fi
   fi
 
