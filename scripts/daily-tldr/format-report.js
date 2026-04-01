@@ -70,9 +70,16 @@ function buildEmbed(report) {
       parts.push(`📦 ${r.outdated_count} outdated`);
     }
 
-    // Build status
+    // Build status (with verification timestamp to show freshness)
     if (r.build_ok !== undefined) {
-      parts.push(r.build_ok ? '🏗️ build ok' : '❌ build fail');
+      if (r.build_ok) {
+        parts.push('🏗️ build ok');
+      } else {
+        const verified = r.build_verified
+          ? ` (verified ${new Date(r.build_verified).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })})`
+          : '';
+        parts.push(`❌ build fail${verified}`);
+      }
     }
 
     // Auto-fix applied
@@ -102,16 +109,17 @@ function buildEmbed(report) {
     })
     .join('\n\n');
 
-  // Issues section
-  const issueRepos = repos.filter(r =>
-    (r.vuln_high > 0) || (r.build_ok === false)
-  );
-  const issueLines = issueRepos.map(r => {
-    const problems = [];
-    if (r.vuln_high > 0) problems.push(`${r.vuln_high} high/critical vulnerabilities`);
-    if (r.build_ok === false) problems.push('build failing');
-    return `**${r.name}**: ${problems.join(', ')}`;
-  });
+  // Separate build failures from security vulnerabilities for clarity
+  const buildFailures = repos
+    .filter(r => r.build_ok === false)
+    .map(r => {
+      const note = r.build_note ? ` — \`${r.build_note.split('\n').pop().trim().slice(0, 80)}\`` : '';
+      return `**${r.name}**: build failing${note}`;
+    });
+  const vulnRepos = repos
+    .filter(r => r.vuln_high > 0)
+    .map(r => `**${r.name}**: ${r.vuln_high} high/critical vulnerabilities`);
+  const issueLines = [...buildFailures, ...vulnRepos];
 
   const fields = [
     {
