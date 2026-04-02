@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-03-20 | Removed private-content content from public repo; moved to privateContext
+2026-04-02 | Updated guidance files and cleaned up stale references
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos

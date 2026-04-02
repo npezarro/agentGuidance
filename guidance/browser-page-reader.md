@@ -5,15 +5,15 @@
 A CLI utility that loads URLs in a headless Chromium browser with full JavaScript rendering and returns structured page content. Built on Playwright, but purpose-built for content extraction rather than browser automation.
 
 ## When to Use It
-- **JS-heavy pages** that don't render with simple HTTP fetch (Workday, modern SPAs, React/Angular job boards)
-- **Job posting status checks** where you need to determine if a role is open or closed
+- **JS-heavy pages** that don't render with simple HTTP fetch (modern SPAs, React/Angular sites)
+- **Page status checks** where you need to determine if a page is live, changed, or removed
 - **Any page where WebFetch or Cheerio returns incomplete/broken content** because the page relies on client-side rendering
 - **Getting full visible text** from a page for analysis
 
 ## CRITICAL: Use page-reader, NOT WebFetch, for Link Liveness Checks
-**WebFetch cannot determine if a JS-rendered page is live or closed.** Google Careers, Workday, Greenhouse, and most modern job boards are SPAs that render via JavaScript. WebFetch returns raw HTML without executing JS, so every page looks "empty" — leading to false "closed" results. This has caused full-session wasted work.
+**WebFetch cannot determine if a JS-rendered page is live or dead.** Many modern sites are SPAs that render via JavaScript. WebFetch returns raw HTML without executing JS, so every page looks "empty" — leading to false negatives. This has caused full-session wasted work.
 
-**For bulk URL checks:** Use `curl + data-attribute parsing` as a fast first pass (e.g., Google Careers embeds `data-title="undefined"` for closed jobs), then use page-reader for ambiguous results. **Always test your detection method on 1 known-live, 1 known-dead, and 1 fake URL before running a bulk check.**
+**For bulk URL checks:** Use `curl + data-attribute parsing` as a fast first pass, then use page-reader for ambiguous results. **Always test your detection method on 1 known-live, 1 known-dead, and 1 fake URL before running a bulk check.**
 
 **Never delegate link-checking to sub-agents using WebFetch** — they'll hit the same SPA rendering wall. Use page-reader or curl in the main thread.
 
@@ -24,7 +24,7 @@ A CLI utility that loads URLs in a headless Chromium browser with full JavaScrip
 
 ## Where It Lives
 - **Local (WSL):** `~/repos/page-reader/`
-- **VM:** `~/page-reader/` (home dir is `/home/REDACTED_VM_USER/`)
+- **VM:** `~/page-reader/`
 
 ## Usage
 
