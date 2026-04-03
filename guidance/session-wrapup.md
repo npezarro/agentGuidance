@@ -30,7 +30,27 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
    - **Updates within the same task = thread replies.** Use `./discord-webhook.sh --thread <thread_id> "update"`.
    - **Save the thread ID** from the webhook response so you can reply later.
 
-7. **Update `~/repos/privateContext/completed-work.md`** with what was done this session. This is the cross-session deduplication log. Include learnings and patterns discovered, not just tasks completed.
+7. **Include reference links in Discord messages.** When reporting to `#cli-interactions`, include GitHub links to make it easy to jump to the changes:
+   - **Commit links:** `https://github.com/npezarro/<repo>/commit/<hash>` for the key commits
+   - **Branch/PR links:** Link to the PR or branch comparison when relevant
+   - **Repo link:** At minimum, link to the repo being worked on
+   - These go in the thread detail alongside the narrative, not as a separate section. Weave them in naturally (e.g., "Added validation to the API route ([commit](https://github.com/npezarro/repo/commit/abc1234))").
+
+8. **Post file links to `#file-links` when you generate readable artifacts.** Use `~/repos/privateContext/file-links-post.sh` when you create files the user will want to open directly:
+   ```bash
+   ./file-links-post.sh "Description of file" "https://github.com/npezarro/repo/blob/branch/path/to/file.md"
+   ```
+   **When to post:**
+   - Reports, analyses, or summaries written to `.md` files
+   - Application materials (cover letters, resumes) written to files
+   - Any file explicitly generated for the user to read
+
+   **When NOT to post:**
+   - Bulk code changes across many files (that's what commit links in `#cli-interactions` are for)
+   - Config files, test files, or internal tooling changes
+   - Files that are part of normal development flow (the user isn't going to read `context.md`)
+
+9. **Update `~/repos/privateContext/completed-work.md`** with what was done this session. This is the cross-session deduplication log. Include learnings and patterns discovered, not just tasks completed.
 
 **Key distinction:** `progress.md` is updated on every commit (append-only, uses `merge=union`). `context.md` is updated only on the final branch commit or at session end (mutable snapshot, can't be auto-merged).
 
