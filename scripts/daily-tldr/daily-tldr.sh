@@ -146,7 +146,7 @@ for REPO in $REPO_NAMES; do
         git pull --quiet 2>/dev/null || true
         timeout "$REPO_TIMEOUT" npm install --silent 2>/dev/null || true
       )
-      BUILD_OK=$(cd "$REPO_PATH" && timeout "$REPO_TIMEOUT" npm run build --silent 2>/dev/null && echo "true" || echo "false")
+      BUILD_OK=$(cd "$REPO_PATH" && timeout "$REPO_TIMEOUT" npm run build --silent >/dev/null 2>&1 && echo "true" || echo "false")
       BUILD_VERIFIED=$(date -Iseconds)
       if [ "$BUILD_OK" = "false" ]; then
         ISSUES=$((ISSUES + 1))
