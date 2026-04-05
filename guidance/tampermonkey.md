@@ -46,3 +46,18 @@ Key requirements:
 - Use `GM_setValue`/`GM_getValue` for cross-navigation state persistence
 - Add remote logging (`GM_xmlhttpRequest` POST to server) for debugging
 - Include staleness timeout to clear stuck jobs (5 min recommended)
+
+## Remote Agent Pattern (Preferred for Multi-Platform Flows)
+
+For automation spanning multiple sites (game claims, checkout flows), use the **install-once remote agent** pattern instead of per-platform TM scripts:
+
+1. **Thin TM script** — Polls server for commands (click, navigate, read, eval). Installed once, never updated. Matches all target domains.
+2. **Server-side orchestrator** — All flow logic lives server-side. Sends sequential commands, handles retries, manages state.
+
+**Why this beats per-platform scripts:** Flow changes (selectors, timing, new platforms) require only server-side updates, not TM reinstalls. The TM script is a generic command executor.
+
+Platform-specific gotchas (discovered via freeGames):
+- **Epic:** Checkout iframe requires `eval` to access nested iframe for "Place Order" button
+- **GOG redemption:** reCAPTCHA timing is unpredictable; use retry loops with 3-5s waits on Continue/Redeem buttons
+- **IndieGala:** "ADD TO LIBRARY" button lazy-loads inconsistently; use `wait-for` with generous timeouts
+- **GamerPower API:** Good discovery source for free game listings across platforms
