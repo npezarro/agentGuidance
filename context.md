@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-04-02 | Updated guidance files and cleaned up stale references
+2026-04-05 | Fixed deep closeout session continuity gap, upgraded post-closeout.sh
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -11,14 +11,19 @@
 - **`context.md` update frequency reduced**: now only updated on final branch commit (before PR) or during Session Wrap-Up
 - **Branch Hygiene rules** added: merge PRs in the same session, rebase before opening, clean up stale branches
 - No em dashes allowed in any agent output (Communication rule)
-- 8 guidance files in `guidance/` directory
+- 8+ guidance files in `guidance/` directory (including learning-capture, learning-agent, comprehensive-closeout)
 - Templates in `templates/` include filled-in examples from real projects (sanitized)
 - **`recurring-tasks/`**: shared runner with flock-based locking, scoped permissions, Discord notifications, and crontab generator (task configs moved to privateContext)
+- **Deep closeout process now requires context.md updates** for every touched repo (Step 5) and memory updates (Step 6) to bridge the gap between archive and handoff
+- **post-closeout.sh** upgraded from truncated single embed to threaded chunking (full content, no loss)
 
 ## Open Work
 - promptlibrary PR #5 ("Claude/Prompt Lifecycle") was closed on 2026-03-15 due to stale conflicts across extension files; commits preserved in PR history for future cherry-picking if needed
 - Several repos still have local branches checked out on old feature branches (not blocking)
 - Recurring tasks infrastructure is generic; task configs and prompts live in `~/repos/privateContext/recurring-tasks/`
+- autonomousDev context.md backfill on branch `claude/learnings-2` needs PR merge
+
+Full session closeout: `privateContext/deliverables/closeouts/2026-04-05-deep-closeout-continuity-fix.md`
 
 ## Environment Notes
 - **Repo:** PUBLIC; do not commit secrets or infrastructure details
