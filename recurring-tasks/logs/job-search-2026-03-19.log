@@ -1,0 +1,5 @@
+2026-03-19T21:25:11Z [job-search] START: Task 'job-search' (timeout: 2400s, output: branch-pr)
+2026-03-19T21:25:11Z [job-search] DRY RUN -- prompt preview:
+2026-03-19T21:25:32Z [job-search] START: Task 'job-search' (timeout: 2400s, output: branch-pr)
+2026-03-19T21:25:32Z [job-search] DRY RUN -- prompt preview:
+2026-03-19T21:25:32Z [job-search] DRY RUN -- would invoke Claude in /home/user/repos/assortedLLMTasks with timeout 2400s
