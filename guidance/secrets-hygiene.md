@@ -65,6 +65,21 @@ Before making a repo public or writing example code in a public repo:
 
 The reference database lists every known private identifier and its safe replacement. If you don't have access to it, use generic placeholders: `/home/user/`, `myProject`, `example.com`.
 
+## AI Chat Export Files
+
+AI chat exports (Gemini, ChatGPT, Claude) are a high-risk PII vector. Export files routinely contain:
+- **Sidebar chat titles** with sensitive topics (medical records, financial details, legal matters)
+- **Email addresses** embedded in conversation metadata
+- **Personal names and identifiers** from prior conversations
+
+Never commit raw AI chat exports to any repository. If reference material from an AI conversation is needed:
+1. Extract only the relevant content into a new file
+2. Scrub any sidebar/metadata content before committing
+3. Add the export directory to `.gitignore` (e.g., `Reference Files/`)
+4. If the full export is needed for agent access, store it in `privateContext/`
+
+This pattern caused a real incident: Gemini exports with medical/psychiatric chat titles were committed to a public repo and had to be emergency-removed (2026-04-05).
+
 ## Pre-Commit Checklist
 
 Before committing to any public repo, verify:
