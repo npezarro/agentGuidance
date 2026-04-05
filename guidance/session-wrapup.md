@@ -60,6 +60,14 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
 
 10. **Update `~/repos/privateContext/completed-work.md`** with what was done this session. This is the cross-session deduplication log. Include learnings and patterns discovered, not just tasks completed.
 
+11. **Persist learnings to agentGuidance and/or privateContext.** If the session produced operational learnings, new patterns, prompt templates, or integration knowledge, persist them to the authoritative instruction repos — NOT just to memory:
+    - **agentGuidance/guidance/** — Operational patterns, techniques, bakeoff findings, workflow rules that apply to all agents/sessions (e.g., "adversarial framing wins for research tasks", "bakeoff outputs go in private repos")
+    - **privateContext/prompts/** — Reusable prompt templates, assistant personas, framework instructions
+    - **privateContext/guidance/** — Project-specific operational knowledge
+    - **The relevant project's CLAUDE.md** — Repo-specific rules that any agent working in that repo needs
+
+    Memory is personal recall for this user's sessions. Repo instruction files are the durable, authoritative source that travels with the code. Both are required. Saving to memory alone means the learning is invisible to Discord bot jobs, autonomous dev runs, and any other agent that doesn't load your memory.
+
 **Key distinction:** `progress.md` is updated on every commit (append-only, uses `merge=union`). `context.md` is updated only on the final branch commit or at session end (mutable snapshot, can't be auto-merged).
 
 If the build is broken and you cannot fix it before the session ends, still commit and push with a clear note in the commit message and `context.md` explaining the broken state so the next session can pick it up. Uncommitted local changes are invisible to future sessions and effectively lost work.
