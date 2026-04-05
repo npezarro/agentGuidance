@@ -72,3 +72,4 @@ Load on-demand based on the current task:
 - `guidance/browser-page-reader.md` -- page-reader CLI for JS-heavy pages
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/tampermonkey.md` -- TM script hosting and CAPTCHA bypass patterns
+- `guidance/learning-capture.md` -- when and where to persist operational learnings
