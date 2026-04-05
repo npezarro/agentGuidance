@@ -225,6 +225,29 @@ These invariants recur in every full-stack project:
 4. **Auth-gated endpoints:** Every endpoint behind `requireAuth` must return 401 for unauthenticated requests, not 500.
 5. **Unit/format consistency:** If prices are stored as strings (`"2.99"`) but displayed as numbers (`2.99`), test the parseFloat boundary.
 
+## Zod Validation in API Routes
+
+Every Next.js API route that parses input with Zod **must** catch `ZodError` and return a 400 response. Without this, Zod validation failures bubble up as unhandled exceptions → 500 Internal Server Error, which hides the real problem from the client.
+
+```typescript
+import { ZodError } from "zod";
+
+try {
+  const data = mySchema.parse(await req.json());
+  // ... handle request
+} catch (error) {
+  if (error instanceof ZodError) {
+    return NextResponse.json(
+      { error: "Validation failed", details: error.errors },
+      { status: 400 }
+    );
+  }
+  throw error; // re-throw non-validation errors
+}
+```
+
+**When adding a new Zod-validated endpoint**, always include the ZodError catch. When auditing an existing codebase, check that *every* route using `.parse()` has this handling — it's easy to miss one (groceryGenius had this exact gap on a single endpoint while all others were correct).
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
