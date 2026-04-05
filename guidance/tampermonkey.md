@@ -11,6 +11,7 @@ Every `.user.js` file must include `@updateURL` and `@downloadURL`. For private 
 
 - Bump `@version` on every change so Tampermonkey detects the update
 - Deploy: `scp` the file to VM `/var/www/html/`, then open the URL in Edge to trigger install
+- **Always add new scripts to `example.com/install.html`** — centralized install page for all userscripts
 
 ## Repository
 
