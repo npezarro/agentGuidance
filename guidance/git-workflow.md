@@ -3,6 +3,7 @@
 ## Branch Rules
 - Never commit directly to `main`.
 - Use the branch assigned to you. If none exists, create one: `agent/<task-name>` or `claude/<task-name>`.
+- **Avoid `test-` as a branch prefix.** Some repos have GitHub rulesets or branch protection that silently reject pushes to `test-*` branches (no error, branch just doesn't appear on remote). Use descriptive names like `add-tests-<module>` or `<module>-tests-<run>` instead.
 - Commit messages explain **why**, not just what. Large commits are fine; don't split work artificially.
 - Before committing:
   1. `git status` to verify no unintended files staged.
