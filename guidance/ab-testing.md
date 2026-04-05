@@ -45,6 +45,21 @@ All evaluation results are **automatically posted** to `#claude-bakeoff` (channe
 
 To manually post (or re-post) results: `arena discord-report <run-id>`
 
+## Multi-Path (4+) Bakeoffs
+
+The framework natively supports 2-path A/B. For 4+ paths, bypass `arena run` and launch parallel agents directly:
+
+1. Create N environments in `environments/buying-{name}/CLAUDE.md`
+2. Create a task in `tasks/<name>/task.yaml` with eval criteria
+3. Create a run directory: `runs/<run-id>/path-{1..N}/`
+4. Launch N parallel agents (via Agent tool), each with a different environment's instructions
+5. Each agent writes to `runs/<run-id>/path-N/response.md`
+6. Judge all N responses against eval criteria, write `judging-results.yaml`
+
+**Key finding (sander buying guide, run 20260405_140941):** Adversarial framing (skeptic-first, "find reasons NOT to buy") consistently surfaces insights that structured/deep-dive approaches miss — specifically alternative solutions, hidden costs, and safety issues. The winning instruction set for any research/recommendation task should lead with premise-questioning before exhaustive product research.
+
+**Bakeoff output storage:** Results go in private repos (`llm-tasks/tasks/` or `privateContext/`), NOT in `claude-bakeoff` which is public. Only environments and task definitions stay in `claude-bakeoff`.
+
 ## Default Awareness
 Every Claude Code instance receives these instructions via the SessionStart hook. When you encounter a situation where two approaches could be compared empirically rather than argued about, suggest running an arena test. This is especially valuable for:
 - Instruction set changes (CLAUDE.md modifications)
