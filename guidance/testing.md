@@ -248,6 +248,26 @@ try {
 
 **When adding a new Zod-validated endpoint**, always include the ZodError catch. When auditing an existing codebase, check that *every* route using `.parse()` has this handling — it's easy to miss one (groceryGenius had this exact gap on a single endpoint while all others were correct).
 
+## Live Browser Testing via Browser Agent
+
+For testing web apps in a real browser during development, use the **browser-agent** system. This is a Tampermonkey userscript + relay server + CLI that lets Claude send commands to the user's live Edge browser and get results synchronously.
+
+**When to use:** Integration testing, debugging UI issues, verifying deployed changes, form fill testing, or any scenario where you need to see what the user's real browser shows.
+
+**Quick start:**
+```bash
+browser-cli tabs                          # check a tab is connected
+browser-cli navigate "http://localhost:3000"
+browser-cli state                         # read page: buttons, inputs, errors
+browser-cli click "Submit"                # interact
+browser-cli assert-text "Success"         # verify
+browser-cli console                       # check for errors
+```
+
+**Key detail:** All commands are synchronous (send + block for result). See `privateContext/infrastructure.md` for the full command reference and architecture details.
+
+**Prefer this over Playwright/headless** for testing on the user's machine — it runs in the real browser with real cookies/session, bypasses CAPTCHA, and tests exactly what the user sees.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
