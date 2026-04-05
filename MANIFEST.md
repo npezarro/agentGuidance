@@ -34,6 +34,7 @@ Every operational function has exactly one canonical source. If you need to find
 | Browser page reader | `guidance/browser-page-reader.md` | page-reader CLI for JS pages |
 | Local worker bridge | `guidance/local-worker-bridge.md` | Post-mortem reference |
 | Tampermonkey | `guidance/tampermonkey.md` | Script hosting, CAPTCHA patterns |
+| Learning capture | `guidance/learning-capture.md` | When/where to persist learnings (3-destination rule) |
 
 ## Rules vs Guidance
 
