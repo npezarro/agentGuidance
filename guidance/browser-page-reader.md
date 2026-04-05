@@ -66,3 +66,16 @@ Automatically detects:
 - **Login walls**: Password fields + "sign in to continue" patterns
 - **Captchas**: reCAPTCHA, hCaptcha iframes
 - **Redirects**: When the final URL differs from the requested URL
+
+## Stealth Mode
+Use `--stealth` for sites with bot detection:
+```bash
+node ~/repos/page-reader/src/index.js --stealth --wait 5000 <url>
+```
+- Randomizes viewport dimensions slightly
+- Sets `navigator.webdriver` to false
+- Uses `domcontentloaded` instead of `networkidle` (avoids hanging on blocked trackers)
+- Sets US locale and timezone
+
+## Site-Specific Notes
+See `privateContext/guidance/` for known limitations and workarounds with specific sites.
