@@ -58,7 +58,7 @@ Each run reviews a sliding window of recent activity:
 - Write code or make functional changes to repos
 - Run builds or tests
 - Deploy anything
-- Create PRs or branches (it edits guidance files on main/production directly)
+- Commit directly to main (all changes go on branches with PRs for review)
 - Duplicate information that's already captured
 
 ## Review Process
