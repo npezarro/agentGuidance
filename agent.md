@@ -25,7 +25,7 @@ npx jest             # tests (when present)
 - **Diagnose before retrying.** Understand *why* before re-running. No blind retry loops.
 - **Always push to GitHub.** If it's not on GitHub, it doesn't exist. Use `assortedLLMTasks` for deliverables without a home repo.
 - **No external posting without explicit instruction.** Building features is fine; calling endpoints is not.
-- **Capture every learning.** Cross-project learnings go to `agentGuidance`; project-specific learnings go to that repo's `CLAUDE.md` or `context.md`.
+- **Capture every learning in ALL relevant places.** Every operational learning, safeguard, or behavioral rule must be persisted to: (1) memory (for cross-session recall), AND (2) the relevant repo's `CLAUDE.md` or `context.md` (for any agent working in that repo). Cross-project learnings also go to `agentGuidance`. Never save to only one location.
 
 ## Code Standards
 - **Match existing patterns.** Read `package.json`, config files, and surrounding code first.
