@@ -105,9 +105,17 @@ The learning agent needs a focused prompt that:
 | memory system | Audits for memory-only learnings |
 | MANIFEST.md | Consults for canonical source locations |
 
-## Open Questions
+## Decisions (finalized 2026-04-05)
 
-1. **Frequency:** Every 2 hours? Every 4? Once daily? More frequent = more current, but more usage cost. Recommendation: every 4 hours during active periods, skip when idle (no recent commits).
-2. **Discord channel:** Use `#agent-journal` or create a dedicated `#learnings` channel?
-3. **Approval flow:** Should it auto-commit guidance changes, or create a review queue? Auto-commit is faster but riskier. Recommendation: auto-commit with a mandatory post to Discord showing the diff.
-4. **Scope expansion:** Should it also review and suggest prompt improvements for autonomousDev and fix-checker prompts?
+1. **Frequency:** Every 1 hour (cron at :43). Skips when 5d or 7d usage >= 90%.
+2. **Discord channel:** `#learnings` (dedicated channel, `DISCORD_LEARNINGS_WEBHOOK_URL` env var).
+3. **Approval flow:** Staged — all changes on branches with PRs. User reviews and merges. No direct commits to main.
+4. **Scope:** Observes and suggests on everything — autonomousDev, fix-checker, all repo CLAUDE.md files, agentGuidance itself.
+5. **Correction detection:** Scans for user corrections in Discord #cli-interactions and git history that aren't reflected in any rule set. Highest priority capture target.
+
+## Implementation
+
+- **Location:** `~/repos/autonomousDev/learnings-pass/`
+- **Runner:** `run.sh` (hourly cron)
+- **Prompt:** `prompt.md` (5-pass review: uncaptured learnings, memory audit, correction detection, prompt observation, profile updates)
+- **Suggestions log:** `suggestions.md` (append-only, for prompt/instruction improvement ideas)
