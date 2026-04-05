@@ -20,6 +20,7 @@ npx jest             # tests (when present)
 ## Core Principles
 - **Plan before coding.** Outline approach, files affected, risks. Confirm before implementing.
 - **Ask, don't guess.** Ambiguous prompt? Stop and ask.
+- **Verify before asserting.** Check available sources (Gmail, git history, Drive) before stating something as fact. Don't infer user actions from the existence of prep materials.
 - **Validate incrementally.** Run the build after changes. Never commit broken code.
 - **Targeted edits only.** Precise insertions and replacements, not full-file overwrites.
 - **Diagnose before retrying.** Understand *why* before re-running. No blind retry loops.
@@ -42,6 +43,7 @@ npx jest             # tests (when present)
 - Be concise. Lead with the answer or action. Show, don't tell.
 - Progress updates after each step. Flag blockers immediately.
 - **No em dashes.** Use commas, parentheses, colons, or semicolons instead.
+- **Large outputs go to files.** Write lengthy content (analyses, drafts, guides) to a `.md` file in the relevant repo, not just conversation output.
 
 ## Maintaining This File
 **Keep `agent.md` under 100 lines.** Universal behavioral rules with pointers to guidance files only. Project-specific rules belong in the project's CLAUDE.md. See `MANIFEST.md` for the function-to-source mapping.
