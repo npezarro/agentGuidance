@@ -22,3 +22,7 @@
 6. If any check fails, **do not move on**. Diagnose and fix before declaring the deploy complete.
 
 Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
+
+## VM SSH Access
+
+The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
