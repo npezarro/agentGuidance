@@ -25,6 +25,12 @@ Tampermonkey scripts running in the user's real browser bypass CAPTCHA (hCaptcha
 - CDP remote debugging + Playwright connect (hCaptcha still detects)
 - Eval-based loaders (GM_* functions are sandboxed per-script, can't be shared via `window.*` or passed to `eval`)
 
+## Generic Browser Agent
+
+A general-purpose browser agent (`browser-agent.user.js`) is available for any task that needs live browser interaction — testing web apps, debugging UI, form automation, etc. It matches `*://*/*` and provides 30+ commands via `browser-cli`.
+
+See `privateContext/infrastructure.md` § "Browser Agent" for the full command reference, API key, and architecture. The CLI is at `~/bin/browser-cli`.
+
 ## Deployment Pattern for Auto-Checkout Scripts
 
 ```
