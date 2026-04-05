@@ -47,12 +47,15 @@ Save the returned thread ID. For updates within the same task, reply to the thre
 - Follow-ups and open items
 - **Reference links** -- include GitHub commit/PR/branch links inline (e.g., "Fixed the validation bug ([commit](https://github.com/npezarro/repo/commit/abc1234))")
 
-**File links (`#file-links`):**
-When you generate a readable artifact (report, analysis, .md summary, application material) that the user will want to open, post the GitHub link:
+**File links (`#file-links`) — AUTOMATED:**
+A PostToolUse hook (`auto-file-links.sh`) automatically detects when `git push` includes readable artifacts (.md/.txt files in output/report/proposal/analysis/application directories) and posts them to `#file-links`. You should not need to call `file-links-post.sh` manually in most cases.
+
+**Manual fallback:** If the hook misses a file (e.g., it's in an unusual directory, or you pushed multiple commits), post manually:
 ```bash
 ~/repos/privateContext/file-links-post.sh "Description" "https://github.com/npezarro/repo/blob/branch/path/to/file.md"
 ```
-Do NOT post links for routine code changes, config files, or test files -- only files the user is meant to read.
+
+**What qualifies as a readable artifact:** Reports, analyses, proposals, summaries, application materials — files the user is meant to open and read. Do NOT post links for routine code changes, config files, test files, or internal docs like READMEs.
 
 **Rules:**
 - No external posting without explicit instruction. Discord reporting via the webhook script is the one exception -- that's internal.
