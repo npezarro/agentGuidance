@@ -71,4 +71,6 @@ YouTube frequently changes DOM structure, removing elements and attributes witho
 - **Target stable container IDs** as primary selectors (`#shorts-player`, `#player-container-id`), with fallbacks to class-based selectors (`.player-container`).
 - **Mobile containers change independently.** `ytm-player` and `ytm-shorts-player-renderer` can be removed on mobile while desktop equivalents persist. Always test mobile paths separately.
 - **MutationObservers need `subtree: true`** for Shorts page navigation detection. YouTube's SPA transitions swap deep subtrees, not top-level elements.
+- **Debounce MutationObservers** (250ms minimum) when observing Shorts containers. Swipe navigation triggers many rapid mutations; without debouncing, observers fire dozens of times per swipe causing UI thrashing and race conditions.
+- **Use session-scoped variables for SPA state.** For state that should persist across SPA navigation (e.g., user-set speed surviving Shorts swipes) but reset on page leave, use module-level variables instead of GM_setValue. GM_setValue is for persistent cross-session storage; module-level vars naturally reset when the page unloads.
 - **Bump the major version** when adapting to YouTube DOM changes, as the fix typically affects multiple code paths (desktop, mobile, Shorts, fullscreen)
