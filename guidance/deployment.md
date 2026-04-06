@@ -18,8 +18,9 @@
 2. `curl -s -o /dev/null -w "%{http_code}" <url>` to confirm HTTP 200 from the live URL.
 3. `pm2 logs <process> --lines 20` to scan for errors, uncaught exceptions, or crash loops in the first 30 seconds.
 4. If the app has authentication, verify the sign-in flow works end-to-end.
-5. Update `context.md` with deployment status and any issues observed.
-6. If any check fails, **do not move on**. Diagnose and fix before declaring the deploy complete.
+5. **Test the actual user-facing behavior yourself** before asking the user to verify. Use the browser agent for interactive pages, `curl` for APIs, or direct tool invocation. Never declare "done, try it out" without verifying it works.
+6. Update `context.md` with deployment status and any issues observed.
+7. If any check fails, **do not move on**. Diagnose and fix before declaring the deploy complete.
 
 Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 
