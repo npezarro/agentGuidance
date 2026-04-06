@@ -1,6 +1,13 @@
 # Frontend Experience Log
 
 ---
+## 2026-04-05 | youtubeSpeedSetAndRemember v18.0-18.2 YouTube DOM adaptation
+**Task:** Fix Shorts speed toggle broken by YouTube removing `[is-active]` attribute from `ytd-reel-video-renderer`, plus add mobile Shorts support after `ytm-shorts-player-renderer` removal.
+**What worked:** Defensive container detection: use `offsetHeight > 0` to filter invisible elements, `getComputedStyle` for positioning checks, and stable IDs (`#shorts-player`, `#player-container-id`) as primary selectors with class-based fallbacks. Moved Shorts toggle into `#actions` as first child to match YouTube's native action button aesthetic. Separated desktop/mobile Shorts container detection cleanly.
+**What didn't:** Initially relied on `[is-active]` attribute on `ytd-reel-video-renderer` to find the current Shorts video. YouTube removed the attribute silently, breaking detection. Also relied on `ytm-player` and `ytm-shorts-player-renderer` for mobile detection, both removed in the same update cycle.
+**Learned:** YouTube changes DOM structure frequently and without notice. Never rely on custom attributes or specific element tag names as sole selectors for YouTube userscripts. Always have fallback selectors targeting stable container IDs. Test both desktop and mobile paths independently, as YouTube can change them at different times.
+
+---
 ## 2026-04-02 | groceryGenius recipe card redesign
 **Task:** Redesign the recipe card component to show ingredient counts, prep time, and dietary tags in a compact layout.
 **What worked:** Built the card as a composition of small subcomponents (RecipeImage, RecipeMeta, DietaryTags) rather than one monolithic component. Used Tailwind's `line-clamp-2` for recipe titles to prevent layout overflow. Checked the existing design tokens in tailwind.config.js and reused the existing color palette and spacing scale instead of introducing new values.
