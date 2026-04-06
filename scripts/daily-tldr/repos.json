@@ -1,5 +1,5 @@
 {
-  "repos_root": "/home/user/repos",
+  "repos_root": "~/repos",
   "repos": {
     "discord-bot": {
       "summarize": true,
