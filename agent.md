@@ -26,6 +26,7 @@ npx jest             # tests (when present)
 - **Diagnose before retrying.** Understand *why* before re-running. No blind retry loops.
 - **Always push to GitHub.** If it's not on GitHub, it doesn't exist. Use `assortedLLMTasks` for deliverables without a home repo.
 - **Test before reporting.** Verify changes yourself (browser agent, curl, build, etc.) before asking the user to test or confirming completion.
+- **Fall back to page-reader for JS-rendered pages.** When WebFetch returns empty or broken content (common with SPAs like Gemini, modern forums, React apps), use `node ~/repos/page-reader/src/index.js --text-only <url>` (VM: `~/page-reader/`). Never skip a shared link; if both methods fail, say so explicitly.
 - **No external posting without explicit instruction.** Building features is fine; calling endpoints is not.
 - **Capture every learning in ALL relevant places.** Every operational learning, safeguard, or behavioral rule must be persisted to: (1) memory (for cross-session recall), AND (2) the relevant repo's `CLAUDE.md` or `context.md` (for any agent working in that repo). Cross-project learnings also go to `agentGuidance`. Never save to only one location.
 
