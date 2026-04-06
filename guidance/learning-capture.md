@@ -66,6 +66,17 @@ When a learning modifies or extends an existing rule:
 3. **Update MANIFEST.md** if you add a new guidance file
 4. **Update agent.md's Guidance File Index** if you add a new guidance file
 
+## Responding to Mistakes
+
+When you make a mistake and identify the cause, run this process before moving on:
+
+1. **Check existing guidance.** Search `agentGuidance/guidance/` and `privateContext` for rules that should have prevented the mistake.
+2. **If the rule exists:** Figure out why it wasn't followed. Is the rule too narrow? Was there a gap in the trigger condition? Update the rule to close the gap.
+3. **If no rule exists:** Add one to the appropriate location (agentGuidance for cross-session, repo CLAUDE.md for repo-specific).
+4. **Commit and push the rule update** — rules that aren't pushed don't help future sessions.
+
+**Why this matters:** Rules that exist but aren't followed indicate either a rule clarity problem or a missing trigger condition. Every failure should become a rule improvement — don't just fix the symptom, patch the prevention.
+
 ## What NOT to Capture
 
 - One-time debugging steps (they're in git history)
