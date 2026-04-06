@@ -121,10 +121,10 @@ COST=$(grep '"type":"result"' "$RUN_LOG" 2>/dev/null \
 
 # ── Parse findings ──────────────────────────────────────────────────
 
-CRITICAL_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: critical' || echo "0")
-HIGH_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: high' || echo "0")
-MEDIUM_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: medium' || echo "0")
-LOW_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: low' || echo "0")
+CRITICAL_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: critical' || true)
+HIGH_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: high' || true)
+MEDIUM_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: medium' || true)
+LOW_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: low' || true)
 TOTAL_FINDINGS=$((CRITICAL_COUNT + HIGH_COUNT + MEDIUM_COUNT + LOW_COUNT))
 
 # ── Update state (atomic write) ─────────────────────────────────────
