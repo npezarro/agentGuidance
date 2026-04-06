@@ -1,6 +1,13 @@
 # Frontend Experience Log
 
 ---
+## 2026-04-06 | youtubeSpeedSetAndRemember v19.1 platform-agnostic navigation detection
+**Task:** Fix mobile Shorts speed not persisting across swipes. Container-level MutationObserver approach failed on mobile because `ytm-*` containers don't match desktop `ytd-*` containers.
+**What worked:** Replaced container-specific swipe detection with video src change tracking. The body-level MutationObserver now checks `video.src || video.currentSrc` against a `lastVideoSrc` variable. When the src changes (indicating a new video from swipe, navigation, or playlist), re-inject the toggle and reapply session speed. Debounced at 300ms. This works identically on desktop and mobile regardless of DOM structure.
+**What didn't:** Container-level observers targeting `ytd-reel-player-overlay-renderer` (desktop) or `.reel-player-overlay-actions` (mobile) were platform-specific and broke whenever YouTube changed container names or structure. Required separate observer setup per platform.
+**Learned:** For YouTube SPA navigation detection, observe the video element's src property rather than DOM container mutations. Video src changes are the universal signal that works across all YouTube surfaces (desktop, mobile, Shorts, playlists) without depending on platform-specific container names.
+
+---
 ## 2026-04-06 | youtubeSpeedSetAndRemember v19.0 SPA state persistence for Shorts
 **Task:** Fix Shorts speed not persisting across swipes. Previously, the MutationObserver reset speed to default on every swipe because it couldn't distinguish "new Shorts video" from "user-set speed."
 **What worked:** Introduced a `sessionSpeed` module-level variable set by `setSpeed()` when on Shorts. The observer reapplies `sessionSpeed` after each swipe instead of resetting to default. Debounced the MutationObserver (250ms) to prevent rapid-fire re-injections during swipe transitions. Added mobile Shorts container selectors (`ytm-shorts-player-renderer`, `#shorts-container`) for broader swipe detection.
