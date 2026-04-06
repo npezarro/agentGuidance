@@ -17,7 +17,7 @@ if [ -z "${DISCORD_CLOSEOUT_WEBHOOK_URL:-}" ]; then
   exit 0
 fi
 
-CLOSEOUT_CHANNEL_ID="REDACTED_CHANNEL_ID"
+CLOSEOUT_CHANNEL_ID="${CLOSEOUT_CHANNEL_ID:?Set CLOSEOUT_CHANNEL_ID in ~/.env}"
 
 # Bot token — fetched from VM on first use, cached locally
 BOT_TOKEN_CACHE="$HOME/.cache/discord-bot-token"
@@ -27,7 +27,7 @@ _get_bot_token() {
     return
   fi
   local token
-  token=$(ssh deploy-vm 'grep -oP "DISCORD_BOT_TOKEN=\K.*" /home/REDACTED_VM_USER/discord-bot/.env' 2>/dev/null)
+  token=$(ssh deploy-vm 'grep -oP "DISCORD_BOT_TOKEN=\K.*" "$HOME/discord-bot/.env"' 2>/dev/null)
   if [ -n "$token" ]; then
     mkdir -p "$(dirname "$BOT_TOKEN_CACHE")"
     echo "$token" > "$BOT_TOKEN_CACHE"
