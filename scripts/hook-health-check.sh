@@ -78,6 +78,11 @@ if [ "$FAIL_COUNT" -eq 0 ]; then
 fi
 
 # --- Send alert email ---
+# Source credentials
+[ -f "$HOME/.env" ] && source "$HOME/.env"
+[ -f "$HOME/.secrets" ] && source "$HOME/.secrets"
+SMTP_USER="${SMTP_USER:-}"
+ALERT_EMAIL="${ALERT_EMAIL:-}"
 REPORT_PW=$(grep "^GMAIL_APP_PW=" "$HOME/.secrets" 2>/dev/null | sed "s/^GMAIL_APP_PW=//; s/^'//; s/'$//" || true)
 if [ -z "$REPORT_PW" ]; then
   # Fallback to security scanner env
@@ -95,9 +100,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-sender = "REDACTED_EMAIL"
+sender = "$SMTP_USER"
 pw = "$REPORT_PW"
-recipient = "REDACTED_EMAIL"
+recipient = "$ALERT_EMAIL"
 
 msg = MIMEMultipart("alternative")
 msg["Subject"] = "Hook Health Check — ${FAIL_COUNT} failure(s) detected"

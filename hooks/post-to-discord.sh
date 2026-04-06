@@ -447,8 +447,8 @@ find "$THREAD_STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 # (works when CLI runs on the VM), then fall back to SSH (local PC → VM).
 INGEST_PORT="${HEALTH_PORT:-9090}"
 INGEST_URL="http://127.0.0.1:${INGEST_PORT}/ingest"
-VM_SSH_KEY="$HOME/.ssh/vm_key"
-VM_HOST="REDACTED_VM_USER@example.com"
+VM_SSH_KEY="${VM_SSH_KEY:-$HOME/.ssh/vm_key}"
+VM_HOST="${VM_HOST:-deploy-vm}"
 
 INGEST_PAYLOAD=$(_EB_PROMPT="$USER_PROMPT" \
   _EB_ACTIVITY="$ACTIVITY" \
