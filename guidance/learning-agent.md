@@ -13,10 +13,10 @@ Learnings get lost because:
 ## Architecture
 
 ### Runner
-- Location: `~/repos/auto-dev/learning-agent/`
-- Invoked by: Cron (every 2-4 hours during active development periods)
+- Location: `~/repos/auto-dev/learnings-pass/`
+- Invoked by: Cron (hourly at :43)
 - Runtime: Claude CLI with a focused prompt
-- Timeout: 20 minutes (it's reading and writing, not building)
+- Timeout: 30 minutes (`MAX_TIMEOUT=1800` in run.sh)
 
 ### Capacity Gate
 - **Skip if:** 5-day or 7-day usage >= 90% (this is a high-priority but not critical job)
