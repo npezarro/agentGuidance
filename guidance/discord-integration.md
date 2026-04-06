@@ -74,6 +74,15 @@ curl -s -X POST "$DISCORD_WEBHOOK_URL" \
 
 **Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. When any message exceeds the limit, overflow goes into a thread -- `discord-webhook.sh` handles this automatically. For manual posts (raw curl), split into chunks at 1990 chars and post overflow as thread replies.
 
+## Discord vs CLI Quality Gap
+
+Discord-dispatched agents run with `planMode: 'skip'` and `clarifyAmbiguous: 'best-effort'` — no interactive recovery. When a tool fails (e.g., WebFetch on a JS SPA), the agent can't ask for clarification or retry with user guidance. Mitigations:
+
+- **Server-side URL pre-fetching** in contextFetcher injects page content before the agent starts
+- **Belt-and-suspenders**: pre-fetch + EXECUTE_DIRECTIVE fallback instructions + repo CLAUDE.md rules
+- **Retry detection**: stripBotOutput() handles users pasting prior bot output with corrections
+- When building new Discord-dispatched features, design for single-shot execution — assume no interactive recovery
+
 ## Inter-Agent Coordination
 
 - Check `#claude-agent-logs` and `#running-job-logs` to see what other agents are doing before starting work on a shared repo.
