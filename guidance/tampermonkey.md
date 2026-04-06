@@ -61,3 +61,14 @@ Platform-specific gotchas (discovered via freeGames):
 - **GOG redemption:** reCAPTCHA timing is unpredictable; use retry loops with 3-5s waits on Continue/Redeem buttons
 - **IndieGala:** "ADD TO LIBRARY" button lazy-loads inconsistently; use `wait-for` with generous timeouts
 - **GamerPower API:** Good discovery source for free game listings across platforms
+
+## YouTube DOM Resilience
+
+YouTube frequently changes DOM structure, removing elements and attributes without notice. Userscripts targeting YouTube must be defensive:
+
+- **Don't rely on attributes like `[is-active]`** for element detection. YouTube removed this from `ytd-reel-video-renderer` in April 2026 without deprecation.
+- **Use visibility checks** (`offsetHeight > 0`, `getComputedStyle`) instead of inline style or attribute presence. Invisible elements (e.g., `#movie_player` on Shorts pages) can return stale references.
+- **Target stable container IDs** as primary selectors (`#shorts-player`, `#player-container-id`), with fallbacks to class-based selectors (`.player-container`).
+- **Mobile containers change independently.** `ytm-player` and `ytm-shorts-player-renderer` can be removed on mobile while desktop equivalents persist. Always test mobile paths separately.
+- **MutationObservers need `subtree: true`** for Shorts page navigation detection. YouTube's SPA transitions swap deep subtrees, not top-level elements.
+- **Bump the major version** when adapting to YouTube DOM changes, as the fix typically affects multiple code paths (desktop, mobile, Shorts, fullscreen)
