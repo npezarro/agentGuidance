@@ -18,7 +18,7 @@ Every operational function has exactly one canonical source. If you need to find
 | Testing | `guidance/testing.md` | Writing, running, cross-layer invariants |
 | Debugging | `guidance/debugging.md` | Log analysis, reproduce, isolate |
 | Deployment (general) | `guidance/deployment.md` | Pre-deploy and post-deploy checklists |
-| Deployment (VM safety) | `~/.claude/rules/deploy-safety.md` | VM-specific: disk, largeFileStorage, branches |
+| Deployment (VM safety) | `~/.claude/rules/deploy-safety.md` | VM-specific: disk, large-file-storage, branches |
 | Dependencies | `guidance/dependencies.md` | Evaluating and adding packages |
 | Resource awareness | `guidance/resource-awareness.md` | Server resource checks |
 | Process hygiene | `guidance/process-hygiene.md` | Spawned processes, temp files, ports |
