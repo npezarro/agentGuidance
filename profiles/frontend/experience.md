@@ -1,6 +1,13 @@
 # Frontend Experience Log
 
 ---
+## 2026-04-06 | youtubeSpeedSetAndRemember v19.0 SPA state persistence for Shorts
+**Task:** Fix Shorts speed not persisting across swipes. Previously, the MutationObserver reset speed to default on every swipe because it couldn't distinguish "new Shorts video" from "user-set speed."
+**What worked:** Introduced a `sessionSpeed` module-level variable set by `setSpeed()` when on Shorts. The observer reapplies `sessionSpeed` after each swipe instead of resetting to default. Debounced the MutationObserver (250ms) to prevent rapid-fire re-injections during swipe transitions. Added mobile Shorts container selectors (`ytm-shorts-player-renderer`, `#shorts-container`) for broader swipe detection.
+**What didn't:** The original approach treated every MutationObserver callback as a "new video" event requiring a speed reset. This was correct for initial page load but wrong for swipes where the user had already set a speed. Also, without debouncing, the observer fired dozens of times per swipe causing visible UI flickering.
+**Learned:** In YouTube's SPA, distinguish between "session state" (survives navigation within the same page type) and "persistent state" (survives across sessions). Use module-level variables for session state and GM_setValue for persistent state. Always debounce MutationObservers watching YouTube containers; mutations come in bursts during SPA transitions.
+
+---
 ## 2026-04-05 | youtubeSpeedSetAndRemember v18.0-18.2 YouTube DOM adaptation
 **Task:** Fix Shorts speed toggle broken by YouTube removing `[is-active]` attribute from `ytd-reel-video-renderer`, plus add mobile Shorts support after `ytm-shorts-player-renderer` removal.
 **What worked:** Defensive container detection: use `offsetHeight > 0` to filter invisible elements, `getComputedStyle` for positioning checks, and stable IDs (`#shorts-player`, `#player-container-id`) as primary selectors with class-based fallbacks. Moved Shorts toggle into `#actions` as first child to match YouTube's native action button aesthetic. Separated desktop/mobile Shorts container detection cleanly.
