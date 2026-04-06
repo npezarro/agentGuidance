@@ -129,6 +129,23 @@ bash scripts/propagate-hooks.sh             # push to all repos
 
 This copies `.claude/settings.json` and `CLAUDE.md` to every repo. The settings include both the SessionStart hook (fetches global rules) and the Stop hook (auto-posting).
 
+## Manual / Agent-Initiated Posts
+
+The auto-posting above is for session transcripts via the Stop hook. For **manual posts** (buying guides, deliverables, reports), post directly on the VM since the WP site is hosted there:
+
+```bash
+# Via WP-CLI (preferred — handles formatting, categories, tags)
+ssh deploy-vm "wp post create --post_title='My Title' --post_content='<content>' --post_status=draft"
+
+# Via local REST API on the VM
+ssh deploy-vm "curl -s -X POST http://localhost/wp-json/wp/v2/posts \
+  -u \$WP_USER:\$WP_APP_PASSWORD \
+  -H 'Content-Type: application/json' \
+  -d '{\"title\":\"My Title\",\"content\":\"<content>\",\"status\":\"draft\"}'"
+```
+
+**Why direct on VM:** The WP site runs on the VM itself, so direct access avoids remote auth complexity. Use WP-CLI for structured posts and the REST API for programmatic use.
+
 ## Troubleshooting
 
 | Issue | Fix |
