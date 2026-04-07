@@ -75,6 +75,24 @@ A restart storm is when a PM2 process enters a rapid restart cycle (restarts > 5
 3. Fix the root cause
 4. `pm2 start <process>` to resume
 
+## Bash `pipefail` + `grep -c` Silent Failure
+
+**The scenario:** A script with `set -o pipefail` uses `grep -c 'pattern' || echo "0"` to count matches. When grep finds 0 matches, it outputs `0` AND exits code 1. Pipefail triggers the `|| echo "0"` fallback, producing `"0\n0"`. The variable becomes a two-line string that breaks `$(( ))` arithmetic silently — no error, just wrong values downstream.
+
+**Real incident:** This exact bug caused the agentGuidance security scanner to silently fail for 13 consecutive days. It was detecting secrets in public repos daily but crashing before it could report findings via Discord or email. The state file never updated, so it rescanned the same repos with the same silent crash every run.
+
+**Fix:** Use `grep -c 'pattern' || true` instead. `grep -c` already outputs `0` on no match — it just needs the exit code suppressed, not a fallback echo.
+
+```bash
+# WRONG — produces "0\n0" with pipefail
+count=$(grep -c 'pattern' file || echo "0")
+
+# RIGHT — outputs "0" and suppresses exit code 1
+count=$(grep -c 'pattern' file || true)
+```
+
+**Rule:** In any bash script using `set -eo pipefail`, never pair `grep` (any flag) with `|| echo`. Use `|| true` to suppress the non-zero exit code.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
