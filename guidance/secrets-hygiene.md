@@ -80,9 +80,22 @@ Never commit raw AI chat exports to any repository. If reference material from a
 
 This pattern caused a real incident: Gemini exports with medical/psychiatric chat titles were committed to a public repo and had to be emergency-removed (2026-04-05).
 
-## Pre-Commit Checklist
+## Automated Pre-Commit Hook
 
-Before committing to any public repo, verify:
+Public repos should install a pre-commit hook that scans staged diffs for sensitive identifiers before allowing commits. The `agentGuidance` repo has a reference implementation:
+
+- `hooks/git-pre-commit` — tracked copy of the hook (calls `security-scan.sh`)
+- `scripts/install-hooks.sh` — copies hook to `.git/hooks/` after clone
+
+The hook pipes `git diff --cached` through the security scanner. If any sensitive identifier (hostnames, private repo names, IPs, usernames) is detected, the commit is blocked with a clear message pointing to the reference database for replacement values.
+
+**Why:** Manual grep checks (below) are easy to forget. An automated hook catches leaks at commit time, before they reach the remote. This prevented multiple near-misses during the 2026-04-06 security audit.
+
+**To adopt in another public repo:** Copy the hook pattern from `agentGuidance/hooks/git-pre-commit` and adjust the `SCAN_SCRIPT` path. The scanner requires `privateContext/security-scan.sh` to be available locally.
+
+## Pre-Commit Checklist (Manual Fallback)
+
+When the automated hook isn't installed, verify before committing to any public repo:
 
 1. `grep -rn 'ssh.*@\|BEGIN.*KEY\|api.key\|webhook' .` — no secrets in staged files
 2. No IP addresses in code (check: `grep -rn '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' .`)
