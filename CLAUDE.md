@@ -10,6 +10,16 @@ This is the centralized source of truth for shared agent instructions. Changes h
 - `templates/` — reusable project templates
 - `scripts/` — propagation and health-check tooling
 
+## After Cloning
+
+This is a **public repo**. A pre-commit hook blocks commits containing sensitive identifiers. Install it after cloning:
+
+```bash
+bash scripts/install-hooks.sh
+```
+
+The hook requires `~/repos/privateContext/security-scan.sh` to be available.
+
 ## Fallback Rules (for downstream repos if remote fetch fails)
 
 1. Plan before coding. Outline approach, confirm before implementing.
