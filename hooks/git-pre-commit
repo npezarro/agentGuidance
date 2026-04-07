@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pre-commit hook for agentGuidance (PUBLIC repo)
+# Scans staged changes for sensitive identifiers before allowing commit.
+# Uses security-scan.sh from privateContext for pattern matching.
+#
+# Install: bash scripts/install-hooks.sh
+
+set -euo pipefail
+
+SCAN_SCRIPT="$HOME/repos/privateContext/security-scan.sh"
+
+if [ ! -x "$SCAN_SCRIPT" ]; then
+  echo "WARNING: security-scan.sh not found at $SCAN_SCRIPT"
+  echo "Skipping sensitive identifier check. Install privateContext to enable."
+  exit 0
+fi
+
+# Scan the staged diff for sensitive patterns
+SCAN_OUTPUT=$(git diff --cached | "$SCAN_SCRIPT" 2>&1 || true)
+
+if echo "$SCAN_OUTPUT" | grep -q "BLOCKED"; then
+  echo ""
+  echo "========================================="
+  echo "  COMMIT BLOCKED: Sensitive identifiers  "
+  echo "========================================="
+  echo ""
+  echo "$SCAN_OUTPUT"
+  echo ""
+  echo "This is a PUBLIC repo. Fix the violations above before committing."
+  echo "See ~/repos/privateContext/sensitive-identifiers.md for replacement values."
+  echo ""
+  echo "To bypass (emergency only): git commit --no-verify"
+  exit 1
+fi
+
+exit 0
