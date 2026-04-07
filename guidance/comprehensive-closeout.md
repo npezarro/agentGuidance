@@ -90,7 +90,7 @@ For every repo touched during the session:
 
 ### 6. Memory Update
 
-Update the relevant project memory file in `~/.claude/projects/-mnt-c-Users-npeza/memory/` with:
+Update the relevant project memory file in `~/.claude/projects/<project-path>/memory/` (the project-path is derived from your working directory, e.g., `-home-user-repos-myproject`) with:
 - Current state of the project after this session
 - Pointer to the closeout document for full context
 - Any open items that span beyond this single repo

@@ -13,7 +13,7 @@ Learnings get lost because:
 ## Architecture
 
 ### Runner
-- Location: `~/repos/auto-dev/learnings-pass/`
+- Location: `~/repos/autonomousDev/learnings-pass/`
 - Invoked by: Cron (hourly at :43)
 - Runtime: Claude CLI with a focused prompt
 - Timeout: 30 minutes (`MAX_TIMEOUT=1800` in run.sh)
