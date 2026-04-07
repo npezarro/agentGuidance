@@ -62,6 +62,29 @@ describe('functionName', () => {
 - **Don't mock the unit under test.** If you need to, the function is doing too much — refactor it.
 - **Prefer dependency injection** over module-level mocking where possible.
 - **Reset mocks between tests:** `beforeEach(() => jest.clearAllMocks())` or equivalent.
+- **Use typed mock helpers instead of `as any`:** Create factory functions that return complete typed objects rather than casting partial objects. This catches shape mismatches at compile time and eliminates lint warnings.
+
+```typescript
+// WRONG — hides type errors, triggers no-explicit-any lint warnings
+const token = { access_token: "test" } as any;
+
+// RIGHT — typed factory returns a complete object
+function fakeOAuthToken(overrides?: Partial<OAuthToken>): OAuthToken {
+  return { access_token: "test", refresh_token: "r", expires_at: Date.now() + 3600000, ...overrides };
+}
+const token = fakeOAuthToken();
+```
+
+## Test Fixture Schema Drift
+
+When tests embed their own DDL (CREATE TABLE) or data shapes, they silently drift from the real schema as the application evolves. Tests pass against the stale fixture schema while production uses the real one.
+
+**Signs:** Tests pass locally but the feature is broken in prod, or a batch of tests fail simultaneously after a migration adds columns.
+
+**Prevention:**
+- Import schema definitions from the application code rather than duplicating them in tests
+- If tests must define their own schema (e.g., SQLite in-memory), derive it from the same migration files the application uses
+- When adding a column or field to the real schema, search test files for the table name and update inline definitions
 
 ## Running Tests
 
