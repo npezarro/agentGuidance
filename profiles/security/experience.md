@@ -151,3 +151,9 @@
 **Task:** Identified and documented PII risk from AI chat export files committed to public repos
 **What worked:** Emergency removal of Gemini exports containing sensitive sidebar titles (medical/psychiatric references, tax details) plus email addresses. Added `Reference Files/` to .gitignore to prevent recurrence. Files relocated to privateContext for safe agent access.
 **Learned:** AI chat exports are a novel PII attack surface that traditional secret scanners miss. The sidebar content in exports (Gemini, ChatGPT) includes titles from ALL conversations, not just the exported one. A single export file can leak dozens of sensitive topics. Unlike credentials, these can't be "rotated" -- the information is permanently exposed once pushed. Prevention: .gitignore upload directories by default in any repo where users might paste reference materials. Detection: grep for common export patterns (chat titles, email metadata) in pre-commit hooks.
+
+---
+## 2026-04-06 | Portable pre-commit hook for public repos (agentGuidance)
+**Task:** Implemented and documented a portable pre-commit hook that scans staged diffs for sensitive identifiers before allowing commits to public repos
+**What worked:** Tracked hook in `hooks/git-pre-commit` with `scripts/install-hooks.sh` installer. Hook pipes `git diff --cached` through `security-scan.sh` and blocks on BLOCKED output. Graceful degradation: if security-scan.sh isn't available (no privateContext), it warns but allows the commit — prevents blocking external contributors.
+**Learned:** Automated pre-commit scanning catches leaks that manual checklists miss, especially during bulk edits and security redaction work (the same session that added this hook saw an accidental file deletion from an overly broad `git add`). The hook-as-tracked-file pattern (vs .git/hooks/ only) means the hook survives clones and is version-controlled. The install script is needed because git doesn't auto-install hooks from tracked files.
