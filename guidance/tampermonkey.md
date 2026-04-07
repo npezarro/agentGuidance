@@ -62,6 +62,12 @@ Platform-specific gotchas (discovered via freeGames):
 - **IndieGala:** "ADD TO LIBRARY" button lazy-loads inconsistently; use `wait-for` with generous timeouts
 - **GamerPower API:** Good discovery source for free game listings across platforms
 
+## Debug & Verbose Logging
+
+Ship userscripts with all debug/verbose logging flags **disabled**. Use boolean constants (`const DEBUG = false`) and gate console output behind them. Never commit `true` to production — users get console spam they can't silence, and it masks real errors in the browser console.
+
+This bit both ChatGPTCompletionChime and GeminiCompletionChime simultaneously (April 2026): `HEARTBEAT_LOG` and `NET_DEBUG` flags were left enabled, producing console output every 750ms for all users.
+
 ## YouTube DOM Resilience
 
 YouTube frequently changes DOM structure, removing elements and attributes without notice. Userscripts targeting YouTube must be defensive:
