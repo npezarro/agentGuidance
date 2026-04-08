@@ -201,6 +201,7 @@ These are patterns that AI-assisted writing tends to introduce that are NOT Nick
 8. **Formal transition words.** "More importantly", "accordingly", "furthermore", "additionally" — Nick just says the next thing without signposting. If two ideas are connected, he connects them with "and", "so", or a dash.
 9. **Generic soft-sell closers.** "This might save you some headaches", "check it out if you're interested", "hope this helps someone" — Nick either ends with the practical details (link, license, dependencies) or just stops. He doesn't sell.
 10. **Calling things by vague names.** "A small tool", "a solution", "a utility" — Nick names what things are: "a bash script", "a Discord bot", "an SSH reverse tunnel." Specificity over abstraction.
+11. **Em dashes everywhere.** Using "—" (em dashes) as connectors is a strong AI writing tell. Nick uses regular dashes, commas, or just starts a new sentence. If your draft is littered with em dashes, rewrite them out.
 
 ---
 
