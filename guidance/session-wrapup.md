@@ -7,7 +7,7 @@ For the reasoning behind these requirements, see `guidance/session-lifecycle.md`
 These are plain-text triggers the user types in conversation (NOT slash commands or skills). Respond directly when you see them:
 
 - **`--closeout`** — Standard session report. Write a full structured report in conversation AND send the same content to Discord via the webhook script. Sections: What was done (with file paths), Key decisions, What's working, Open items, Repos touched.
-- **`--deep-closeout`** — Comprehensive documentation for important sessions. Follow the full process in `guidance/comprehensive-closeout.md` (produces a durable markdown document, WordPress post, and Discord report).
+- **`--deep-closeout`** (alias: **`--dc`**) — Comprehensive documentation for important sessions. Follow the full process in `guidance/comprehensive-closeout.md` (produces a durable markdown document, WordPress post, and Discord report).
 
 **Before ending any session where you wrote or changed code, you MUST complete all of these steps.** Do not wait to be asked; this is automatic.
 
