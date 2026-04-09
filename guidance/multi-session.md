@@ -4,14 +4,28 @@ For detailed guidance on session ephemerality, crash recovery, and output design
 
 ## Picking Up Work from a Previous Session
 
-When continuing work from a previous session (yours or another agent's):
+When continuing work from a previous session (yours or another agent's), check available context before diving in. The goal is to avoid re-discovering what a prior session already figured out.
 
-1. **Read `context.md` first.** It's the handoff document.
-2. **Check git log.** `git log --oneline -10` to understand recent changes.
-3. **Check git status.** Look for uncommitted work left behind.
-4. **Check for open PRs.** `gh pr list` to avoid duplicating existing work.
-5. **Verify the environment.** Are dependencies installed? Is the build working? Are services running?
-6. **Update `context.md` when you're done.** The next session depends on it.
+### Context sources (check in order)
+
+1. **Read `context.md` first.** It's the handoff document — current state, blockers, next steps.
+2. **Read the repo's `CLAUDE.md`.** It has architecture, operational rules, and gotchas specific to this project.
+3. **Check memory.** Your memory system may have relevant project, feedback, or reference entries from prior conversations.
+4. **Check git log.** `git log --oneline -10` to understand recent changes and commit messages.
+5. **Check git status.** Look for uncommitted work left behind.
+6. **Check for open PRs.** `gh pr list` to avoid duplicating existing work.
+7. **Check closeout reports.** Recent closeouts in Discord #closeout or on the blog (search WordPress posts via `search-wp-posts.sh`) often have detailed context on what was done, decisions made, and what's left.
+8. **Check the agent journal.** The startup hook shows recent journal entries — scan for relevant discoveries or blockers.
+9. **Verify the environment.** Are dependencies installed? Is the build working? Are services running?
+
+### Why this matters
+
+Every new session starts from zero. Without checking these sources, you will repeat investigations, miss decisions already made, or contradict prior work. Five minutes of context-gathering saves thirty minutes of re-discovery.
+
+### When you're done
+
+10. **Update `context.md`.** The next session depends on it.
+11. **Persist learnings.** If you discovered something that isn't in the repo's CLAUDE.md or memory, add it so the next session doesn't have to re-learn it.
 
 ## Mid-Session Instruction Refresh (`--refresh`)
 
