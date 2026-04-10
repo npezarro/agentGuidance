@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# pre-push hook for PUBLIC repos
+# Scans all commits being pushed for sensitive identifiers.
+# Catches secrets that bypassed pre-commit (amended commits, rebases, etc.)
+#
+# Install: bash hooks/install-hooks.sh
+
+set -euo pipefail
+
+SCAN_SCRIPT="$HOME/repos/privateContext/security-scan.sh"
+
+if [ ! -x "$SCAN_SCRIPT" ]; then
+  echo "WARNING: security-scan.sh not found at $SCAN_SCRIPT"
+  echo "Skipping pre-push security scan. Install privateContext to enable."
+  exit 0
+fi
+
+# Check if this repo is public on GitHub
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+if [ -z "$REMOTE_URL" ]; then
+  exit 0
+fi
+
+# Extract owner/repo from remote URL
+REPO_SLUG=""
+if [[ "$REMOTE_URL" =~ github\.com[:/]([^/]+/[^/.]+) ]]; then
+  REPO_SLUG="${BASH_REMATCH[1]%.git}"
+fi
+
+if [ -z "$REPO_SLUG" ]; then
+  exit 0
+fi
+
+# Only enforce on public repos (skip check if gh not available)
+if command -v gh &>/dev/null; then
+  VISIBILITY=$(gh repo view "$REPO_SLUG" --json visibility -q '.visibility' 2>/dev/null || echo "UNKNOWN")
+  if [ "$VISIBILITY" = "PRIVATE" ]; then
+    exit 0
+  fi
+fi
+
+# Read stdin for push info: <local ref> <local sha> <remote ref> <remote sha>
+FOUND_ISSUES=0
+while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+  # Skip delete pushes
+  if [ "$LOCAL_SHA" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+
+  # Determine range to scan
+  if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
+    # New branch — scan all commits
+    RANGE="$LOCAL_SHA"
+  else
+    RANGE="$REMOTE_SHA..$LOCAL_SHA"
+  fi
+
+  # Scan the diff for sensitive patterns
+  SCAN_OUTPUT=$(git diff "$RANGE" 2>/dev/null | "$SCAN_SCRIPT" 2>&1 || true)
+
+  if echo "$SCAN_OUTPUT" | grep -q "BLOCKED"; then
+    echo ""
+    echo "========================================="
+    echo "  PUSH BLOCKED: Sensitive identifiers    "
+    echo "========================================="
+    echo ""
+    echo "Scanning: $LOCAL_REF -> $REMOTE_REF"
+    echo ""
+    echo "$SCAN_OUTPUT"
+    echo ""
+    echo "This is a PUBLIC repo ($REPO_SLUG)."
+    echo "Fix the violations above before pushing."
+    echo "See ~/repos/privateContext/sensitive-identifiers.md for replacement values."
+    echo ""
+    FOUND_ISSUES=1
+  fi
+done
+
+if [ "$FOUND_ISSUES" -eq 1 ]; then
+  echo "To bypass (emergency only): git push --no-verify"
+  exit 1
+fi
+
+exit 0

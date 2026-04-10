@@ -80,18 +80,41 @@ Never commit raw AI chat exports to any repository. If reference material from a
 
 This pattern caused a real incident: Gemini exports with medical/psychiatric chat titles were committed to a public repo and had to be emergency-removed (2026-04-05).
 
-## Automated Pre-Commit Hook
+## Automated Security Hooks (Pre-Commit + Pre-Push)
 
-Public repos should install a pre-commit hook that scans staged diffs for sensitive identifiers before allowing commits. The `agentGuidance` repo has a reference implementation:
+All public repos MUST have both pre-commit and pre-push hooks installed. These scan for sensitive identifiers before code reaches the remote.
 
-- `hooks/git-pre-commit` — tracked copy of the hook (calls `security-scan.sh`)
-- `scripts/install-hooks.sh` — copies hook to `.git/hooks/` after clone
+### Hook Files
 
-The hook pipes `git diff --cached` through the security scanner. If any sensitive identifier (hostnames, private repo names, IPs, usernames) is detected, the commit is blocked with a clear message pointing to the reference database for replacement values.
+- `hooks/git-pre-commit` — scans staged diffs at commit time
+- `hooks/git-pre-push` — scans all commits being pushed (catches amended commits, rebases, cherry-picks that bypassed pre-commit)
+- `hooks/install-hooks.sh` — installs both hooks to one or all public repos
 
-**Why:** Manual grep checks (below) are easy to forget. An automated hook catches leaks at commit time, before they reach the remote. This prevented multiple near-misses during the 2026-04-06 security audit.
+### How They Work
 
-**To adopt in another public repo:** Copy the hook pattern from `agentGuidance/hooks/git-pre-commit` and adjust the `SCAN_SCRIPT` path. The scanner requires `privateContext/security-scan.sh` to be available locally.
+- **Pre-commit:** Pipes `git diff --cached` through `security-scan.sh`. Blocks if any sensitive identifier is found.
+- **Pre-push:** Determines the commit range being pushed, checks if the repo is public (via `gh repo view`), and scans the full diff. Only enforces on public repos — private repos pass through.
+
+### Installation
+
+```bash
+# Install to all local public repos + set up global git template
+bash ~/repos/agentGuidance/hooks/install-hooks.sh --all-public
+
+# Install to a single repo
+bash ~/repos/agentGuidance/hooks/install-hooks.sh ~/repos/myrepo
+```
+
+The `--all-public` flag also configures `~/.git-templates/hooks/` as the global git template directory, so any newly cloned repo automatically gets both hooks.
+
+### For Agents
+
+When creating a new public repo or cloning one that doesn't have hooks yet, run:
+```bash
+bash ~/repos/agentGuidance/hooks/install-hooks.sh ~/repos/<repo-name>
+```
+
+**Why:** The claude-tray-notifier incident (2026-04-10) showed that hardcoded VM credentials survived in a public repo for months because only pre-commit hooks existed on one repo. Pre-push hooks on all public repos would have caught this at push time regardless of which repo it happened in.
 
 ## Pre-Commit Checklist (Manual Fallback)
 
