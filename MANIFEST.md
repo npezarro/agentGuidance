@@ -36,6 +36,7 @@ Every operational function has exactly one canonical source. If you need to find
 | Tampermonkey | `guidance/tampermonkey.md` | Script hosting, CAPTCHA patterns |
 | Learning capture | `guidance/learning-capture.md` | When/where to persist learnings (3-destination rule) |
 | Comprehensive closeout | `guidance/comprehensive-closeout.md` | Detailed session documentation for important conversations |
+| Cross-repo knowledge wiki | `~/repos/knowledgeBase/` | Synthesized cross-cutting reference; MANIFEST.md maps pages to sources |
 
 ## Rules vs Guidance
 

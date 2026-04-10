@@ -4,13 +4,14 @@ Operational learnings, behavioral adjustments, and discovered patterns must be c
 
 ## The Three-Destination Rule
 
-Every learning has up to three destinations. Always evaluate which apply:
+Every learning has up to four destinations. Always evaluate which apply:
 
 | Destination | What Goes Here | Who Benefits |
 |---|---|---|
 | **Memory** (`~/.claude/projects/.../memory/`) | Personal cross-session recall | This user's future Claude sessions |
 | **Project repo** (`CLAUDE.md`, `context.md`) | Repo-specific rules and patterns | Any agent working in that specific repo |
 | **agentGuidance or privateContext** | Cross-project patterns and operational knowledge | All agents, all repos, all sessions |
+| **knowledgeBase** (`~/repos/knowledgeBase/`) | Cross-repo synthesized knowledge (when a learning spans 3+ repos) | Any agent needing cross-cutting context |
 
 ### Decision: agentGuidance vs privateContext
 
