@@ -62,6 +62,24 @@ Platform-specific gotchas (discovered via freeGames):
 - **IndieGala:** "ADD TO LIBRARY" button lazy-loads inconsistently; use `wait-for` with generous timeouts
 - **GamerPower API:** Good discovery source for free game listings across platforms
 
+## API Key Management in TM Scripts
+
+Never hardcode API keys or auth tokens directly in userscript source. Use `GM_setValue` for storage and `GM_registerMenuCommand` to let users set keys via Tampermonkey's menu — no script edits required.
+
+```js
+// @grant GM_setValue
+// @grant GM_getValue
+// @grant GM_registerMenuCommand
+
+GM_registerMenuCommand('Set API Key', () => {
+  const key = prompt('Enter API key:');
+  if (key) GM_setValue('api_key', key.trim());
+});
+const API_KEY = GM_getValue('api_key', '');
+```
+
+**Why:** phone-agent v1.0.1 tried embedding a default key as fallback — immediately reverted (v1.0.2) because it put secrets in source. The menu command approach (v1.0.3) is the correct pattern.
+
 ## Debug & Verbose Logging
 
 Ship userscripts with all debug/verbose logging flags **disabled**. Use boolean constants (`const DEBUG = false`) and gate console output behind them. Never commit `true` to production — users get console spam they can't silence, and it masks real errors in the browser console.
