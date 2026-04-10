@@ -6,7 +6,7 @@ A dedicated agent that periodically reviews recent work across all repos, identi
 
 Learnings get lost because:
 1. Session agents are focused on the task at hand and forget to persist
-2. Even with the 3-destination rule, enforcement is behavioral (no automated check)
+2. Even with the multi-destination rule, enforcement is behavioral (no automated check)
 3. Cross-repo patterns only emerge when reviewing multiple repos together
 4. Prompt and instruction drift happens gradually and goes unnoticed
 
@@ -39,7 +39,7 @@ Each run reviews a sliding window of recent activity:
 
 4. **Memory files** (all)
    - Check for learnings saved to memory but NOT to agentGuidance/privateContext
-   - This is the "enforcement" layer for the 3-destination rule
+   - This is the "enforcement" layer for the multi-destination rule
 
 5. **Existing guidance files** (agentGuidance/guidance/)
    - Check for staleness, contradictions, gaps
@@ -81,7 +81,7 @@ The agent follows a structured review loop:
 
 The learning agent needs a focused prompt that:
 - Lists all repos to scan (from auto-dev config.json)
-- Explains the 3-destination rule and the agentGuidance vs privateContext boundary
+- Explains the multi-destination rule (memory, repo CLAUDE.md, agentGuidance/privateContext, knowledgeBase) and the agentGuidance vs privateContext boundary
 - Provides the secrets-hygiene checklist for pre-commit review
 - Instructs it to be conservative (only capture genuine patterns, not noise)
 - Tells it to UPDATE existing guidance files rather than create new ones when possible

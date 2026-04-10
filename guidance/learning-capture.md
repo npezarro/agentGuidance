@@ -2,7 +2,7 @@
 
 Operational learnings, behavioral adjustments, and discovered patterns must be captured **immediately when they occur**, not deferred to session wrapup.
 
-## The Three-Destination Rule
+## The Multi-Destination Rule
 
 Every learning has up to four destinations. Always evaluate which apply:
 
