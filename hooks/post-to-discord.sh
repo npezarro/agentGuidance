@@ -1,51 +1,24 @@
 #!/bin/bash
-# Post each Claude Code turn to Discord #cli-interactions via webhook
-# Triggered by the Stop hook event
-# Requires DISCORD_WEBHOOK_URL set in .env or environment
+# Post each Claude Code turn to Discord via the bot's /ingest endpoint.
+# Triggered by the Stop hook event.
 #
-# Threading model:
-#   - First turn of a session: new top-level embed + thread
-#   - Subsequent turns in same session: reply inside the thread
-#   - State persisted in ~/.cache/discord-threads/<session_id>
+# The bot handles all Discord formatting, threading (#cli-interactions),
+# and routing to #prompts and #logging. This script just extracts
+# structured turn data from the transcript and sends it to /ingest.
 #
 # Rich logging:
 #   - Extracts tool calls (Read, Edit, Bash, Grep, Glob, Write, Agent, etc.)
-#     from the transcript and formats them as an activity log between
-#     the user prompt and the assistant response.
+#     from the transcript and formats them as an activity log.
 
 set -uo pipefail
 
-# --- Credential Resolution ---
-if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
-  for envfile in "$HOME/.env" $HOME/.env $HOME/discord-bot/.env; do
-    if [ -f "$envfile" ]; then
-      source "$envfile"
-      break
-    fi
-  done
-fi
-
-if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
-  exit 0  # No webhook URL -- skip silently
-fi
-
-# --- Bot token (needed for thread creation) ---
-BOT_TOKEN_CACHE="$HOME/.cache/discord-bot-token"
-_get_bot_token() {
-  if [ -n "${DISCORD_BOT_TOKEN:-}" ]; then
-    echo "$DISCORD_BOT_TOKEN"
-    return
+# --- Credential Resolution (needed for env vars like INGEST_SECRET) ---
+for envfile in "$HOME/.env" $HOME/discord-bot/.env; do
+  if [ -f "$envfile" ]; then
+    source "$envfile"
+    break
   fi
-  if [ -f "$BOT_TOKEN_CACHE" ]; then
-    cat "$BOT_TOKEN_CACHE"
-    return
-  fi
-  return 1
-}
-
-# --- Thread state directory ---
-THREAD_STATE_DIR="$HOME/.cache/discord-threads"
-mkdir -p "$THREAD_STATE_DIR"
+done
 
 # --- Redaction ---
 redact_sensitive() {
@@ -290,158 +263,9 @@ LAST_ASSISTANT_MSG=$(echo "$LAST_ASSISTANT_MSG" | redact_sensitive)
 USER_PROMPT=$(echo "$USER_PROMPT" | redact_sensitive)
 ACTIVITY=$(echo "$ACTIVITY" | redact_sensitive)
 
-# Truncate prompt for embed field (Discord field value limit: 1024 chars)
-if [ ${#USER_PROMPT} -gt 1000 ]; then
-  USER_PROMPT="${USER_PROMPT:0:997}..."
-fi
-
-# --- Threading logic ---
-THREAD_FILE="$THREAD_STATE_DIR/${SESSION_ID}"
-EXISTING_THREAD_ID=""
-if [ -n "$SESSION_ID" ] && [ -f "$THREAD_FILE" ]; then
-  EXISTING_THREAD_ID=$(cat "$THREAD_FILE")
-fi
-
-# Build the full turn message with activity log
-build_turn_message() {
-  local prompt="$1"
-  local activity="$2"
-  local response="$3"
-  local tool_count="$4"
-  local msg=""
-
-  msg="**Prompt:** ${prompt:-(none)}"
-
-  if [ -n "$activity" ] && [ "$tool_count" -gt 0 ]; then
-    msg="${msg}
-
-**Activity** (${tool_count} tool calls):
-${activity}"
-  fi
-
-  msg="${msg}
-
-**Response:**
-${response}"
-
-  echo "$msg"
-}
-
-FULL_TURN_MSG=$(build_turn_message "$USER_PROMPT" "$ACTIVITY" "$LAST_ASSISTANT_MSG" "$TOOL_COUNT")
-
-# --- Helper: post chunked text to a thread via webhook ---
-post_to_thread() {
-  local thread_id="$1"
-  local text="$2"
-  local remaining="$text"
-  local chunk_num=0
-
-  while [ -n "$remaining" ] && [ $chunk_num -lt 10 ]; do
-    local chunk="${remaining:0:1990}"
-    remaining="${remaining:1990}"
-    chunk_num=$((chunk_num + 1))
-
-    curl -s -X POST "${DISCORD_WEBHOOK_URL}?wait=true&thread_id=${thread_id}" \
-      -H "Content-Type: application/json" \
-      -d "$(python3 -c "import json,sys; print(json.dumps({'username': 'Claude Agent', 'content': sys.argv[1]}))" "$chunk")" \
-      -o /dev/null --max-time 10 2>/dev/null || true
-
-    [ -n "$remaining" ] && sleep 0.5
-  done
-}
-
-if [ -n "$EXISTING_THREAD_ID" ]; then
-  # --- Subsequent turn: post full turn into existing thread ---
-  post_to_thread "$EXISTING_THREAD_ID" "$FULL_TURN_MSG"
-
-else
-  # --- First turn: new top-level embed + create thread ---
-
-  TITLE=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //' | head -c 256 || true)
-  if [ -z "$TITLE" ]; then
-    TITLE="${PROJECT} -- ${TIMESTAMP}"
-  fi
-
-  # For the embed, show response only (activity goes in thread)
-  MAX_EMBED_DESC=3900
-  RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
-  if [ ${#LAST_ASSISTANT_MSG} -gt $MAX_EMBED_DESC ]; then
-    RESPONSE_DISPLAY="${LAST_ASSISTANT_MSG:0:$MAX_EMBED_DESC}..."
-  fi
-
-  FIELDS="[]"
-  if [ -n "$USER_PROMPT" ]; then
-    FIELDS=$(jq -n --arg prompt "$USER_PROMPT" '[{"name": "Prompt", "value": $prompt, "inline": false}]')
-  fi
-  if [ -n "$ACTIVITY" ] && [ "$TOOL_COUNT" -gt 0 ]; then
-    # Truncate activity for embed field (1024 char limit)
-    ACTIVITY_FIELD="$ACTIVITY"
-    if [ ${#ACTIVITY_FIELD} -gt 1000 ]; then
-      ACTIVITY_FIELD="${ACTIVITY_FIELD:0:997}..."
-    fi
-    FIELDS=$(echo "$FIELDS" | jq --arg act "$ACTIVITY_FIELD" --arg tc "$TOOL_COUNT" '. + [{"name": ("Activity (" + $tc + " tools)"), "value": $act, "inline": false}]')
-  fi
-  FIELDS=$(echo "$FIELDS" | jq --arg proj "$PROJECT" --arg sid "${SESSION_ID:0:8}" '. + [{"name": "Project", "value": $proj, "inline": true}, {"name": "Session", "value": $sid, "inline": true}]')
-
-  PAYLOAD=$(jq -n \
-    --arg username "Claude Agent" \
-    --arg title "$TITLE" \
-    --arg desc "$RESPONSE_DISPLAY" \
-    --argjson fields "$FIELDS" \
-    --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-    '{
-      username: $username,
-      embeds: [{
-        title: $title,
-        description: $desc,
-        color: 7879533,
-        fields: $fields,
-        timestamp: $ts,
-        footer: {"text": "Claude Code Agent"}
-      }]
-    }')
-
-  RESPONSE=$(curl -s -X POST "${DISCORD_WEBHOOK_URL}?wait=true" \
-    -H "Content-Type: application/json" \
-    -d "$PAYLOAD" \
-    --max-time 10 2>/dev/null || echo "{}")
-
-  MSG_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-
-  # Create a thread from the top-level message
-  if [ -n "$MSG_ID" ] && [ -n "$SESSION_ID" ]; then
-    BOT_TOKEN=$(_get_bot_token)
-    if [ -n "$BOT_TOKEN" ]; then
-      CHANNEL_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('channel_id',''))" 2>/dev/null || true)
-
-      if [ -n "$CHANNEL_ID" ]; then
-        THREAD_NAME="${PROJECT}: ${TITLE:0:80}"
-        THREAD_RESPONSE=$(curl -s -X POST "https://discord.com/api/v10/channels/${CHANNEL_ID}/messages/${MSG_ID}/threads" \
-          -H "Authorization: Bot ${BOT_TOKEN}" \
-          -H "Content-Type: application/json" \
-          -d "$(python3 -c "import json,sys; print(json.dumps({'name': sys.argv[1][:100], 'auto_archive_duration': 1440}))" "$THREAD_NAME")" \
-          --max-time 10 2>/dev/null || echo "{}")
-
-        NEW_THREAD_ID=$(echo "$THREAD_RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-
-        if [ -n "$NEW_THREAD_ID" ]; then
-          echo "$NEW_THREAD_ID" > "$THREAD_FILE"
-
-          # Post the full turn (with activity) as the first thread message
-          post_to_thread "$NEW_THREAD_ID" "$FULL_TURN_MSG"
-        fi
-      fi
-    fi
-  fi
-fi
-
-# Clean up stale thread files (older than 7 days)
-find "$THREAD_STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
-
-# ── POST to bot event bus (if running) ────────────────────────────
-# Sends a structured event to the discord-bot bot's /ingest endpoint
-# so prompts reach #prompts and everything reaches #logging.
-# Failure is non-fatal — the existing webhook posting above is preserved.
+# ── POST to bot event bus ─────────────────────────────────────────
+# The bot handles all Discord formatting, threading, and posting to
+# #cli-interactions, #prompts, and #logging via the /ingest endpoint.
 #
 # The health server binds to 127.0.0.1 on the VM, so we try local first
 # (works when CLI runs on the VM), then fall back to SSH (local PC → VM).
@@ -466,7 +290,7 @@ payload = {
         'user_prompt': os.environ.get('_EB_PROMPT', ''),
         'activity': os.environ.get('_EB_ACTIVITY', ''),
         'tool_count': int(os.environ.get('_EB_TOOL_COUNT', '0')),
-        'response': os.environ.get('_EB_RESPONSE', '')[:4000]
+        'response': os.environ.get('_EB_RESPONSE', '')[:8000]
     },
     'metadata': {
         'project': os.environ.get('_EB_PROJECT', ''),
