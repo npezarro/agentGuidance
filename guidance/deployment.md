@@ -38,6 +38,23 @@ When you're missing information about production — env vars, configs, logs, da
 
 **Why:** The user treats the VM and local machine as a unified environment. Asking for information that's already discoverable wastes time.
 
+## Apache WebSocket Proxy
+
+When adding a WebSocket service behind Apache on the VM:
+
+1. **ProxyPass rules MUST be inside `<VirtualHost>`** — appending after `</VirtualHost>` causes silent 404s with no error in logs.
+2. **Use `ProxyPass ws://`**, not `RewriteRule`, for WebSocket upgrade handling.
+3. **Add the `QSA` flag** if the client passes query strings (e.g., API keys as `?key=...`).
+
+```apache
+# Inside <VirtualHost *:443>
+ProxyPass /api/my-service/ws ws://127.0.0.1:PORT/
+ProxyPass /api/my-service/ http://127.0.0.1:PORT/
+ProxyPassReverse /api/my-service/ http://127.0.0.1:PORT/
+```
+
+**Why:** The phone-agent deploy (2026-04-10) hit this exact issue — WS proxy rules appended outside the VirtualHost block caused 404s that were hard to diagnose. This applies to any WS service: browser-agent, phone-agent, pm-interview, etc.
+
 ## VM SSH Access
 
 The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
