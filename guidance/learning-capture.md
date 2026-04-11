@@ -78,6 +78,33 @@ When you make a mistake and identify the cause, run this process before moving o
 
 **Why this matters:** Rules that exist but aren't followed indicate either a rule clarity problem or a missing trigger condition. Every failure should become a rule improvement — don't just fix the symptom, patch the prevention.
 
+## Explicit User Directives ("Update Guidance", "Record This")
+
+When the user says **"update guidance"**, **"record this into guidance"**, **"save this direction"**, or similar — the primary target is **always repo instruction files**, not memory.
+
+### Routing Order for User Directives
+
+1. **Find the canonical source** — Check `MANIFEST.md` for the right file. If the directive maps to an existing guidance file, edit it in place.
+2. **Update the repo file(s)** — Edit the relevant file in `agentGuidance/guidance/`, `privateContext/`, the project's `CLAUDE.md`, or `autonomousDev-private/` as appropriate.
+3. **Update the wiki** — If the change affects cross-repo knowledge (instruction architecture, integration patterns, or anything already covered by a knowledgeBase article), update the relevant wiki page too.
+4. **Commit and push** — Immediately. Unpushed rule changes don't help future sessions.
+5. **Optionally save a memory file** — As a personal index/cache. Memory is supplementary, never the primary destination.
+
+### Common Mistakes to Avoid
+
+- **Memory-only updates**: Writing a memory file and stopping. Memory is invisible to other agents and sessions that don't share your memory directory. The user said "update guidance" — they mean the durable instruction system.
+- **Skipping the wiki**: If the topic already has a knowledgeBase article (check `~/repos/knowledgeBase/` first), update it alongside the guidance file.
+- **Creating new files when an existing one covers the topic**: Always check MANIFEST.md and search guidance/ first.
+
+### Trigger Keywords
+
+React to any of these as a directive to update repo files:
+- "update guidance" / "add to guidance" / "record this into guidance"
+- "save this direction" / "save this rule"
+- "remember this for all sessions" / "make this permanent"
+- "add this to the rules" / "update the rules"
+- Any correction + "make sure this doesn't happen again"
+
 ## What NOT to Capture
 
 - One-time debugging steps (they're in git history)
