@@ -66,6 +66,13 @@ VM executor → ssh reverse tunnel → local machine SSH → shell → run-claud
 **Resolution:** Use the Windows host IP (from `/etc/resolv.conf` nameserver) instead of `localhost`.
 **Prevention rule:** **In WSL, `localhost` refers to WSL's network stack, not Windows.** For Windows services, use the host IP from `/etc/resolv.conf`. This IP can change across restarts — resolve it dynamically.
 
+## Incident 9: SSH User Mismatch — WSL vs Windows Username
+
+**Date:** 2026-04-11
+**Trigger:** The reverse SSH tunnel terminates at Windows OpenSSH, which authenticates with the Windows username. The executor was configured with the WSL/Linux username as the default SSH user, so connections failed.
+**Resolution:** Changed the default SSH user to the Windows username. Added an environment variable override (`LOCAL1_SSH_USER`) so the value isn't hardcoded.
+**Prevention rule:** **When the tunnel path crosses a WSL/Windows boundary, remember that Windows OpenSSH uses the Windows username, not the WSL username.** These are often different. Always make SSH usernames configurable via environment variables rather than hardcoding either one.
+
 ## General Rules for Multi-Environment Deployments
 
 1. **Test the full path, not just components.** SSH tunnel test, project detection test, unknown project test, team mode test — each individually.
