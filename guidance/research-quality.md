@@ -36,6 +36,10 @@ When presenting resources, include for each:
 - 1-2 sentences on the specific unique insight it contains
 - Why this resource over alternatives on the same topic
 
+## Bulk Link Block
+
+Any document with 3+ reference URLs must include an `## ALL LINKS` section at the very bottom with every URL on its own line — no bullets, no dashes, no numbering, no markdown. Just raw URLs linebroken. This allows the user to select-all and open them in bulk without copy-paste friction.
+
 ## Applies To
 
 Any task involving: interview prep materials, competitive research, market analysis, technology deep dives, career/application materials, or any context where the user will invest time reading what you recommend.
