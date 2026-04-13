@@ -38,7 +38,7 @@ When presenting resources, include for each:
 
 ## Bulk Link Block
 
-Any document with 3+ reference URLs must include an `## ALL LINKS` section at the very bottom with every URL on its own line — no bullets, no dashes, no numbering, no markdown. Just raw URLs linebroken. This allows the user to select-all and open them in bulk without copy-paste friction.
+Any document with 3+ reference URLs must include an `## ALL LINKS` section at the very bottom with every URL on its own line, double-spaced (blank line between each URL) — no bullets, no dashes, no numbering, no markdown. Just raw URLs with clear separation. This allows the user to select and open them in bulk without copy-paste friction.
 
 ## Applies To
 
