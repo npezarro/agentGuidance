@@ -51,7 +51,7 @@ These are plain-text triggers the user types in conversation (NOT slash commands
    - **Repo link:** At minimum, link to the repo being worked on
    - These go in the thread detail alongside the narrative, not as a separate section. Weave them in naturally (e.g., "Added validation to the API route ([commit](https://github.com/npezarro/repo/commit/abc1234))").
 
-9. **Post file links to `#file-links` when you generate readable artifacts.** Use `~/repos/privateContext/file-links-post.sh` when you create files the user will want to open directly:
+9. **Post file links to `#file-links` when you generate readable artifacts.** Commit and push the file to GitHub FIRST (so the URL resolves), then use `~/repos/privateContext/file-links-post.sh`:
    ```bash
    ./file-links-post.sh "Description of file" "https://github.com/npezarro/repo/blob/branch/path/to/file.md"
    ```
