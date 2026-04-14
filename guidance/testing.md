@@ -86,6 +86,39 @@ When tests embed their own DDL (CREATE TABLE) or data shapes, they silently drif
 - If tests must define their own schema (e.g., SQLite in-memory), derive it from the same migration files the application uses
 - When adding a column or field to the real schema, search test files for the table name and update inline definitions
 
+## Extracting Pure Functions for Testability
+
+When adding tests to a repo that has tightly coupled code (business logic mixed with I/O, DOM, or framework calls), extract pure functions into a dedicated module before writing tests. This is the standard pattern across all repos:
+
+| Repo Type | Extract To | Test Runner | Why |
+|-----------|-----------|-------------|-----|
+| Node.js server/CLI | `lib/core.js` (or `.ts`) | `node:test` | Zero dependencies, ships with Node, fast |
+| Browser extension / Tampermonkey | `core.js` (sibling to main script) | `vitest` + `jsdom` | Needs DOM simulation, ESM support |
+| Next.js / React app | Existing `lib/` or `utils/` | Whatever the repo already uses (jest/vitest) | Match existing infra |
+
+**The pattern:**
+1. Identify pure functions embedded in the main file (formatting, validation, state transitions, data transformations)
+2. Move them to the core module with explicit exports
+3. Keep I/O, side effects, and framework glue in the original file — import pure functions from core
+4. Write tests against the core module only — no mocking needed for pure functions
+
+**Why this works:** Pure functions are deterministic (same input → same output), so tests are fast, reliable, and require zero mocking. The hardest-to-test code (I/O, timers, network) stays untested at the unit level but is covered by integration/browser tests.
+
+**When NOT to do this:** If the repo already has good test infrastructure and well-separated concerns, don't refactor just to match this pattern. Only extract when you're adding tests to previously untested code.
+
+## Test Framework Selection
+
+When a repo has no existing test infrastructure and you need to add one:
+
+| Scenario | Framework | Rationale |
+|----------|-----------|-----------|
+| Node.js (>=18) server or CLI | `node:test` | Zero install, fast, built-in assertions and mocking |
+| Browser extension or userscript | `vitest` + `jsdom` | Needs DOM APIs, ESM module resolution |
+| React/Next.js app | Match existing (usually jest or vitest) | Don't introduce a second test runner |
+| TypeScript project | `vitest` (preferred) or `jest` with ts-jest | Vitest has native TS support without config |
+
+**Do not add test infrastructure if the user hasn't asked for it** — the "Repo has no test infra" row in the "When to Test" table still applies.
+
 ## Running Tests
 
 ```bash
