@@ -127,3 +127,16 @@ When a feedback loop or restart storm occurs, document it:
 ```
 
 Add the entry to the project's `context.md` under a "Known Issues" or "Incident Log" section so future sessions are aware.
+
+## Verify Before Asserting
+
+Don't claim the user did something (submitted an application, sent an email, published a post) unless you can verify it through an authoritative source. The existence of prep materials, drafts, or related files does NOT confirm the action was completed.
+
+**Why:** An agent asserted the user had applied to a role because prep materials existed on Drive. The application was never actually submitted. This led to incorrect context being shared with a referrer.
+
+**How to verify:**
+- **Applications/emails:** Check Gmail for sent confirmations
+- **Blog posts:** Check WordPress or the live URL
+- **Deploys:** Check PM2 status and server logs (see deployment.md § "Check the Server Before Asking")
+- **Git pushes:** Check `git log origin/main` or `gh pr list`
+- **Any user action:** Look for the completion artifact, not the preparation artifact
