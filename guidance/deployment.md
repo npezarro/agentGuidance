@@ -38,6 +38,12 @@ When you're missing information about production — env vars, configs, logs, da
 
 **Why:** The user treats the VM and local machine as a unified environment. Asking for information that's already discoverable wastes time.
 
+## PM2 Process Changes
+
+After any local PM2 process change (`pm2 start`, `pm2 delete`, `pm2 stop`, `pm2 restart`), always run `pm2 save` to update the dump file.
+
+**Why:** Local PM2 auto-resurrects on WSL boot via a systemd user service (`pm2-resurrect.service`). If the dump is stale, processes won't come back after a reboot or unexpected shutdown.
+
 ## VM SSH Access
 
 The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
