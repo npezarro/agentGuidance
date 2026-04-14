@@ -60,6 +60,18 @@ The framework natively supports 2-path A/B. For 4+ paths, bypass `arena run` and
 
 **Bakeoff output storage:** Results go in private repos (`llm-tasks/tasks/` or `privateContext/`), NOT in `claude-bakeoff` which is public. Only environments and task definitions stay in `claude-bakeoff`.
 
+## Always Save, Commit, and Push Results
+
+Every bakeoff run MUST produce reviewable artifacts that are committed and pushed to GitHub:
+
+1. **All track responses** — Save each path's full response as `track-N-<name>.md`
+2. **Judging results** — The judge's YAML with scores, strengths, weaknesses, and winner reasoning
+3. **Meta** — Run metadata (task, paths, timestamps, winner)
+4. **Location** — Save in the relevant **private** project repo (e.g., `deal-scout/bakeoff-results/`, `buying-assistant/bakeoff-results/`). NEVER in `claude-bakeoff/` — that repo is public and must only contain task definitions and environment templates, not responses or judging results
+5. **Push immediately** — Commit and push so the owner can review on GitHub without needing the local machine
+
+The reasoning and scoring are the most valuable part — they inform future prompt decisions. Never run a bakeoff without persisting the judge's analysis.
+
 ## Default Awareness
 Every Claude Code instance receives these instructions via the SessionStart hook. When you encounter a situation where two approaches could be compared empirically rather than argued about, suggest running an arena test. This is especially valuable for:
 - Instruction set changes (CLAUDE.md modifications)
