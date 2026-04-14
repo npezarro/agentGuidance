@@ -50,7 +50,7 @@ Save the returned thread ID. For updates within the same task, reply to the thre
 **File links (`#file-links`) — AUTOMATED:**
 A PostToolUse hook (`auto-file-links.sh`) automatically detects when `git push` includes readable artifacts (.md/.txt files in output/report/proposal/analysis/application directories) and posts them to `#file-links`. You should not need to call `file-links-post.sh` manually in most cases.
 
-**Manual fallback:** If the hook misses a file (e.g., it's in an unusual directory, or you pushed multiple commits), post manually:
+**Manual fallback:** If the hook misses a file (e.g., it's in an unusual directory, or you pushed multiple commits), commit and push first (so the GitHub URL resolves), then post manually:
 ```bash
 ~/repos/privateContext/file-links-post.sh "Description" "https://github.com/npezarro/repo/blob/branch/path/to/file.md"
 ```
