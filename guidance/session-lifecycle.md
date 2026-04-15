@@ -32,6 +32,23 @@ Design for the smallest viewport first. The Discord embed is the most constraine
 - Use headings (`###`) to break up sections. They create visual structure in all three renderers.
 - Deeply nested bullet lists render poorly outside the terminal. Prefer flat lists or short paragraphs.
 
+## Output Delivery Constraints
+
+### Large Outputs → Files
+
+Reports, analyses, tables, and other structured content longer than ~20 lines should be written to a file (Google Doc or `.md` in the relevant repo) rather than dumped in conversation. Post the link to `#file-links` and provide a brief summary in conversation.
+
+**Why:** CLI terminal output is hard to scan for large structured content. The user reviews deliverables more comfortably in a browser.
+
+### Long Commands → Script Files
+
+Never give long commands (>~80 chars) or URLs to copy-paste directly. The user's SSH client breaks on multi-line pastes and long strings.
+
+- **Long commands:** Write to a temp script (e.g., `/tmp/run-me.sh`), then give a short `scp` + `bash` one-liner to pull and execute it
+- **Long URLs:** Write to a file (e.g., `/tmp/url.txt`) and give a short `scp` command
+- **Multi-step commands:** Break into individual short single-line commands rather than chaining with `&&`
+- **Short commands (<80 chars)** on a single line are fine for direct paste
+
 ## Context Files Are Crash Recovery
 
 Think of `context.md` as the human-readable equivalent of a process's state file. When a session crashes, the next agent reads `context.md` to reconstruct what was happening. If it's stale, the next session starts blind and may repeat or undo your work.
