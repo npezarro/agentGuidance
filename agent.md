@@ -79,3 +79,5 @@ Load on-demand based on the current task:
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
 - `guidance/comprehensive-closeout.md` -- detailed session documentation for important conversations
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
+- `guidance/prior-work-lookup.md` -- where to search when user references past conversations
+- `guidance/research-quality.md` -- quality bar for curated references and study resources
