@@ -6,6 +6,14 @@ Shared infrastructure has limits. Discover them before you hit them — don't me
 
 Server specs change (VMs get resized, processes get added, disk fills up). Never hardcode thresholds in your mental model. Instead, **check before every heavy operation**.
 
+## No Claude CLI on the VM
+
+Never spawn Claude CLI processes on the GCP VM. The 4GB RAM is shared across 18+ PM2 services; CLI processes easily consume 1-2GB each and will OOM-kill the server. Offload all AI processing to the local WSL machine (40GB RAM) via the reverse SSH tunnel.
+
+**Incident:** manchu-translator (2026-04-15) spawned 2 Claude CLI calls per request on the VM. Under load, the VM became completely unresponsive (100% packet loss, SSH timeout). Required GCP console restart.
+
+**Pattern:** VM receives the request, proxies to local worker via reverse tunnel port, local worker runs Claude CLI, returns result to VM. See `infra/ssh-tunnel` in the wiki.
+
 ## Before Heavy Work
 
 Run these checks before starting builds, installs, large file operations, or anything CPU/memory-intensive:
