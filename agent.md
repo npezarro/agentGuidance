@@ -78,3 +78,4 @@ Load on-demand based on the current task:
 - `guidance/tampermonkey.md` -- TM script hosting and CAPTCHA bypass patterns
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
 - `guidance/comprehensive-closeout.md` -- detailed session documentation for important conversations
+- `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
