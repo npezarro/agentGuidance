@@ -81,3 +81,7 @@ YouTube frequently changes DOM structure, removing elements and attributes witho
 - **Use session-scoped variables for SPA state.** For state that should persist across SPA navigation (e.g., user-set speed surviving Shorts swipes) but reset on page leave, use module-level variables instead of GM_setValue. GM_setValue is for persistent cross-session storage; module-level vars naturally reset when the page unloads.
 - **Detect navigation via video src changes, not container observers.** For SPA navigation detection (e.g., Shorts swipes), track `video.src || video.currentSrc` changes in the body-level MutationObserver rather than watching for platform-specific container mutations (`ytd-*` on desktop, `ytm-*` on mobile). This is platform-agnostic and works regardless of DOM structure differences. Compare against a `lastVideoSrc` variable with debouncing (300ms) to avoid redundant re-injection.
 - **Bump the major version** when adapting to YouTube DOM changes, as the fix typically affects multiple code paths (desktop, mobile, Shorts, fullscreen)
+
+## Version Bumps
+
+Always increment the `@version` in Tampermonkey userscript headers when deploying updates. Without a version bump, the user can't confirm whether reinstalling actually picked up new code. Use semver: patch for bugfixes, minor for new features, major for breaking changes or YouTube DOM adaptations.
