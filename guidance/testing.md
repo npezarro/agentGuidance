@@ -62,6 +62,23 @@ describe('functionName', () => {
 - **Don't mock the unit under test.** If you need to, the function is doing too much — refactor it.
 - **Prefer dependency injection** over module-level mocking where possible.
 - **Reset mocks between tests:** `beforeEach(() => jest.clearAllMocks())` or equivalent.
+- **Return timer handles for cleanup:** Functions that create `setTimeout` or `setInterval` must return or expose the handle so tests can clear them in `afterEach`. Without this, Node.js keeps the event loop alive and test suites hang silently. This caused test hangs in both auto-shorts (`startAutoPolling` leaked a `setTimeout`) and claude-tray-notifier (`setupAutoUpdater` timers kept the process alive).
+
+```javascript
+// WRONG — timer created but handle lost; tests hang
+function startPolling() {
+  setTimeout(() => { /* ... */ }, 5000);
+  timer = setInterval(poll, interval);
+}
+
+// RIGHT — return handles; tests can clear them
+function startPolling() {
+  const initialDelay = setTimeout(() => { /* ... */ }, 5000);
+  const timer = setInterval(poll, interval);
+  return { initialDelay, timer };
+}
+```
+
 - **Use typed mock helpers instead of `as any`:** Create factory functions that return complete typed objects rather than casting partial objects. This catches shape mismatches at compile time and eliminates lint warnings.
 
 ```typescript
