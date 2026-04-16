@@ -35,15 +35,20 @@ Every operational function has exactly one canonical source. If you need to find
 | Local worker bridge | `guidance/local-worker-bridge.md` | Post-mortem reference |
 | Tampermonkey | `guidance/tampermonkey.md` | Script hosting, CAPTCHA patterns |
 | Learning capture | `guidance/learning-capture.md` | When/where to persist learnings (multi-destination rule) |
+| Learning propagation script | `scripts/propagate-learning.sh` | Single-command multi-destination learning routing |
+| Essential rules (auto-loaded) | `guidance/ESSENTIAL.md` | Top-10 most-violated rules, injected at SessionStart |
 | Comprehensive closeout | `guidance/comprehensive-closeout.md` | Detailed session documentation for important conversations |
+| Propagation agent profile | `profiles/propagation/` | Dedicated role for learning routing consistency |
+| Doc-sync agent profile | `profiles/doc-sync/` | Dedicated role for CLAUDE.md freshness post-merge |
 | Cross-repo knowledge wiki | `~/repos/knowledgeBase/` | Synthesized cross-cutting reference; MANIFEST.md maps pages to sources |
 
 ## Rules vs Guidance
 
 - **`~/.claude/rules/`** (2 files): Environment-specific constraints that are always loaded. VM deploy safety and usage guardrails.
-- **`guidance/`** (23 files): Detailed procedures loaded on-demand. One file per function; no duplication.
-- **`agent.md`**: Slim routing table (~75 lines) with core principles and the guidance index.
-- **`profiles/`**: Agent identity and experience. One subdirectory per agent.
+- **`guidance/`** (24 files): Detailed procedures loaded on-demand. `ESSENTIAL.md` is auto-loaded; rest are on-demand. One file per function; no duplication.
+- **`scripts/`**: Operational scripts (`propagate-learning.sh`, etc.)
+- **`agent.md`**: Slim routing table (~80 lines) with core principles and the guidance index.
+- **`profiles/`**: Agent identity and experience. One subdirectory per agent (including propagation, doc-sync).
 
 ## Adding New Functions
 
