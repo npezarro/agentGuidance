@@ -28,7 +28,7 @@ npx jest             # tests (when present)
 - **Test before reporting.** Verify changes yourself (browser agent, curl, build, etc.) before asking the user to test or confirming completion.
 - **Fall back to page-reader for JS-rendered pages.** When WebFetch returns empty or broken content (common with SPAs like Gemini, modern forums, React apps), use `node ~/repos/page-reader/src/index.js --text-only <url>` (VM: `~/page-reader/`). Never skip a shared link; if both methods fail, say so explicitly.
 - **No external posting without explicit instruction.** Building features is fine; calling endpoints is not.
-- **Capture every learning in ALL relevant places.** Every operational learning, safeguard, or behavioral rule must be persisted to: (1) memory (for cross-session recall), AND (2) the relevant repo's `CLAUDE.md` or `context.md` (for any agent working in that repo). Cross-project learnings also go to `agentGuidance`. Learnings spanning 3+ repos also go to `knowledgeBase`. Never save to only one location.
+- **Capture every learning in ALL relevant places.** Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to route learnings to all destinations in one command. Never save to memory alone.
 
 ## Code Standards
 - **Match existing patterns.** Read `package.json`, config files, and surrounding code first.
@@ -51,6 +51,7 @@ npx jest             # tests (when present)
 **Keep `agent.md` under 100 lines.** Universal behavioral rules with pointers to guidance files only. Project-specific rules belong in the project's CLAUDE.md. See `MANIFEST.md` for the function-to-source mapping.
 
 ## Guidance File Index
+**Always loaded at SessionStart:** `guidance/ESSENTIAL.md` (top-10 most-violated rules).
 Load on-demand based on the current task:
 - `guidance/git-workflow.md` -- branching, PRs, merge procedures, commit messages
 - `guidance/code-review.md` -- self-review checklist before committing
@@ -77,5 +78,6 @@ Load on-demand based on the current task:
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/tampermonkey.md` -- TM script hosting and CAPTCHA bypass patterns
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
+- `guidance/ESSENTIAL.md` -- **auto-loaded** top-10 most-violated rules (always in context)
 - `guidance/comprehensive-closeout.md` -- detailed session documentation for important conversations
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
