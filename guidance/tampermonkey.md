@@ -68,6 +68,27 @@ Ship userscripts with all debug/verbose logging flags **disabled**. Use boolean 
 
 This bit both ChatGPTCompletionChime and GeminiCompletionChime simultaneously (April 2026): `HEARTBEAT_LOG` and `NET_DEBUG` flags were left enabled, producing console output every 750ms for all users.
 
+## Console Sandbox Isolation
+
+Tampermonkey scripts run in a sandbox — their `console` object is isolated from the page's `console`. This means TM `console.log()` output is invisible to page-level observer scripts (like browser-logs) that patch `window.console`.
+
+**To route TM logs through the page console**, use `unsafeWindow.console`:
+
+```js
+// At script top, after 'use strict'
+const pageLog = unsafeWindow.console.log.bind(unsafeWindow.console);
+const pageWarn = unsafeWindow.console.warn.bind(unsafeWindow.console);
+
+// Then use pageLog() instead of console.log() for observable output
+pageLog('[MyScript] action completed');
+```
+
+**Requires** `@grant unsafeWindow` in the script header. Without it, `unsafeWindow` is `undefined`.
+
+**When to use this:** Only when you need logs visible to other scripts or page-level observers. For standard debug logging that only appears in devtools, regular `console.log` is fine.
+
+**Why this matters:** The reddit-auto-hide script took 3 commits to get cross-script log capture working (April 2026). First attempt: inject `<script>` to patch page console — didn't work because TM sandbox still used its own console. Second attempt: `document_start` injection — race condition. Solution: bind `unsafeWindow.console` methods directly.
+
 ## YouTube DOM Resilience
 
 YouTube frequently changes DOM structure, removing elements and attributes without notice. Userscripts targeting YouTube must be defensive:
