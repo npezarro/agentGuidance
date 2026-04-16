@@ -74,6 +74,19 @@ curl -s -X POST "$DISCORD_WEBHOOK_URL" \
 
 **Limits:** Messages have a **2000-character limit**. Embeds have a 4096-char description limit. When any message exceeds the limit, overflow goes into a thread -- `discord-webhook.sh` handles this automatically. For manual posts (raw curl), split into chunks at 1990 chars and post overflow as thread replies.
 
+## Prompt-CLAUDE.md Consistency
+
+When bot dispatch code sends `claude -p "<prompt>"`, the prompt text is the **direct user instruction** and takes precedence over the target repo's CLAUDE.md. If the prompt says "output a summary" but CLAUDE.md says "output full content," agents follow the prompt.
+
+**Why this matters:** Prompt text is written once in bot handler code and rarely reviewed. CLAUDE.md is updated as the repo evolves. They drift apart silently, and agents will follow the stale prompt over the current CLAUDE.md.
+
+**How to prevent:**
+- When updating a repo's CLAUDE.md behavioral rules, grep the dispatch code for prompts that reference that repo (search `cwd:` paths in bot handlers)
+- Keep dispatch prompts minimal — delegate behavioral rules to CLAUDE.md with phrasing like "Follow CLAUDE.md" rather than restating rules inline
+- If a prompt must include specific instructions, add a comment in the dispatch code pointing to the CLAUDE.md section it mirrors
+
+**Incident:** buying-assistant prompt said "output a summary" contradicting CLAUDE.md line requiring full guide content. Agents produced summaries for weeks until the prompt was fixed in the Discord bot dispatch code (`8ea1bbe`).
+
 ## Discord vs CLI Quality Gap
 
 Discord-dispatched agents run with `planMode: 'skip'` and `clarifyAmbiguous: 'best-effort'` — no interactive recovery. When a tool fails (e.g., WebFetch on a JS SPA), the agent can't ask for clarification or retry with user guidance. Mitigations:
