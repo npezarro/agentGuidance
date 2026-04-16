@@ -12,6 +12,7 @@ Every `.user.js` file must include `@updateURL` and `@downloadURL`. For private 
 - Bump `@version` on every change so Tampermonkey detects the update
 - Deploy: `scp` the file to VM `/var/www/html/`, then open the URL in Edge to trigger install
 - **Always add new scripts to `example.com/install.html`** — centralized install page for all userscripts
+- **Public scripts: prefer GitHub Gist raw URLs** for `@updateURL`/`@downloadURL` instead of VM hosting. Apache prefork workers on the VM can saturate under load from long-polling connections (browser-agent), making VM-hosted TM auto-updates unreliable. Use `https://gist.githubusercontent.com/<user>/<gist-id>/raw/<filename>` for public scripts.
 
 ## Repository
 
