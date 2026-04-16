@@ -42,10 +42,29 @@ Do NOT batch these to session wrapup. By then, details are lost and the learning
 
 ## How to Capture
 
-### Step 1: Save to memory (always)
+### Preferred: Use the Propagation Script
+
+The fastest and most reliable way to capture a learning is the single-command propagation script:
+
+```bash
+~/repos/agentGuidance/scripts/propagate-learning.sh \
+  --type feedback \
+  --summary "One-line description" \
+  --body "Full learning content" \
+  --repo <repo-name> \
+  --guidance-file guidance/<relevant-file>.md
+```
+
+This handles memory + CLAUDE.md + guidance file in one command. Add `--private` for privateContext routing, `--cross-cutting` for knowledgeBase flagging, `--dry-run` to preview.
+
+For complex or nuanced learnings where the script isn't sufficient, you can also spawn the **propagation agent** (`~/.claude/agents/propagation.md`) which handles routing decisions, duplicate checking, and MANIFEST.md lookup.
+
+### Manual Capture (when the script doesn't fit)
+
+#### Step 1: Save to memory (always)
 Standard memory file with frontmatter.
 
-### Step 2: Identify the right repo-level destination(s)
+#### Step 2: Identify the right repo-level destination(s)
 
 | Learning Type | Repo Destination | agentGuidance/privateContext? |
 |---|---|---|
@@ -56,7 +75,7 @@ Standard memory file with frontmatter.
 | Agent profile learning | N/A | `agentGuidance/profiles/<agent>/experience.md` |
 | User preference/style | N/A | `agentGuidance/guidance/written-voice.md` or similar |
 
-### Step 3: Commit and push
+#### Step 3: Commit and push
 Learnings committed to agentGuidance or privateContext must be pushed immediately. They're useless if they sit local-only.
 
 ## Updating Existing Guidance
