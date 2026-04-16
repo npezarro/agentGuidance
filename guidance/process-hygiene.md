@@ -49,6 +49,17 @@ pm2 list
 
 Don't blindly start a service on a port that's occupied. Either stop the existing process (if it's yours) or use a different port. If the existing process belongs to another session, coordinate — don't kill it.
 
+## PM2 Save After Changes
+
+After any local PM2 process change (`pm2 start`, `pm2 delete`, `pm2 stop`, `pm2 restart`), always run `pm2 save` to update the dump file.
+
+**Why:** Local PM2 auto-resurrects on WSL boot via a systemd user service (`pm2-resurrect.service`). If the dump is stale, processes won't come back after an unexpected shutdown. The same applies on the VM — systemd restores the PM2 process list from the last saved dump.
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save   # ← always follow with this
+```
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
