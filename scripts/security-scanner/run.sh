@@ -221,7 +221,7 @@ $RESULT
   chmod 600 "$EMAIL_FILE"
 
   SUBJECT="[Security Alert] Scan #$RUN_NUMBER — $CRITICAL_COUNT critical, $HIGH_COUNT high findings"
-  EMAIL_SENDER="$HOME/repos/email-tools/send-email.sh"
+  EMAIL_SENDER="${EMAIL_SENDER_PATH:-$HOME/repos/email-tools/send-email.sh}"
   if [ -x "$EMAIL_SENDER" ]; then
     if "$EMAIL_SENDER" "$SUBJECT" --body-file "$EMAIL_FILE" --sender-name "Security Scanner" 2>&1; then
       log "EMAIL: Alert sent (critical: $CRITICAL_COUNT, high: $HIGH_COUNT)"
