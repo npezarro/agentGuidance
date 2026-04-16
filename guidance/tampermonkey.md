@@ -10,8 +10,21 @@ Every `.user.js` file must include `@updateURL` and `@downloadURL`. For private 
 ```
 
 - Bump `@version` on every change so Tampermonkey detects the update
-- Deploy: `scp` the file to VM `/var/www/html/`, then open the URL in Edge to trigger install
-- **Always add new scripts to `example.com/install.html`** — centralized install page for all userscripts
+- Deploy: run `~/repos/browser-agent/sync-tm-scripts.sh` to sync all scripts to VM. Ungated copies go to `/var/www/html/` (for `@updateURL`), gated copies go to `/var/www/html/tm-scripts/` (for the install page)
+- **Always add new scripts to `example.com/tm-scripts/`** — OAuth-gated install page for all userscripts
+
+## Install Page Maintenance
+
+The TM scripts install page lives at `example.com/tm-scripts/` (OAuth-gated to owner@example.com).
+
+- **Source:** `~/repos/browser-agent/tm-scripts/index.html`
+- **Deploy script:** `~/repos/browser-agent/sync-tm-scripts.sh`
+- **When creating a new TM script:**
+  1. Add entry to `SCRIPTS` array in `index.html` (name, version, description, file, category, status, tags)
+  2. Add source path mapping to `sync-tm-scripts.sh` SOURCES array
+  3. If it needs ungated auto-update hosting, add filename to the UNGATED array in `sync-tm-scripts.sh`
+  4. Run `sync-tm-scripts.sh` to deploy
+- **When bumping a version:** Update both the `@version` in the `.user.js` AND the version in the `index.html` SCRIPTS array, then run `sync-tm-scripts.sh`
 
 ## Repository
 
