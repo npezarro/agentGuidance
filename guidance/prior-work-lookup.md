@@ -47,6 +47,10 @@ gh search commits "<keyword>" --owner npezarro --limit 20
 - `~/.claude/projects/-mnt-c-Users-npeza/memory/` — auto-memory system
 - Check existing memory files for project context
 
+## GitHub Link References
+
+When the user shares a GitHub link pointing to files in a repo under `~/repos/`, always `git pull` the repo to get the files locally. Don't say the files don't exist or ask the user to provide them separately — the link is a pointer to files already in a known repo.
+
 ## Gaps
 - Claude Code conversation history is NOT persisted between sessions unless captured in a closeout, commit, or Discord post
 - If a conversation produced no commit, no closeout, and no Discord post, it's effectively lost
