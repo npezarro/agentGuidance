@@ -75,6 +75,84 @@ function fakeOAuthToken(overrides?: Partial<OAuthToken>): OAuthToken {
 const token = fakeOAuthToken();
 ```
 
+## Testability Patterns
+
+When autonomousDev adds tests to existing modules, it uses two standard patterns to make code testable without rewriting it. Apply these when the module under test has hard-wired dependencies (child_process, HTTP clients, timers, etc.).
+
+### Pattern 1: `_deps` / `_internals` Export
+
+Export a mutable object containing the dependencies you need to override in tests. Tests replace individual properties; production code uses the defaults.
+
+```javascript
+// lib/worker.js
+const deps = {
+  spawn: require('child_process').spawn,
+  fetch: globalThis.fetch,
+};
+
+function runJob(input) {
+  const proc = deps.spawn('node', ['--version']);
+  // ...
+}
+
+module.exports = { runJob, _deps: deps };
+```
+
+```javascript
+// test/worker.test.js
+const { runJob, _deps } = require('../lib/worker');
+
+beforeEach(() => {
+  _deps.spawn = mock.fn(() => fakeProcess);
+});
+
+afterEach(() => {
+  // Restore originals or use mock.restoreAll()
+});
+```
+
+**When to use:** The module directly calls `require('child_process')`, `fetch`, `fs`, or other side-effectful dependencies. Adding constructor injection would change the public API — `_deps` is a minimal, non-breaking seam.
+
+**Naming:** Use `_deps` for external dependencies (spawn, fetch, fs) and `_internals` for internal helpers (sleep, retry logic) that tests need to control.
+
+### Pattern 2: `createApp(opts)` Factory for Server Testing
+
+Extract Express/Fastify app creation into a factory function that accepts configuration. Tests call the factory directly with test options, avoiding port conflicts and startup side effects.
+
+```javascript
+// agent-server.js
+function createApp(opts = {}) {
+  const app = express();
+  const apiKey = opts.apiKey || process.env.API_KEY;
+  // ... routes ...
+  return app;
+}
+
+// Production entry point
+if (require.main === module) {
+  const app = createApp();
+  app.listen(PORT);
+}
+
+module.exports = { createApp };
+```
+
+```javascript
+// test/server.test.js
+const { createApp } = require('../agent-server');
+const request = require('supertest');
+
+const app = createApp({ apiKey: 'test-key' });
+
+it('returns 401 without auth', async () => {
+  await request(app).get('/api/data').expect(401);
+});
+```
+
+**When to use:** The server file creates an app and calls `.listen()` at module scope. Tests that `require()` it would bind the port. The factory separates creation from listening.
+
+**Used in:** browser-agent, freeGames (local-checkout), groceryGenius, claude-auto-merger.
+
 ## Test Fixture Schema Drift
 
 When tests embed their own DDL (CREATE TABLE) or data shapes, they silently drift from the real schema as the application evolves. Tests pass against the stale fixture schema while production uses the real one.
