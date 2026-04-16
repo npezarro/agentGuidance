@@ -1,5 +1,7 @@
 # Nicholas Pezarro — Written Voice Style Guide
 
+**Source of truth:** The dedicated voice repository contains the full validated guide (V2, scored 9/10 in A/B bakeoff) plus the pre-2025 real writing samples it was built from. Always pull from there for the latest voice guidance. This file is a synopsis.
+
 Built from analysis of pre-2025 material only: personal emails (2023-2024), professional/networking emails, blog posts (2016-2019), book club discussions, product teardowns, and creative writing. AI-influenced writing was excluded to capture Nick's authentic voice.
 
 ---
