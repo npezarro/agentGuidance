@@ -291,6 +291,20 @@ browser-cli console                       # check for errors
 
 **Prefer this over Playwright/headless** for testing on the user's machine — it runs in the real browser with real cookies/session, bypasses CAPTCHA, and tests exactly what the user sees.
 
+## Verify Changes Before Telling the User
+
+After deploying or implementing any user-facing change, **test it yourself** using available tools before saying "it's ready":
+
+1. Hit every user-facing URL with `curl` — check HTTP status codes, not just "no errors in logs"
+2. Test with and without trailing slashes, with query parameters
+3. Follow redirect chains (`curl -sI`) — verify destinations aren't localhost
+4. Walk the full OAuth/auth flow: connect → external auth → callback → landing page
+5. Use `browser-cli` to verify UI changes render correctly
+6. Check server error logs after hitting the route
+7. Test with the actual URL the user will click, not just the API version
+
+**Why:** Repeated incidents of deploying features that break on first use — OAuth callbacks redirecting to localhost, Apache proxy path mismatches, route 404s, static files overriding routes. All were trivially catchable with basic endpoint testing. Never ask the user to verify something you could have tested yourself.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
