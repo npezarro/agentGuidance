@@ -83,6 +83,18 @@ Discord-dispatched agents run with `planMode: 'skip'` and `clarifyAmbiguous: 'be
 - **Retry detection**: stripBotOutput() handles users pasting prior bot output with corrections
 - When building new Discord-dispatched features, design for single-shot execution — assume no interactive recovery
 
+## Creating Discord Channels & Webhooks
+
+When a new Discord channel or webhook is needed, create it yourself via the bot API — don't ask the user to do it manually.
+
+1. Get the bot token from the VM's Discord bot `.env` (SSH to the VM, read the file — see `privateContext/accounts.md` for the path)
+2. `POST` to Discord API to create the channel (use the guild ID from `privateContext/accounts.md`)
+3. `POST` to create a webhook on the new channel
+4. Save the webhook URL to VM `~/.env` and local `~/.env`
+5. Update `privateContext/accounts.md` with the new channel ID and webhook name
+
+**Why:** The bot token and guild ID are already available in privateContext. Creating channels/webhooks is a simple API call — asking the user wastes time on something the agent can self-serve.
+
 ## Inter-Agent Coordination
 
 - Check `#claude-agent-logs` and `#running-job-logs` to see what other agents are doing before starting work on a shared repo.
