@@ -58,3 +58,20 @@ RewriteRule ^/api/auth/(.*) /runeval/api/auth/$1 [R=302,L]
    ```
 
 4. **If adding more subpath-deployed Next.js apps with OAuth**: follow the same three-part pattern (explicit basePath, AUTH_URL with origin, Apache redirect).
+
+## Simplified Variant: redirectProxyUrl (finance-tracker)
+
+For newer apps, `redirectProxyUrl` replaces manual `authorization.params.redirect_uri` overrides:
+
+```typescript
+// auth.ts
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  basePath: "/api/auth",
+  redirectProxyUrl: process.env.NEXTAUTH_URL
+    ? `${process.env.NEXTAUTH_URL}/api/auth`
+    : undefined,
+  // ...
+});
+```
+
+This tells NextAuth to construct callback URLs using the full proxied origin. Combined with the same Apache redirect rule (`/api/auth/* → /finance/api/auth/*`), it handles the callback routing without per-provider parameter overrides. Prefer this approach for new subpath apps.
