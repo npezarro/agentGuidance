@@ -18,13 +18,13 @@ Every operational function has exactly one canonical source. If you need to find
 | Testing | `guidance/testing.md` | Writing, running, cross-layer invariants |
 | Debugging | `guidance/debugging.md` | Log analysis, reproduce, isolate |
 | Deployment (general) | `guidance/deployment.md` | Pre-deploy and post-deploy checklists |
-| Deployment (VM safety) | `rules/deploy-safety.md` | VM-specific: disk, large-file-storage, branches |
+| Deployment (VM safety) | `~/repos/privateContext/rules/deploy-safety.md` | VM-specific: disk, large-file-storage, branches |
 | Dependencies | `guidance/dependencies.md` | Evaluating and adding packages |
 | Resource awareness | `guidance/resource-awareness.md` | Server resource checks |
 | Process hygiene | `guidance/process-hygiene.md` | Spawned processes, temp files, ports |
 | Operational safety | `guidance/operational-safety.md` | Self-deploy loops, restart storms |
 | Secrets hygiene | `guidance/secrets-hygiene.md` | Rotation, history rewrite, detection |
-| Usage guardrail | `rules/usage-guardrail.md` | Team spawn gate at 75% |
+| Usage guardrail | `~/repos/privateContext/rules/usage-guardrail.md` | Team spawn gate at 75% |
 | Agent profiles | `profiles/_schema.md` | Identity + experience log format |
 | Written voice | `guidance/written-voice.md` | Writing in the owner's voice |
 | WordPress posting | `guidance/wordpress-auto-posting.md` | WordPress hook setup |
@@ -44,7 +44,7 @@ Every operational function has exactly one canonical source. If you need to find
 
 ## Rules vs Guidance
 
-- **`rules/`** (2 files): Environment-specific constraints installed to `~/.claude/rules/` via `scripts/install-rules.sh`. VM deploy safety and usage guardrails.
+- **`~/repos/privateContext/rules/`** (2 files): Environment-specific constraints installed to `~/.claude/rules/` via `scripts/install-rules.sh`. VM deploy safety and usage guardrails. Kept in privateContext because they contain infrastructure details.
 - **`guidance/`** (24 files): Detailed procedures loaded on-demand. `ESSENTIAL.md` is auto-loaded; rest are on-demand. One file per function; no duplication.
 - **`scripts/`**: Operational scripts (`propagate-learning.sh`, etc.)
 - **`agent.md`**: Slim routing table (~80 lines) with core principles and the guidance index.
