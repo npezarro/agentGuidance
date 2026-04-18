@@ -86,6 +86,21 @@ When tests embed their own DDL (CREATE TABLE) or data shapes, they silently drif
 - If tests must define their own schema (e.g., SQLite in-memory), derive it from the same migration files the application uses
 - When adding a column or field to the real schema, search test files for the table name and update inline definitions
 
+## Runtime Version Compatibility
+
+Local dev environments often run newer runtime versions than CI. Using APIs only available in newer versions causes tests to pass locally but fail in CI.
+
+**Node.js:** Local is v22+, most CI workflows pin Node 20. Avoid these Node 22+ APIs in application and test code:
+- `Promise.withResolvers()` — use manual `new Promise((resolve, reject) => ...)` instead
+- `Object.groupBy()` / `Map.groupBy()` — use a reduce-based helper or lodash
+- `import.meta.resolve()` without flag — not stable until Node 22
+
+**Python:** Local is 3.12, but some CI matrices test 3.10/3.11. Avoid 3.11+ features when the CI matrix includes older versions:
+- `ExceptionGroup` / `except*` (3.11+)
+- `tomllib` (3.11+ stdlib, use `tomli` package for 3.10)
+
+**How to check:** Before using a newer API, check the repo's `.github/workflows/*.yml` for the `node-version` or `python-version` field. If CI targets an older version, use a compatible alternative.
+
 ## Running Tests
 
 ```bash
