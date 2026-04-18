@@ -12,6 +12,7 @@ Self-review checklist to run before every commit and PR.
 
 ### 2. No Regressions
 - [ ] Build passes: `npm run build`
+- [ ] Lint passes: `npm run lint` (or `npx eslint .` / `ruff check .` if no lint script). Fix unused imports, formatting, and style violations before committing — don't leave them for a follow-up CI fix run.
 - [ ] Tests pass: `npm test`
 - [ ] Existing functionality still works (manual spot-check if no tests)
 
