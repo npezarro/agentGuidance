@@ -81,6 +81,17 @@ Ship userscripts with all debug/verbose logging flags **disabled**. Use boolean 
 
 This bit both ChatGPTCompletionChime and GeminiCompletionChime simultaneously (April 2026): `HEARTBEAT_LOG` and `NET_DEBUG` flags were left enabled, producing console output every 750ms for all users.
 
+## Mobile Firefox Compatibility
+
+Firefox Android + Tampermonkey has three known compatibility gaps:
+
+- **IntersectionObserver exit events are unreliable.** `rootMargin`-based exit detection doesn't fire consistently. Always add a scroll event listener fallback that checks `getBoundingClientRect()` directly. The scroll listener compensates for missed exit events.
+- **CSP blocks inline `<script>` tag injection.** Firefox Android enforces stricter CSP than Chrome. Use `unsafeWindow` patching (e.g., `unsafeWindow.fetch = ...`) instead of injecting `<script>` elements to intercept page-level APIs.
+- **Mobile layouts may use nested scroll containers.** Don't assume `window` or `document` is the scroll root. Detect the actual scroll container (e.g., Reddit mobile wraps content in a scrollable div) and pass it as the `root` option to IntersectionObserver.
+- **Proactive auth token capture.** Some SPAs (e.g., Reddit) don't make authenticated API calls during passive browsing on mobile. Extract tokens proactively from framework config objects (`window.__r.config.accessToken`) or inline script tag contents rather than waiting for intercepted requests.
+
+Discovered April 2026 in reddit-auto-hide (v2.4). Applies to any TM script targeting mobile Firefox with viewport detection or API interception.
+
 ## YouTube DOM Resilience
 
 YouTube frequently changes DOM structure, removing elements and attributes without notice. Userscripts targeting YouTube must be defensive:
