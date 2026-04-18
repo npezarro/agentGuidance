@@ -291,6 +291,28 @@ browser-cli console                       # check for errors
 
 **Prefer this over Playwright/headless** for testing on the user's machine — it runs in the real browser with real cookies/session, bypasses CAPTCHA, and tests exactly what the user sees.
 
+## Python: CI-Safe Stubbing for Optional Dependencies
+
+When a Python project has heavy optional dependencies (e.g., `requests`, `googleapiclient`, `cv2`) that aren't installed in CI, tests fail on import before any test logic runs.
+
+**Fix:** Add a `conftest.py` in the test root that patches `sys.modules` with stubs:
+
+```python
+# conftest.py
+import sys
+from unittest.mock import MagicMock
+
+for mod in ["requests", "googleapiclient", "googleapiclient.discovery"]:
+    if mod not in sys.modules:
+        sys.modules[mod] = MagicMock()
+```
+
+- Only stub modules that are genuinely optional (not needed for the code paths under test)
+- Stub the full module path hierarchy (`googleapiclient` AND `googleapiclient.discovery`)
+- Guard with `if mod not in sys.modules` so local environments with real deps aren't affected
+
+**When to use:** `ModuleNotFoundError` in CI for packages that are too heavy or unnecessary to install in the test environment.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
