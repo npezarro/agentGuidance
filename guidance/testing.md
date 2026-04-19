@@ -102,6 +102,39 @@ pytest -x                   # stop on first failure
 pytest --cov=src            # check coverage
 ```
 
+## CI Test Workflow
+
+Most repos use a standard `.github/workflows/test.yml` that runs tests on every push and PR to the default branch. 13+ repos have this deployed.
+
+**Standard template (Node.js):**
+```yaml
+name: CI
+on:
+  push:
+    branches: [main]        # or [master] — match the repo's default branch
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+```
+
+**Python repos** use a similar pattern with `setup-python@v5`, `pip install`, and `pytest`.
+
+**Key rules:**
+- Pin Node.js to 20 (matches CI standard). Don't use `node-version: 'lts/*'` — some Node 22+ APIs (Promise.withResolvers, Object.groupBy) will pass locally but fail CI.
+- The file is named `test.yml`, not `ci.yml`.
+- Branch trigger must match the repo's actual default branch (`main` vs `master`).
+- When adding first tests to a repo, also add the CI workflow so tests run on every PR.
+
 ## Coverage
 
 - Don't chase 100% coverage. Aim for meaningful coverage of business logic.
