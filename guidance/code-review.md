@@ -69,3 +69,23 @@ When opening a PR, also verify:
 | `async` function with no `await` | Unnecessary async wrapper | Remove `async` keyword |
 | `new Date()` in business logic | Untestable | Inject time as parameter |
 | String concatenation for paths | OS-incompatible | Use `path.join()` |
+| Prisma `globalForPrisma` dev-only cache | Connection leak in production | Cache on `globalThis` unconditionally (see below) |
+| `new Date("2026-04-15")` for display | UTC parse → local timezone off-by-one | Use `new Date(year, month, day)` for local dates |
+
+## Prisma globalThis Singleton — Always Cache in Production
+
+The standard Next.js Prisma pattern only caches the client in development:
+
+```ts
+// ❌ Bug: production creates new clients on duplicate module loads
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+```
+
+With adapters like `@prisma/adapter-libsql`, production can also load the module multiple times, leaking connections. Always cache unconditionally:
+
+```ts
+// ✅ Prevents connection leaks in both dev and production
+globalForPrisma.prisma = prisma;
+```
+
+**Affected repos:** botlink, finance-tracker (still have the dev-only guard). health-hub fixed this in commit 8ed8356.
