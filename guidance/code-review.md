@@ -59,6 +59,16 @@ When opening a PR, also verify:
 - [ ] Any migration or data changes noted
 - [ ] Rollback plan identified for risky changes
 
+## Protected Configuration (Do Not Remove)
+
+Some configuration properties look like dead code but are essential for production. Never remove these during fix or cleanup runs without verifying the deployment context:
+
+- **NextAuth/Auth.js**: `basePath`, `redirectProxyUrl`, provider `authorization.params`, `token.params` — required for subpath deployments behind reverse proxies. See `agentGuidance/guidance/auth-basepath.md`.
+- **PM2 ecosystem.config.js**: `env`, `max_memory_restart`, `cwd` — essential for production process management.
+- **Apache/proxy config references in code**: URL construction that includes basePaths or proxy prefixes.
+
+**Why:** autonomousDev crash-fix run #134 removed `basePath` and `redirectProxyUrl` from finance-tracker's auth.ts because they appeared unused. This broke OAuth on the subpath deployment, requiring a manual restore (60db078).
+
 ## Common Issues to Watch For
 
 | Pattern | Problem | Fix |
