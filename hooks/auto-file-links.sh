@@ -1,7 +1,6 @@
 #!/bin/bash
 # auto-file-links.sh — PostToolUse hook for Bash
-# Detects git push of readable artifacts (.md files in output/report dirs)
-# and auto-posts them to Discord #file-links.
+# Detects git push of any .md files and auto-posts them to Discord #file-links.
 #
 # Triggered by PostToolUse on Bash commands containing "git push".
 # Reads the tool input from stdin (JSON with tool_input.command).
@@ -64,11 +63,9 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 PUSHED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null)
 [ -z "$PUSHED_FILES" ] && exit 0
 
-# Filter for readable artifacts: .md files in output/report/application dirs
-# Exclude routine files like READMEs, CHANGELOGs, config docs
-ARTIFACTS=$(echo "$PUSHED_FILES" | grep -iE '\.(md|txt)$' \
-  | grep -iE '(output|report|proposal|analysis|summari|material|application|review)' \
-  | grep -viE '(README|CHANGELOG|CLAUDE|MEMORY|config|\.claude/)' \
+# Filter for .md files, excluding routine/config docs
+ARTIFACTS=$(echo "$PUSHED_FILES" | grep -iE '\.md$' \
+  | grep -viE '(README|CHANGELOG|CLAUDE|MEMORY|config|\.claude/|node_modules|package)' \
   || true)
 
 [ -z "$ARTIFACTS" ] && exit 0
