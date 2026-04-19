@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-04-05 | Follow-up: closed open items, learning agent run #2 validated, S5 contradiction fixed
+2026-04-19 | Broadened auto-file-links hook to catch all .md files across all repos
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -12,11 +12,12 @@
 - **Branch Hygiene rules** added: merge PRs in the same session, rebase before opening, clean up stale branches
 - No em dashes allowed in any agent output (Communication rule)
 - **27 guidance files** in `guidance/` directory (including learning-capture, learning-agent, comprehensive-closeout)
-- **agent.md at 78/100 lines** — approaching ceiling (suggestion S2: extract Communication section when needed)
+- **agent.md at 78/100 lines** -- approaching ceiling (suggestion S2: extract Communication section when needed)
 - Templates in `templates/` include filled-in examples from real projects (sanitized)
 - **`recurring-tasks/`**: shared runner with flock-based locking, scoped permissions, Discord notifications, and crontab generator (task configs moved to privateContext)
 - **Deep closeout process now requires context.md updates** for every touched repo (Step 5) and memory updates (Step 6) to bridge the gap between archive and handoff
 - **post-closeout.sh** upgraded from truncated single embed to threaded chunking (full content, no loss)
+- **auto-file-links.sh** broadened: now posts links for ALL .md files on push (excludes README/CHANGELOG/CLAUDE/MEMORY/config/.claude/)
 
 ## Open Work
 - promptlibrary PR #5 ("Claude/Prompt Lifecycle") was closed on 2026-03-15 due to stale conflicts across extension files; commits preserved in PR history for future cherry-picking if needed
@@ -25,7 +26,7 @@
 - Learning agent PRs #67-71 all merged successfully
 - S6 (branch collision risk) and S7 (deployment cross-ref) still open, minor
 
-Full session closeout: `privateContext/deliverables/closeouts/2026-04-05-learning-system-followup.md`
+Full session closeout: `privateContext/deliverables/closeouts/2026-04-19-md-linker-file-links.md`
 
 ## Environment Notes
 - **Repo:** PUBLIC; do not commit secrets or infrastructure details
