@@ -149,3 +149,24 @@ Before deploying auth changes to any subpath app:
 5. **`getToken` secureCookie mismatch**: When using `getToken` from `next-auth/jwt` in middleware behind a reverse proxy, pass `secureCookie: true`. The internal request URL is HTTP, so `getToken` defaults to looking for `authjs.session-token` (non-secure name). But NextAuth sets `__Secure-authjs.session-token` based on HTTPS `NEXTAUTH_URL`. Without this, the middleware will never find the session token and every page redirects to login.
 
 6. **Token exchange redirect_uri**: `@auth/core` hardcodes `provider.callbackUrl` for the token exchange (callback.js:107). `authorization.params.redirect_uri` only fixes the auth request. `token.params` has no effect. `redirectProxyUrl` is skipped for same-origin. Fix: use `customFetch` from `@auth/core` on the provider to intercept the token exchange POST and rewrite `redirect_uri` in the body.
+
+## Simpler Alternative: Provider-Level redirect_uri Override
+
+When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
+
+```typescript
+// auth.ts — student-transcript uses this approach
+Google({
+  clientId: process.env.AUTH_GOOGLE_ID,
+  clientSecret: process.env.AUTH_GOOGLE_SECRET,
+  authorization: {
+    params: {
+      redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/google`,
+    },
+  },
+}),
+```
+
+This tells the OAuth provider exactly where to redirect, bypassing Auth.js's URL construction entirely. Works when `NEXTAUTH_URL` already includes the basePath (e.g., `https://example.com/student`).
+
+**Trade-off:** Simpler (no Apache redirect needed), but couples the callback URL to the env var. The three-part pattern is more robust for complex proxy setups.
