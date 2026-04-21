@@ -40,6 +40,10 @@ When presenting resources, include for each:
 
 Any document with 3+ reference URLs must include an `## ALL LINKS` section at the very bottom with every URL on its own line, double-spaced (blank line between each URL) — no bullets, no dashes, no numbering, no markdown. Just raw URLs with clear separation. This allows the user to select and open them in bulk without copy-paste friction.
 
+## GitHub Reference Files
+
+When the user shares a GitHub link pointing to files in a repo under `~/repos/`, always `git pull` to get the files locally rather than saying they don't exist or asking the user to provide them. The files are already committed — the link is a pointer, not a request for manual transfer.
+
 ## Applies To
 
 Any task involving: interview prep materials, competitive research, market analysis, technology deep dives, career/application materials, or any context where the user will invest time reading what you recommend.
