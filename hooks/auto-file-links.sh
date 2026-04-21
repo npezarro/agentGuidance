@@ -68,6 +68,19 @@ ARTIFACTS=$(echo "$PUSHED_FILES" | grep -iE '\.md$' \
   | grep -viE '(README|CHANGELOG|CLAUDE|MEMORY|config|\.claude/|node_modules|package)' \
   || true)
 
+# Apply user-managed blocklist (one filename per line)
+BLOCKLIST="$HOME/repos/privateContext/file-links-blocklist.txt"
+if [ -n "$ARTIFACTS" ] && [ -f "$BLOCKLIST" ]; then
+  FILTERED=""
+  while IFS= read -r artifact; do
+    BASENAME=$(basename "$artifact")
+    if ! grep -qxF "$BASENAME" "$BLOCKLIST"; then
+      FILTERED="${FILTERED}${FILTERED:+$'\n'}${artifact}"
+    fi
+  done <<< "$ARTIFACTS"
+  ARTIFACTS="$FILTERED"
+fi
+
 [ -z "$ARTIFACTS" ] && exit 0
 
 # Post each artifact to #file-links
