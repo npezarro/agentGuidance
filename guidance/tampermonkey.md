@@ -85,6 +85,23 @@ Mobile Firefox (Android) has specific constraints for Tampermonkey scripts:
 
 **Why:** Discovered during reddit-auto-hide development — IntersectionObserver, script injection, and auth interception all required mobile-specific fallbacks.
 
+## Performance: Per-Tab Sandbox Overhead
+
+Tampermonkey's per-tab sandbox architecture can cause severe CPU overhead. In browser-logs (April 2026), Edge accumulated ~14 hours of CPU time with only 6 tabs open due to TM's per-tab sandbox overhead.
+
+**When to migrate to MV3 Chrome extension:**
+- Script runs on every page (`@match *://*/*`) with frequent timers or console patching
+- Observed high CPU or memory from TM in Task Manager
+- Script needs a single shared service worker instead of per-tab instances
+
+**MV3 extension pattern (proven in browser-logs):**
+- `content.js` (MAIN world): patches page APIs, sends data via `postMessage`
+- `bridge.js` (ISOLATED world): receives `postMessage`, forwards via `chrome.runtime.sendMessage`
+- `background.js`: single service worker with shared timers for all tabs
+- Options page for user config (replaces TM storage UI)
+
+Keep TM for scripts that only match specific domains or don't need persistent background processing.
+
 ## Debug & Verbose Logging
 
 Ship userscripts with all debug/verbose logging flags **disabled**. Use boolean constants (`const DEBUG = false`) and gate console output behind them. Never commit `true` to production — users get console spam they can't silence, and it masks real errors in the browser console.
