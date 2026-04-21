@@ -150,6 +150,18 @@ Before deploying auth changes to any subpath app:
 
 6. **Token exchange redirect_uri**: `@auth/core` hardcodes `provider.callbackUrl` for the token exchange (callback.js:107). `authorization.params.redirect_uri` only fixes the auth request. `token.params` has no effect. `redirectProxyUrl` is skipped for same-origin. Fix: use `customFetch` from `@auth/core` on the provider to intercept the token exchange POST and rewrite `redirect_uri` in the body.
 
+7. **Edge runtime middleware cannot use `auth()` with PrismaAdapter.** The `auth()` wrapper imports PrismaAdapter which transitively imports `node:path` — incompatible with Edge runtime. Use `getToken()` from `next-auth/jwt` (JWT-only, no Node.js deps) instead:
+   ```typescript
+   // middleware.ts — WRONG (crashes on Edge)
+   import { auth } from "@/auth";
+   export default auth((req) => { /* req.auth */ });
+
+   // middleware.ts — CORRECT
+   import { getToken } from "next-auth/jwt";
+   const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+   ```
+   This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
+
 ## Simpler Alternative: Provider-Level redirect_uri Override
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
