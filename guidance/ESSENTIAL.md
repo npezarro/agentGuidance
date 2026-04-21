@@ -16,6 +16,7 @@ Always `git commit && git push` BEFORE posting links to Discord (#file-links, #c
 - Browser tabs after restart: use `ensure` command, don't ask user to refresh
 - Files from known repos: `git pull` to get them locally, don't ask user to provide
 - Long text to Termius: write to a file and scp, don't ask user to paste
+- **Specs, compatibility, upgradeability:** Research it yourself (WebSearch, WebFetch, page-reader) before recommending. Never tell the user "check if X is upgradeable" when you can look up the service manual yourself. The user should receive answers, not homework.
 
 ## 5. Guidance Updates Go to Repo Files, Not Just Memory
 "Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
