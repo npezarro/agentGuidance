@@ -117,3 +117,7 @@ Before deploying auth changes to any subpath app:
    ```
 
 4. **If adding more subpath-deployed Next.js apps with OAuth**: use the Apache proxy/rewrite pattern. `basePath: "/api/auth"` for action parsing + Apache rule to route bare `/api/auth/` callbacks to the correct app. Register the bare callback URL (without the app basePath) in the OAuth provider's console.
+
+5. **`getToken` secureCookie mismatch**: When using `getToken` from `next-auth/jwt` in middleware behind a reverse proxy, pass `secureCookie: true`. The internal request URL is HTTP, so `getToken` defaults to looking for `authjs.session-token` (non-secure name). But NextAuth sets `__Secure-authjs.session-token` based on HTTPS `NEXTAUTH_URL`. Without this, the middleware will never find the session token and every page redirects to login.
+
+6. **Token exchange redirect_uri**: `@auth/core` hardcodes `provider.callbackUrl` for the token exchange (callback.js:107). `authorization.params.redirect_uri` only fixes the auth request. `token.params` has no effect. `redirectProxyUrl` is skipped for same-origin. Fix: use `customFetch` from `@auth/core` on the provider to intercept the token exchange POST and rewrite `redirect_uri` in the body.
