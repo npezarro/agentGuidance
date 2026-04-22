@@ -43,18 +43,77 @@ RewriteRule ^/api/auth/(.*) /runeval/api/auth/$1 [R=302,L]
 - The Next.js 15 -> 16 upgrade changed how `req.url` is constructed in route handlers
 - Local dev runs without basePath (`localhost:3000`), so the bug only manifests in production
 
+## The Finance-Tracker Pattern (Apache callback proxy)
+
+Same core pattern as runeval but with ProxyPass instead of RewriteRule. The key insight: `provider.callbackUrl` in @auth/core is built from `basePath + origin` and is used in BOTH the authorization request AND the token exchange. You cannot override just one side — `authorization.params.redirect_uri` only affects the authorization URL, while the token exchange hardcodes `provider.callbackUrl` in `callback.js:107`. Any mismatch causes `redirect_uri_mismatch` from Google.
+
+**DO NOT attempt to override redirect_uri via provider params.** `token.params.redirect_uri` does NOT affect the token exchange. `redirectProxyUrl` is ignored when both URLs share the same origin (`isOnRedirectProxy=true`).
+
+The working pattern:
+```typescript
+// auth.ts — NO redirect_uri overrides, NO redirectProxyUrl
+NextAuth({
+  basePath: "/api/auth",  // Must match what standalone sees (no /finance)
+  providers: [Google({ /* plain config, no redirect_uri overrides */ })],
+})
+```
+
+```apache
+# Apache — proxy bare /api/auth/ to the app (Google callbacks arrive here)
+ProxyPass /api/auth/ http://127.0.0.1:3008/finance/api/auth/
+ProxyPassReverse /api/auth/ http://127.0.0.1:3008/finance/api/auth/
+```
+
+```
+# Google Cloud Console — register the bare callback URL (NOT the /finance version)
+https://example.com/api/auth/callback/google
+```
+
+The callback flow: Google redirects to `https://example.com/api/auth/callback/google` → Apache proxies to `http://127.0.0.1:PORT/finance/api/auth/callback/google` → standalone strips `/finance` → handler sees `/api/auth/callback/google` → basePath matches → token exchange sends same `redirect_uri` → Google accepts.
+
+## OAuth Flow Testing (NOT Just Endpoint Testing)
+
+Testing individual endpoints (csrf, providers, session) does NOT prove the OAuth flow works. Those can return 200 while login is completely broken. Always test the **actual signin flow**:
+
+```bash
+# 1. Get CSRF token and cookie
+CSRF_RESP=$(curl -s -v http://localhost:PORT/APP/api/auth/csrf 2>&1)
+CSRF_TOKEN=$(echo "$CSRF_RESP" | grep -o 'csrfToken":"[^"]*' | cut -d\" -f3)
+CSRF_COOKIE=$(echo "$CSRF_RESP" | grep "__Host-authjs.csrf-token=" | sed 's/.*__Host-authjs.csrf-token=\([^;]*\).*/\1/')
+
+# 2. POST signin — inspect the redirect_uri in the Google redirect
+curl -s -D - -X POST http://localhost:PORT/APP/api/auth/signin/google \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Cookie: __Host-authjs.csrf-token=$CSRF_COOKIE" \
+  -d "csrfToken=$CSRF_TOKEN&callbackUrl=/APP" 2>&1 | grep location
+
+# 3. Verify redirect_uri matches a registered URI
+# Check privateContext/accounts.md for the provider's registered redirect URIs
+```
+
+## Pre-Deploy Auth Checklist
+
+Before deploying auth changes to any subpath app:
+1. **Check registered URIs**: Read `privateContext/accounts.md` — is the app's callback URI registered with the OAuth provider?
+2. **Test POST signin flow**: Does the `redirect_uri` in the provider redirect match the registered URI exactly?
+3. **Test callback route**: Does the callback URL return 302 (not 404)?
+4. **Cookie path consistency**: Do CSRF and callback hit the same cookie domain/path?
+5. Only then declare auth working.
+
 ## Rules for Future Work
 
 1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.
 
 2. **When upgrading next-auth or Next.js**: test the full OAuth flow on staging before deploying to production. `curl https://staging.example.com/runeval/api/auth/providers` must return provider JSON, not "Bad request."
 
-3. **Add a smoke test**: After deploying runeval, verify auth endpoints:
+3. **Add a smoke test**: After deploying, verify auth endpoints AND the signin flow:
    ```bash
    # Must return JSON with provider definitions
-   curl -s https://example.com/runeval/api/auth/providers | jq .
+   curl -s https://example.com/APP/api/auth/providers | jq .
    # Must return CSRF token
-   curl -s https://example.com/runeval/api/auth/csrf | jq .
+   curl -s https://example.com/APP/api/auth/csrf | jq .
+   # POST signin must redirect to Google with correct redirect_uri
+   # (see "OAuth Flow Testing" section above)
    ```
 
-4. **If adding more subpath-deployed Next.js apps with OAuth**: follow the same three-part pattern (explicit basePath, AUTH_URL with origin, Apache redirect).
+4. **If adding more subpath-deployed Next.js apps with OAuth**: use the Apache proxy/rewrite pattern. `basePath: "/api/auth"` for action parsing + Apache rule to route bare `/api/auth/` callbacks to the correct app. Register the bare callback URL (without the app basePath) in the OAuth provider's console.

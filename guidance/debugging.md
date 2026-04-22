@@ -5,8 +5,31 @@ A systematic approach to diagnosing and fixing issues.
 ## The Debugging Workflow
 
 ```
-1. Reproduce → 2. Read the Error → 3. Isolate → 4. Hypothesize → 5. Verify → 6. Fix → 7. Confirm
+0. Gather Context → 1. Reproduce → 2. Read the Error → 3. Isolate → 4. Hypothesize → 5. Verify → 6. Fix → 7. Confirm
 ```
+
+### 0. Gather Existing Knowledge First
+
+Before touching code or forming hypotheses, check whether this problem (or a closely related one) has been solved before:
+
+- **Memory**: Read relevant feedback/project memory files — corrections from past sessions are your highest-signal source
+- **CLAUDE.md**: The repo's CLAUDE.md documents architecture decisions and known gotchas
+- **Guidance**: Check `agentGuidance/guidance/` for domain-specific rules (auth-basepath.md, deployment.md, etc.)
+- **Wiki**: Scan knowledgeBase wiki index for cross-repo patterns
+- **privateContext**: Check for credentials, registered URIs, or infrastructure details that constrain the solution
+- **Git history**: `git log --oneline --grep="<keyword>"` to find prior fixes
+
+This is not optional background reading — it's the most efficient debugging step. **The previous session's fix is often already documented in memory.** Skipping this to "save time" causes multi-hour debugging loops.
+
+### Approach Switching (15-minute rule)
+
+If you've been trying variations of the same approach for 15+ minutes without progress:
+1. Stop iterating on the current approach
+2. Re-read memory/guidance for the domain (Step 0 again)
+3. Spawn a debugger agent for a fresh perspective
+4. Try a **fundamentally different** approach
+
+Repeating the same category of fix with different values is not debugging — it's brute force.
 
 ### 1. Reproduce the Issue
 
