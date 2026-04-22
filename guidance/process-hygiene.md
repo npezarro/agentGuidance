@@ -49,6 +49,18 @@ pm2 list
 
 Don't blindly start a service on a port that's occupied. Either stop the existing process (if it's yours) or use a different port. If the existing process belongs to another session, coordinate — don't kill it.
 
+## Long Text Transfer
+
+Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
+
+**Instead:**
+- **Long commands (>~80 chars):** Write to a temp script file (e.g., `/tmp/run-me.sh`), then give a short `scp` + `bash` command
+- **Long URLs:** Write to a file and `scp`, or use a short redirect
+- **Multi-step commands:** Break into individual short lines, never chain with `&&` for paste
+- **Short commands (<80 chars):** Direct paste is fine
+
+**Why:** Repeated incidents of mangled pastes causing failed commands. The user works in Termius SSH client which breaks on multi-line and long-string paste. Writing to files and transferring is always reliable.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started

@@ -128,6 +128,16 @@ When a feedback loop or restart storm occurs, document it:
 
 Add the entry to the project's `context.md` under a "Known Issues" or "Incident Log" section so future sessions are aware.
 
+## Irreversible Content Deletion
+
+When bulk-deleting content on external platforms (YouTube, social media, cloud storage), apply strict safeguards:
+
+1. **Gather and confirm first** — Build the full list of items to be removed and present it to the user for confirmation before deleting anything. This catches mistakes in date ranges, filters, or account selection.
+2. **Restrict to safe content types** — Only auto-generated or temporary content is eligible for bulk deletion (e.g., unlisted YouTube shorts, draft posts). Never bulk-delete public, private, or manually curated content.
+3. **Filter by metadata** — Apply duration, privacy status, date range, and ownership filters to exclude anything that shouldn't be touched (e.g., skip full-length videos when deleting shorts by filtering <=90s).
+
+**Why:** Platform deletions are irreversible. A wrong date range or missing filter can wipe out manually curated content. The confirmation step and content-type restriction ensure only disposable items are at risk.
+
 ## Verify Before Asserting
 
 Don't claim the user did something (submitted an application, sent an email, published a post) unless you can verify it through an authoritative source. The existence of prep materials, drafts, or related files does NOT confirm the action was completed.
