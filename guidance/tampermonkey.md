@@ -75,6 +75,16 @@ Platform-specific gotchas (discovered via freeGames):
 - **IndieGala:** "ADD TO LIBRARY" button lazy-loads inconsistently; use `wait-for` with generous timeouts
 - **GamerPower API:** Good discovery source for free game listings across platforms
 
+## Mobile Firefox Compatibility
+
+Mobile Firefox (Android) has specific constraints for Tampermonkey scripts:
+
+- **IntersectionObserver unreliable for viewport exits.** Mobile Firefox doesn't reliably fire IntersectionObserver callbacks when elements scroll out of view. Always add a scroll event listener fallback that checks `getBoundingClientRect()` directly.
+- **CSP blocks inline `<script>` injection.** Firefox Android enforces stricter CSP in Tampermonkey contexts. Use `unsafeWindow` patching instead of injecting `<script>` tags to intercept page-level APIs (e.g., patching `fetch()` or `XMLHttpRequest` for auth token capture).
+- **Auth tokens may not appear passively.** Unlike desktop, mobile browsers may not make authenticated API calls during passive browsing. Extract tokens proactively from page globals (e.g., `window.__r.config.accessToken`) or inline script tag contents rather than waiting for network interception.
+
+**Why:** Discovered during reddit-auto-hide development — IntersectionObserver, script injection, and auth interception all required mobile-specific fallbacks.
+
 ## Debug & Verbose Logging
 
 Ship userscripts with all debug/verbose logging flags **disabled**. Use boolean constants (`const DEBUG = false`) and gate console output behind them. Never commit `true` to production — users get console spam they can't silence, and it masks real errors in the browser console.
