@@ -124,6 +124,7 @@ git bisect good <hash>  # this commit was working
 | `undefined` where you expect data | Async issue, wrong property name, missing await |
 | Works locally, fails in CI | Different Node version, missing env vars, different OS |
 | Works on first load, breaks on refresh | Client-side state not synced with server, stale cache |
+| Script silently produces empty results | Path from JSON/jq contains `~` — not expanded by shell. Use `${VAR/#\~/$HOME}` |
 
 ### 8. After Fixing
 
