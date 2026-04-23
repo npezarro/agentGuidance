@@ -61,6 +61,11 @@ Never give the user long commands, URLs, or multi-line text to copy-paste manual
 
 **Why:** Repeated incidents of mangled pastes causing failed commands. The user works in Termius SSH client which breaks on multi-line and long-string paste. Writing to files and transferring is always reliable.
 
+## PM2 Config Organization
+
+- **Split independent apps into separate ecosystem configs.** `pm2 start ecosystem.config.js` starts ALL apps defined in the config. If an external system (fix-checker, deploy script) restarts one app's config, every co-located app restarts too. Apps with different lifecycles (daily cron vs continuous server) should have their own config files to avoid cross-triggering.
+- **Use `__dirname` for `cwd`**, not hardcoded absolute paths. Hardcoded paths break when the config is symlinked or deployed to a different machine.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
