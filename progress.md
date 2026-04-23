@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-04-23 | feat | Add git-push-reminder.sh PostToolUse hook: fires on Edit/Write, reminds agent to commit+push when file has uncommitted changes in a git repo. Added to ~/.claude/settings.json |
 | 2026-04-19 | feat | Broaden auto-file-links.sh to post links for all .md files on push (was limited to output/report dirs) |
 | 2026-03-20 | docs | Overhaul guidance/testing.md with testing pyramid strategy (failure audit, contract tests, integration tests, smoke tests, browser tests); add templates/failure-audit.md |
 | 2026-03-20 | feat | Parameterize send-email.js sender name (arg or SENDER_NAME env var), fix .env load order so ALERT_EMAIL resolves in cron context |

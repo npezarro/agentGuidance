@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-04-19 | Broadened auto-file-links hook to catch all .md files across all repos
+2026-04-23 | Added git-push-reminder PostToolUse hook for Edit|Write
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -18,6 +18,7 @@
 - **Deep closeout process now requires context.md updates** for every touched repo (Step 5) and memory updates (Step 6) to bridge the gap between archive and handoff
 - **post-closeout.sh** upgraded from truncated single embed to threaded chunking (full content, no loss)
 - **auto-file-links.sh** broadened: now posts links for ALL .md files on push (excludes README/CHANGELOG/CLAUDE/MEMORY/config/.claude/)
+- **git-push-reminder.sh** hook added: PostToolUse on Edit|Write, reminds agent to commit+push when writing to a git repo with uncommitted changes. Added to ~/.claude/settings.json. Skips memory, .claude, .env, credentials, and gitignored files.
 
 ## Open Work
 - promptlibrary PR #5 ("Claude/Prompt Lifecycle") was closed on 2026-03-15 due to stale conflicts across extension files; commits preserved in PR history for future cherry-picking if needed
