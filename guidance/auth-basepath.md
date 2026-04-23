@@ -43,20 +43,48 @@ RewriteRule ^/api/auth/(.*) /runeval/api/auth/$1 [R=302,L]
 - The Next.js 15 -> 16 upgrade changed how `req.url` is constructed in route handlers
 - Local dev runs without basePath (`localhost:3000`), so the bug only manifests in production
 
-## The Finance-Tracker Pattern (Apache callback proxy)
+## The Finance-Tracker Pattern (customFetch + Apache proxy)
 
-Same core pattern as runeval but with ProxyPass instead of RewriteRule. The key insight: `provider.callbackUrl` in @auth/core is built from `basePath + origin` and is used in BOTH the authorization request AND the token exchange. You cannot override just one side — `authorization.params.redirect_uri` only affects the authorization URL, while the token exchange hardcodes `provider.callbackUrl` in `callback.js:107`. Any mismatch causes `redirect_uri_mismatch` from Google.
+The core problem: `provider.callbackUrl` in @auth/core is built from `basePath + origin` and used in BOTH the authorization request AND the token exchange. The token exchange hardcodes `provider.callbackUrl` in `callback.js` — you cannot fix it with `token.params`.
 
-**DO NOT attempt to override redirect_uri via provider params.** `token.params.redirect_uri` does NOT affect the token exchange. `redirectProxyUrl` is ignored when both URLs share the same origin (`isOnRedirectProxy=true`).
+### Preferred: `customFetch` symbol (fixes token exchange directly)
 
-The working pattern:
+`@auth/core` exports a `customFetch` symbol that lets you intercept the token exchange fetch and rewrite `redirect_uri` in the POST body:
+
 ```typescript
-// auth.ts — NO redirect_uri overrides, NO redirectProxyUrl
-NextAuth({
-  basePath: "/api/auth",  // Must match what standalone sees (no /finance)
-  providers: [Google({ /* plain config, no redirect_uri overrides */ })],
+import { customFetch } from "@auth/core";
+
+const CALLBACK_URL = `${process.env.NEXTAUTH_URL}/api/auth/callback/google`;
+
+function fixRedirectUriFetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
+  if (CALLBACK_URL) {
+    const init = args[1];
+    if (init?.body && typeof (init.body as URLSearchParams).get === "function") {
+      const body = init.body as URLSearchParams;
+      if (body.has("redirect_uri")) {
+        body.set("redirect_uri", CALLBACK_URL);
+      }
+    }
+  }
+  return fetch(...args);
+}
+
+// In your provider config:
+Google({
+  authorization: { params: { redirect_uri: CALLBACK_URL } },  // fixes auth request
+  [customFetch]: fixRedirectUriFetch,  // fixes token exchange
 })
 ```
+
+This approach keeps both the authorization request and token exchange aligned, regardless of basePath stripping. You still need Apache proxy for routing Google's callbacks to the app, but the redirect_uri mismatch is solved in code.
+
+### Approaches that DO NOT work
+
+- **`token.params.redirect_uri`** — has no effect on the token exchange (hardcoded to `provider.callbackUrl`)
+- **`redirectProxyUrl`** — silently ignored when both URLs share the same origin (`isOnRedirectProxy=true`)
+- **`authorization.params.redirect_uri` alone** — only fixes the auth request, creating a mismatch with the token exchange
+
+### Apache proxy (still needed for callback routing)
 
 ```apache
 # Apache — proxy bare /api/auth/ to the app (Google callbacks arrive here)
@@ -69,7 +97,7 @@ ProxyPassReverse /api/auth/ http://127.0.0.1:3008/finance/api/auth/
 https://example.com/api/auth/callback/google
 ```
 
-The callback flow: Google redirects to `https://example.com/api/auth/callback/google` → Apache proxies to `http://127.0.0.1:PORT/finance/api/auth/callback/google` → standalone strips `/finance` → handler sees `/api/auth/callback/google` → basePath matches → token exchange sends same `redirect_uri` → Google accepts.
+The callback flow: Google redirects to `https://example.com/api/auth/callback/google` → Apache proxies to `http://127.0.0.1:PORT/finance/api/auth/callback/google` → standalone strips `/finance` → handler sees `/api/auth/callback/google` → basePath matches → customFetch rewrites redirect_uri → Google accepts.
 
 ## OAuth Flow Testing (NOT Just Endpoint Testing)
 
