@@ -58,6 +58,8 @@ for cmd in node npm jq; do
 done
 
 REPOS_ROOT=$(jq -r '.repos_root' "$REPOS_JSON")
+# Expand ~ since jq reads it literally from JSON
+REPOS_ROOT="${REPOS_ROOT/#\~/$HOME}"
 REPO_NAMES=$(jq -r '.repos | keys[]' "$REPOS_JSON")
 
 # --- Collect data per repo ---
