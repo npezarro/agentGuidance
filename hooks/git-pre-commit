@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# pre-commit hook for agentGuidance (PUBLIC repo)
+# pre-commit hook for PUBLIC repos
 # Scans staged changes for sensitive identifiers before allowing commit.
 # Uses security-scan.sh from privateContext for pattern matching.
+# Skips enforcement on private repos (checked via gh CLI).
 #
-# Install: bash scripts/install-hooks.sh
+# Install: bash hooks/install-hooks.sh
 
 set -euo pipefail
 
@@ -13,6 +14,21 @@ if [ ! -x "$SCAN_SCRIPT" ]; then
   echo "WARNING: security-scan.sh not found at $SCAN_SCRIPT"
   echo "Skipping sensitive identifier check. Install privateContext to enable."
   exit 0
+fi
+
+# Only enforce on public repos (skip private repos)
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+if [ -n "$REMOTE_URL" ] && command -v gh &>/dev/null; then
+  REPO_SLUG=""
+  if [[ "$REMOTE_URL" =~ github\.com[:/]([^/]+/[^/.]+) ]]; then
+    REPO_SLUG="${BASH_REMATCH[1]%.git}"
+  fi
+  if [ -n "$REPO_SLUG" ]; then
+    VISIBILITY=$(gh repo view "$REPO_SLUG" --json visibility -q '.visibility' 2>/dev/null || echo "UNKNOWN")
+    if [ "$VISIBILITY" = "PRIVATE" ]; then
+      exit 0
+    fi
+  fi
 fi
 
 # Scan the staged diff for sensitive patterns
