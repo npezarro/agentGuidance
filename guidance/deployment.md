@@ -24,6 +24,16 @@
 
 Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 
+## New Service Registration
+
+When deploying a **new** service (not updating an existing one), update these references so future sessions and disaster recovery are aware:
+
+1. `knowledgeBase/infra/service-map.md` — add the service with port, PM2 name, URL, and purpose
+2. `scripts/disaster-recovery/inventory.md` — add to the inventory so `recover.sh` covers it
+3. The repo's own `CLAUDE.md` — document the PM2 process name, port, and deploy command
+
+**Why:** url-vault was deployed (2026-04-23) without updating the service map or DR inventory. New services that aren't registered are invisible to monitoring, disaster recovery, and other agents.
+
 ## Python Version Compatibility
 
 The GCP VM runs **Python 3.9**. Modern type annotation syntax (`X | None`, `list[str]`, `dict[str, Any]`) requires Python 3.10+. Code using these features will raise `TypeError` at runtime on the VM.

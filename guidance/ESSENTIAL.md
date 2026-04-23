@@ -36,6 +36,8 @@ Always run `pm2 save` after any local PM2 process changes. systemd resurrect dep
 ## 10. Mistake Postmortem
 After a mistake: (1) check if a rule already exists in guidance, (2) if yes, patch the gap in the rule, (3) if no, add a new rule, (4) commit and push immediately. Don't just fix the symptom.
 
+**Escalation:** If a well-documented rule is still repeatedly violated, documentation alone is insufficient. Add mechanical enforcement: a hook, CI check, or automated guard. Examples: PostToolUse hooks that warn on unbacked file writes, pre-push hooks that block secrets, Stop hooks that verify deploys. The pattern is: document first, then enforce with automation when documentation fails.
+
 ## 11. Gather Context Before Debugging
 Before diving into a fix, read your own context: relevant memory files, the repo's CLAUDE.md, guidance files for the domain, and wiki pages. The answer is often already documented. Skipping this step is the #1 cause of multi-hour debugging loops that end with applying a fix that was already in memory. This applies doubly when the domain has known complexity (auth, deployment, cross-repo flows).
 
