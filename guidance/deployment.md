@@ -40,6 +40,17 @@ When you're missing information about production — env vars, configs, logs, da
 
 **Don't assume infrastructure.** Never assume Docker, Kubernetes, or any specific container runtime is available. Most services run as bare PM2 processes on the VM. Check `privateContext/infrastructure.md` and `knowledgeBase/infra/vm-overview.md` for the actual service topology before trying container commands.
 
+## Check Infrastructure Before Assuming
+
+When encountering a database connection, service, or dependency that isn't reachable locally, check the actual infrastructure before guessing at local tools:
+
+1. Check `knowledgeBase/infra/` for the service's documented location and architecture
+2. Check `privateContext/` for connection details and credentials
+3. Try SSH-ing to the VM — most services run on the cloud VM, not locally
+4. Only try local tools (Docker, localhost) if the above confirms local deployment
+
+**Why:** A session assumed Docker for a PostgreSQL connection when the DB was on the VM. This system has no Docker installed — the knowledgeBase and privateContext document all services. Wasting time on wrong assumptions is avoidable.
+
 ## VM SSH Access
 
 The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
