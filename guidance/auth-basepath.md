@@ -174,6 +174,22 @@ Before deploying auth changes to any subpath app:
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
+10. **Return JSON 401 for unauthenticated API routes, not redirects.** NextAuth's `auth()` middleware wrapper redirects unauthenticated requests to the login page (HTML). API routes that receive an HTML redirect instead of a JSON error will cause `SyntaxError: Unexpected token '<'` on the client. In your middleware, detect API paths and return a JSON response:
+   ```typescript
+   export default auth((req) => {
+     if (!req.auth) {
+       if (req.nextUrl.pathname.startsWith("/api/")) {
+         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+       }
+       return NextResponse.redirect(new URL("/login", req.url));
+     }
+     return NextResponse.next();
+   });
+   ```
+   Also exclude static assets from the middleware matcher (`.*\\.png$|.*\\.svg$`) — auth middleware blocking images causes broken layouts.
+
+11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
+
 ## Simpler Alternative: Provider-Level redirect_uri Override
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
