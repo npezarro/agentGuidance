@@ -11,6 +11,12 @@ Rules for handling secrets, credentials, and infrastructure details in code — 
 - SSH commands that reveal server structure
 - Architecture docs with specific IPs, ports, or usernames
 
+## Never Echo Secrets to Conversation Output
+
+When reading credential files (privateContext, .env, etc.), confirm you found them by name but **never include actual values in your response text**. Reference credentials by variable name only (e.g., "Got the SnapTrade credentials from privateContext") — the user already knows the values, and echoing them to chat creates unnecessary exposure in conversation logs and exports.
+
+**Why:** Credentials should stay in files and env vars. Chat output gets logged, exported, and sometimes shared. A real incident prompted this rule — it's a habit violation, not a theoretical concern.
+
 ## Where Secrets Go
 
 Secrets live in **external .env files** outside the repository:
