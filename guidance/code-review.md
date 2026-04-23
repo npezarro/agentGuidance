@@ -83,6 +83,7 @@ Some configuration properties look like dead code but are essential for producti
 | `new Date("2026-04-15")` for display | UTC parse → local timezone off-by-one | Use `new Date(year, month, day)` for local dates |
 | Shell-interpolating JSON into script strings | Special chars break syntax | Write to temp file, read in target language (see below) |
 | Hardcoded timezone offset `timedelta(hours=-4)` | Breaks at DST transitions | Use `ZoneInfo('America/New_York')` or equivalent TZ library |
+| `head -c N` before parsing structured output | Silent data loss — truncation drops blocks downstream code depends on | Size limit to max expected output, or extract specific fields first |
 
 ## Prisma globalThis Singleton — Always Cache in Production
 
@@ -142,3 +143,11 @@ eastern = ZoneInfo('America/New_York')
 ```
 
 **Why:** trading-agent's market-hours check used hardcoded EDT offset, causing zero executions during EST months. The cron schedule was also wrong because UTC hours were interpreted as local time.
+
+## Output Truncation Causes Silent Parse Failures
+
+When bash scripts use `head -c N` or `head -n N` to limit command output before extracting structured blocks (via `grep`, `jq`, etc.), the truncation can silently drop the block downstream code depends on. The result is an empty match — not an error — so failures are invisible.
+
+**Example:** `head -c 2000` on Claude CLI output truncated the `ACTIVITY_OBSERVED:` block that Discord threading depended on. The script ran without errors but produced empty summaries for weeks.
+
+**Fix:** Either size the limit to the maximum expected output (e.g., `head -c 10000` for Claude output), or extract the specific field first and truncate the extracted value. Never truncate structured output before parsing it.
