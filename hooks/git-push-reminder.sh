@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Edit|Write: reminds Claude to commit+push when a file
-# inside a git repo is created or modified.
+# PostToolUse hook for Edit|Write: warns when a file is written outside a git
+# repo, and reminds to commit+push when inside a repo but uncommitted.
 set -euo pipefail
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 [ -z "$FILE_PATH" ] && exit 0
 
-# Skip non-repo paths (memory, settings, .claude config)
+# Skip paths that legitimately live outside repos
 case "$FILE_PATH" in
-  */.claude/*|*/memory/*|*.env*|*credentials*|*secrets*) exit 0 ;;
+  */.claude/*|*/memory/*|*.env*|*credentials*|*secrets*|/tmp/*) exit 0 ;;
 esac
 
 # Check if file is inside a git repo
 REPO_ROOT=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || echo "")
-[ -z "$REPO_ROOT" ] && exit 0
+if [ -z "$REPO_ROOT" ]; then
+  FNAME=$(basename "$FILE_PATH")
+  echo "NOT IN A GIT REPO: You wrote '${FNAME}' to $(dirname "$FILE_PATH") which is outside any git repository. Move it into an appropriate repo, commit, and push. Files outside repos don't persist across sessions."
+  exit 0
+fi
 
 # Check if file is gitignored
 cd "$REPO_ROOT"
