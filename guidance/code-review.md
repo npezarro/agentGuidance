@@ -81,6 +81,8 @@ Some configuration properties look like dead code but are essential for producti
 | String concatenation for paths | OS-incompatible | Use `path.join()` |
 | Prisma `globalForPrisma` dev-only cache | Connection leak in production | Cache on `globalThis` unconditionally (see below) |
 | `new Date("2026-04-15")` for display | UTC parse → local timezone off-by-one | Use `new Date(year, month, day)` for local dates |
+| Shell-interpolating JSON into script strings | Special chars break syntax | Write to temp file, read in target language (see below) |
+| Hardcoded timezone offset `timedelta(hours=-4)` | Breaks at DST transitions | Use `ZoneInfo('America/New_York')` or equivalent TZ library |
 
 ## Prisma globalThis Singleton — Always Cache in Production
 
@@ -99,3 +101,44 @@ globalForPrisma.prisma = prisma;
 ```
 
 **Affected repos:** botlink, finance-tracker (still have the dev-only guard). health-hub fixed this in commit 8ed8356.
+
+## Shell → Script Data Passing — Use Temp Files
+
+Never embed JSON or structured data into script strings via shell variable expansion. Quotes, newlines, and special characters in the data will corrupt the target language syntax.
+
+```bash
+# ❌ Breaks when JSON contains quotes, newlines, or $
+python3 -c "
+import json
+data = json.loads('''$JSON_VAR''')
+"
+
+# ✅ Write to temp file, read in target script
+TMPFILE=$(mktemp)
+echo "$JSON_VAR" > "$TMPFILE"
+python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+" "$TMPFILE"
+rm -f "$TMPFILE"
+```
+
+**Why:** trading-agent run.sh was silently producing malformed Python when news article titles contained special chars. Temp files eliminate all shell escaping concerns.
+
+**Also applies to:** Node.js (`--eval` with interpolated strings), Ruby, any language invoked from bash with dynamic data. Use stdin piping (`echo "$JSON" | python3 script.py`) as an alternative to temp files.
+
+## Timezone Offsets — Never Hardcode
+
+Don't use fixed UTC offsets like `timedelta(hours=-4)` or `new Date().getTimezoneOffset()` for business logic that must respect DST transitions.
+
+```python
+# ❌ Breaks every March and November
+eastern = timezone(timedelta(hours=-4))
+
+# ✅ Auto-handles EST/EDT
+from zoneinfo import ZoneInfo
+eastern = ZoneInfo('America/New_York')
+```
+
+**Why:** trading-agent's market-hours check used hardcoded EDT offset, causing zero executions during EST months. The cron schedule was also wrong because UTC hours were interpreted as local time.
