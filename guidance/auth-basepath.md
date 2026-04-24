@@ -45,7 +45,7 @@ Each app needs:
 - **Next.js 16 proxy.ts**: Next.js 16 renamed `middleware.ts` to `proxy.ts` and exports `proxy()` instead of `middleware()`. Having both files causes a build error.
 - **Matcher excludes auth paths**: If the middleware matcher excludes `api/auth` (common for auth-protected apps), add `/api/auth/signin/:path*` as a separate matcher entry so the cookie-setting code runs.
 - **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
-- **Trailing slash redirect**: Set `skipTrailingSlashRedirect: true` in `next.config.ts` for basePath apps. Without this, Next.js issues 308 permanent redirects for URLs without a trailing slash, which can cause redirect loops or unexpected behavior behind a reverse proxy.
+- **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
 
 ### Apps using the proxy
 
