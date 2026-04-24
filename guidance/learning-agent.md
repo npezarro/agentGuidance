@@ -115,7 +115,7 @@ The learning agent needs a focused prompt that:
 
 ## Implementation
 
-- **Location:** `~/repos/auto-dev/learnings-pass/`
+- **Location:** `~/repos/autonomousDev/learnings-pass/`
 - **Runner:** `run.sh` (hourly cron)
-- **Prompt:** `prompt.md` (5-pass review: uncaptured learnings, memory audit, correction detection, prompt observation, profile updates)
+- **Prompt:** `prompt.md` (7-pass review: uncaptured learnings, memory audit, correction detection, prompt observation, profile updates, ESSENTIAL.md check, wiki cross-reference)
 - **Suggestions log:** `suggestions.md` (append-only, for prompt/instruction improvement ideas)
