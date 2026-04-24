@@ -12,7 +12,56 @@ When a Next.js app runs under a basePath (e.g., `/runeval`), Auth.js v5 (next-au
 
 3. **AUTH_URL interference**: `next-auth`'s `setEnvDefaults()` extracts the pathname from `AUTH_URL` and uses it as `basePath`. If `AUTH_URL=https://example.com/runeval`, basePath becomes `/runeval` -- which breaks action parsing because the handler receives `/api/auth/providers`, not `/runeval/providers`.
 
-## The Fix (runeval)
+## Preferred: Centralized Auth-Proxy (2026-04-24)
+
+All subpath-deployed apps now use a **centralized OAuth callback proxy** at `auth-proxy` (port 3050). This replaces per-app `customFetch` hacks and direct `redirect_uri` overrides.
+
+### How it works
+
+1. **Single redirect URI**: `https://example.com/api/auth/callback/google` registered in Google Cloud Console
+2. **Apache routes** `/api/auth/` to `localhost:3050` (the auth-proxy)
+3. Each downstream app sets an `__auth_target` cookie via Next.js middleware when the user initiates sign-in:
+   ```typescript
+   // middleware.ts
+   if (req.nextUrl.pathname.startsWith("/api/auth/signin")) {
+     const res = NextResponse.next();
+     res.cookies.set("__auth_target", "/finance", { path: "/" });
+     return res;
+   }
+   ```
+4. Google redirects to the proxy; proxy reads `__auth_target` cookie and 302 redirects to `/<app>/api/auth/callback/google?code=...&state=...`
+5. The downstream app handles the callback normally
+
+### Downstream app setup
+
+Each app needs:
+- `AUTH_REDIRECT_PROXY_URL=https://example.com/api/auth` env var (tells Auth.js to redirect through the proxy)
+- Shared `AUTH_SECRET` (for state JWT encoding/decoding between proxy and app)
+- Middleware that sets `__auth_target` cookie with the app's base path
+- Remove any `customFetch` overrides or `authorization.params.redirect_uri` hacks
+
+### Apps using the proxy
+
+- runeval (`/runeval`, port 3001)
+- health-hub (`/health-hub`, port 3002)
+- finance-tracker (`/finance`, port 3008)
+- student-transcript (`/student`, port 3009)
+
+### Why this replaced per-app workarounds
+
+- `redirectProxyUrl` (Auth.js built-in) is silently skipped for same-origin setups
+- `customFetch` works but is brittle and must be maintained per-app
+- Adding new apps previously required a new Google Console redirect URI; now just set the cookie and env var
+
+Repo: `auth-proxy`. See `privateContext/` for env var values.
+
+---
+
+## Legacy Per-App Patterns (before auth-proxy)
+
+The sections below document per-app workarounds that are no longer needed for apps using the centralized proxy. They remain as reference for apps that cannot use the proxy or for debugging.
+
+## The Fix (runeval) [Legacy]
 
 Three-part configuration:
 
@@ -43,7 +92,7 @@ RewriteRule ^/api/auth/(.*) /runeval/api/auth/$1 [R=302,L]
 - The Next.js 15 -> 16 upgrade changed how `req.url` is constructed in route handlers
 - Local dev runs without basePath (`localhost:3000`), so the bug only manifests in production
 
-## The Finance-Tracker Pattern (customFetch + Apache proxy)
+## The Finance-Tracker Pattern (customFetch + Apache proxy) [Legacy]
 
 The core problem: `provider.callbackUrl` in @auth/core is built from `basePath + origin` and used in BOTH the authorization request AND the token exchange. The token exchange hardcodes `provider.callbackUrl` in `callback.js` — you cannot fix it with `token.params`.
 
@@ -190,7 +239,7 @@ Before deploying auth changes to any subpath app:
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
 
-## Simpler Alternative: Provider-Level redirect_uri Override
+## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
 
