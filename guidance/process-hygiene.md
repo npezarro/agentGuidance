@@ -61,6 +61,16 @@ Never give the user long commands, URLs, or multi-line text to copy-paste manual
 
 **Why:** Repeated incidents of mangled pastes causing failed commands. The user works in Termius SSH client which breaks on multi-line and long-string paste. Writing to files and transferring is always reliable.
 
+## Cron Cooldown Guard
+
+When a PM2-managed job runs on a schedule (cron trigger), external systems (fix-checker, manual restart, deploy scripts) can cause it to run outside its intended window. Add a **cooldown guard** to prevent duplicate runs:
+
+- Check a timestamp file (e.g., `data/<name>-last-run.txt`) at startup. If the last run was within the cooldown window, exit early.
+- Always support a `--force` flag to override the guard for manual runs.
+- Write the current timestamp to the file after a successful run, not before.
+
+**Why:** deal-scout's housing-scout ran ~24 times/day instead of once because fix-checker (10-min scan interval) retriggered it via the shared ecosystem config. Adding a 20-hour cooldown guard fixed this. Any scheduled job that runs via PM2 cron or `pm2 restart` is vulnerable to the same pattern.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
