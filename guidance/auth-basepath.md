@@ -35,10 +35,16 @@ All subpath-deployed apps now use a **centralized OAuth callback proxy** at `aut
 ### Downstream app setup
 
 Each app needs:
-- `AUTH_REDIRECT_PROXY_URL=https://example.com/api/auth` env var (tells Auth.js to redirect through the proxy)
-- Shared `AUTH_SECRET` (for state JWT encoding/decoding between proxy and app)
-- Middleware that sets `__auth_target` cookie with the app's base path
-- Remove any `customFetch` overrides or `authorization.params.redirect_uri` hacks
+- Shared `AUTH_SECRET` (for state JWT encoding/decoding across apps)
+- Middleware/proxy that sets `__auth_target` cookie with the app's base path during signin
+- Remove any `customFetch` overrides, `authorization.params.redirect_uri` hacks, or `AUTH_REDIRECT_PROXY_URL` env vars
+
+### Gotchas discovered during deployment (2026-04-24)
+
+- **basePath in pathname**: Next.js 14 with `auth()` middleware wrapper includes the basePath in `req.nextUrl.pathname`. Check for both `/api/auth/signin/` and `/<basePath>/api/auth/signin/`.
+- **Next.js 16 proxy.ts**: Next.js 16 renamed `middleware.ts` to `proxy.ts` and exports `proxy()` instead of `middleware()`. Having both files causes a build error.
+- **Matcher excludes auth paths**: If the middleware matcher excludes `api/auth` (common for auth-protected apps), add `/api/auth/signin/:path*` as a separate matcher entry so the cookie-setting code runs.
+- **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
 
 ### Apps using the proxy
 
@@ -51,7 +57,7 @@ Each app needs:
 
 - `redirectProxyUrl` (Auth.js built-in) is silently skipped for same-origin setups
 - `customFetch` works but is brittle and must be maintained per-app
-- Adding new apps previously required a new Google Console redirect URI; now just set the cookie and env var
+- Adding new apps previously required a new Google Console redirect URI; now just set the `__auth_target` cookie in the app's middleware
 
 Repo: `auth-proxy`. See `privateContext/` for env var values.
 
