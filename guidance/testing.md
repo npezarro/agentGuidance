@@ -291,6 +291,32 @@ browser-cli console                       # check for errors
 
 **Prefer this over Playwright/headless** for testing on the user's machine — it runs in the real browser with real cookies/session, bypasses CAPTCHA, and tests exactly what the user sees.
 
+## CI Workflow Gotchas
+
+Two patterns have caused repeated CI failures across 5+ repos (nll-hunter, page-reader, pm-interview-practice, phone-agent, browser-agent, markdownMakerBookmarklet):
+
+### Test Glob Quoting on GitHub Actions
+
+Single-quoted globs like `'test/**/*.test.js'` do NOT expand on GitHub Actions because `globstar` is off by default. The shell passes the literal string to Jest/Node, which may not expand `**` the same way.
+
+**Fix:** Use a flat glob (`test/*.test.js`) or let the test framework handle the pattern:
+```yaml
+# BAD — glob not expanded, tests silently skipped
+run: npx jest 'test/**/*.test.js'
+
+# GOOD — flat glob, works everywhere
+run: npx jest test/*.test.js
+
+# GOOD — let jest find tests via config
+run: npx jest
+```
+
+### package-lock.json Must Be Committed for CI
+
+GitHub Actions `cache: npm` with `npm ci` requires `package-lock.json` in the repo. If it's in `.gitignore`, the CI cache step fails and `npm ci` refuses to run (it requires a lockfile).
+
+**Fix:** Remove `package-lock.json` from `.gitignore` and commit it. This also ensures deterministic installs across environments.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
