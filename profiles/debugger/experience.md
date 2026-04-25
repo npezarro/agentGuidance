@@ -27,3 +27,10 @@
 **What worked:** Added timestamps to search query logs and discovered the issue was a stale in-memory cache with a 60-second TTL, but the underlying data was being updated every 10 seconds by another process. Used git log to confirm the cache was added recently as a performance optimization.
 **What didn't:** Tried to reproduce by running the same search repeatedly in a loop, which did not trigger the issue because the cache was consistent within a single refresh cycle. Only reproduced it by modifying the underlying data between searches.
 **Learned:** Non-deterministic behavior that depends on timing requires reproducing the exact interleaving, not just the operation. For cache-related bugs, the reproduction must include both the read pattern and the write pattern that causes staleness. Always check git history to see if caching was recently added when debugging inconsistent results.
+
+---
+## 2026-04-18 | health-hub PM2 restart loop
+**Task:** Investigate 103+ restart crash loop on health-hub service on the VM.
+**What worked:** Checked PM2 status, watchdog state, memory usage, and calculated restart frequency. Found the process was restarting every ~8 hours due to max_memory_restart threshold (512M) being hit by Next.js memory growth. Also found Prisma client singleton was not cached in production mode (globalThis guard excluded production), potentially causing libsql connection leaks that accelerated memory growth.
+**What didn't:** Initially expected to find crash errors in logs, but logs were empty (reset during previous PM2 lifecycle). Had to reconstruct the crash history from PM2 restart counts and timestamps instead.
+**Learned:** When PM2 logs are empty but restarts are accumulating, check max_memory_restart threshold vs actual memory usage and calculate restart frequency. The standard Next.js Prisma singleton pattern (only cache in dev) can cause issues with adapter-based clients like libsql where native bindings don't GC well. Always cache the Prisma client in production too when using non-standard adapters.
