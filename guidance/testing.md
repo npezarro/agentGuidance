@@ -75,6 +75,55 @@ function fakeOAuthToken(overrides?: Partial<OAuthToken>): OAuthToken {
 const token = fakeOAuthToken();
 ```
 
+## Making Node.js Servers Testable
+
+When adding tests to a server-side repo, the server often needs minor changes to support isolated testing. These patterns are deployed across 4+ repos (url-vault, browser-logs, claudeNet, claude-auto-merger):
+
+### Auto-Start Guard
+
+Prevent `app.listen()` from firing when the file is imported by tests:
+
+```javascript
+// ESM — import.meta.url guard
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+}
+
+// CJS — require.main guard
+if (require.main === module) {
+  app.listen(PORT);
+}
+```
+
+Export `app` so tests can import it directly:
+```javascript
+export { app };
+```
+
+### Test Isolation via Environment Variables
+
+Use env vars like `DATA_DIR` to point tests at a temp directory instead of production data:
+
+```javascript
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+```
+
+Tests set `DATA_DIR` to a `tmp` directory and clean up after each run.
+
+### Factory Pattern for Dependency Injection
+
+For servers with external dependencies (GitHub API, webhooks), export a factory:
+
+```javascript
+export function createServer(deps = defaultDeps) {
+  const app = express();
+  // Use deps.octokit, deps.config, etc.
+  return app;
+}
+```
+
+Tests inject mocked dependencies without module-level patching. Guard auto-start behind `import.meta.url` check so the factory can be imported without side effects.
+
 ## Test Fixture Schema Drift
 
 When tests embed their own DDL (CREATE TABLE) or data shapes, they silently drift from the real schema as the application evolves. Tests pass against the stale fixture schema while production uses the real one.
