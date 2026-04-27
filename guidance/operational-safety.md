@@ -93,6 +93,19 @@ count=$(grep -c 'pattern' file || true)
 
 **Rule:** In any bash script using `set -eo pipefail`, never pair `grep` (any flag) with `|| echo`. Use `|| true` to suppress the non-zero exit code.
 
+## Headless Claude CLI: Permission Flag Requirement
+
+**The scenario:** A script spawns `claude -p` as a subprocess (Python `subprocess.run`, Node `spawn`/`execSync`, bash pipeline). The parent process already has `--dangerously-skip-permissions`, but the subprocess is a fresh CLI invocation that doesn't inherit it. When Claude tries to use tools (WebSearch, WebFetch, Bash, etc.), it prompts for permission. With no TTY, the prompt goes to the void and the session silently fails or produces degraded output.
+
+**Real incident (2026-04-27):** `trading-agent/collector/researcher.py` spawned Claude for deep ticker research. The main `run.sh` had `--dangerously-skip-permissions`, but `researcher.py`'s subprocess call didn't. Every research request's WebSearch calls were silently blocked, producing reports without web data.
+
+**Rule:** Every `claude -p` invocation that runs without a TTY (cron, subprocess, server route, background job) MUST include `--dangerously-skip-permissions`. This includes:
+- Python `subprocess.run([CLAUDE_BIN, "-p", "--dangerously-skip-permissions", ...])`
+- Node `spawn('claude', ['-p', '--dangerously-skip-permissions', ...])`
+- Bash `$CLAUDE_BIN -p --dangerously-skip-permissions`
+
+**Detection:** The `autonomous-health` monitor scans all repos for Claude subprocess calls missing the flag (check 5: `check_permission_flags`).
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
