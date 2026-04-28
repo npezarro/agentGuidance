@@ -111,5 +111,34 @@ npm audit fix --dry-run
 ```
 
 - Run `npm audit` periodically, not just when adding packages.
-- Don't ignore high/critical vulnerabilities — escalate or fix them.
+- Don't ignore high/critical vulnerabilities �� escalate or fix them.
 - If a dependency has an unpatched vulnerability and no fix is coming, find an alternative.
+
+### npm Overrides for Transitive Vulnerabilities
+
+When `npm audit fix` can't reach a nested transitive dependency (e.g., postcss 8.4.31 pinned by next@14), use `overrides` in package.json to force the safe version:
+
+```json
+{
+  "overrides": {
+    "postcss": ">=8.5.10"
+  }
+}
+```
+
+If you also have the package as a direct devDependency, use `$` syntax to reference your top-level version:
+
+```json
+{
+  "devDependencies": {
+    "postcss": "^8.5.10"
+  },
+  "overrides": {
+    "postcss": "$postcss"
+  }
+}
+```
+
+After adding overrides, run `rm -rf node_modules package-lock.json && npm install` to regenerate the lockfile, then verify with `npm ls postcss` (or the overridden package) that no old versions remain.
+
+**Why:** `npm audit fix` only updates direct and first-level transitive dependencies. Deeply nested copies (e.g., inside `@next/env` or `cssnano`) are unreachable without overrides. This pattern was applied across 7+ repos to fix GHSA-qx2v-qp2m-jg93 (postcss XSS via unescaped `</style>` in stringify).
