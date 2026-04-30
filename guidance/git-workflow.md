@@ -18,8 +18,13 @@ When creating scripts, tools, project assets, analysis docs, reference files, or
 
 **This is the most common mistake.** Sessions routinely create useful files (summaries, configs, scripts, reference docs) and then either forget to commit, forget to push, or save them outside a repo. The user cannot access local-only files between sessions. Treat every `Write` or `Edit` call as incomplete until the file is committed and pushed.
 
-## Every Repo Gets a README
-Every repo under `~/repos/` must have a `README.md`. When creating a new repo or working in one that's missing a README, add one. Cover: what it does (1-2 sentences), how to set it up, and how to run/use it. Keep it concise — a developer should be able to understand the project in 60 seconds.
+## Every Repo Gets a README and Description
+Every repo under `~/repos/` must have a `README.md` and a GitHub repo description. When creating a new repo or working in one that's missing either, add them.
+
+- **README.md**: What it does (1-2 sentences), how to set it up, and how to run/use it. Keep it concise -- a developer should understand the project in 60 seconds.
+- **GitHub description**: Set via `gh repo edit <owner>/<repo> --description "one-line summary"`. Should be a single sentence that appears on the repo page and in search results.
+
+Both are required when running `gh repo create`. Use `--description` flag on creation. Add the README as part of the initial commit.
 
 ## Always Commit and Push Written Files
 When creating or modifying files in any repo (via Write, Edit, or any other method), **ALWAYS commit and push in the same step**. Don't move on to other work with untracked or uncommitted files sitting in a repo. The Write tool doesn't commit — you must do it explicitly.
