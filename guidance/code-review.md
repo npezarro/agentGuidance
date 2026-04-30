@@ -69,6 +69,37 @@ Some configuration properties look like dead code but are essential for producti
 
 **Why:** autonomousDev crash-fix run #134 removed `basePath` and `redirectProxyUrl` from finance-tracker's auth.ts because they appeared unused. This broke OAuth on the subpath deployment, requiring a manual restore (60db078).
 
+## Default Review Workflow: Review-Ship-Review
+
+Unless the user explicitly requests a single review pass, use the iterative review-ship-review pattern for all non-trivial code changes. This is the default.
+
+### How it works
+
+1. **Implement** — Make the requested changes, run tests, commit.
+2. **Review (round 1)** — Spawn 2-3 parallel reviewer agents. Each agent audits the diff independently, categorizing findings as Critical / Important / Minor / Deferred.
+3. **Fix & commit** — Address all Critical and Important findings. Commit the fixes.
+4. **Review (round 2)** — Spawn fresh reviewer agents on the updated code. Reviewers must not see prior review output; they audit with fresh eyes. This catches regressions introduced by the fixes and surfaces issues the first round missed.
+5. **Repeat** — If round 2 produces Critical or Important findings, fix and run another round. Stop when a review round returns clean (no Critical/Important findings). Minor and Deferred items can be noted but don't block.
+
+### Why this is the default
+
+Single-pass reviews miss bugs that only become visible after fixes land. In practice, fix commits introduce new issues 30-40% of the time (wrong variable reuse, stale state, interaction between fixes). The second review round catches these before they ship.
+
+### Reviewer agent instructions
+
+Each reviewer agent should:
+- Read all changed files (not just the diff) to understand full context
+- Check for interactions between changes (e.g., a risk check fix that bypasses a downstream guard)
+- Verify test coverage for new logic paths
+- Flag shell injection, state mutation bugs, and off-by-one errors
+- Categorize each finding: **Critical** (breaks correctness or security), **Important** (likely bug or missing coverage), **Minor** (style, naming), **Deferred** (nice-to-have, not blocking)
+
+### When to skip
+
+- Trivial changes (typo fixes, comment updates, config value changes)
+- User explicitly says "just commit" or "skip review"
+- Single-line fixes with obvious correctness
+
 ## Common Issues to Watch For
 
 | Pattern | Problem | Fix |
