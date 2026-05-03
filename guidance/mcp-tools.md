@@ -18,6 +18,7 @@ Rules for choosing between available MCP tool providers when multiple cover the 
 | Read Gmail, Calendar, Drive | Claude AI MCP |
 | Search Gmail, Calendar, Drive | Claude AI MCP |
 | Create/update Drive files | piotr google-drive MCP |
+| Upload binary files (PDF, images) | piotr google-drive MCP (`uploadFile` — takes local path directly) |
 | Sheets formatting | piotr google-drive MCP |
 | Slides creation | piotr google-drive MCP |
 
