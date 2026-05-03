@@ -20,3 +20,26 @@ Rules for choosing between available MCP tool providers when multiple cover the 
 | Create/update Drive files | piotr google-drive MCP |
 | Sheets formatting | piotr google-drive MCP |
 | Slides creation | piotr google-drive MCP |
+
+## Google Docs Formatting
+
+**Never write raw Markdown to Google Docs.** Google Docs does not render Markdown syntax — `#`, `**`, `---`, etc. appear as literal characters.
+
+**Pattern for formatted Google Docs:**
+
+1. **Write plain text content** via `createGoogleDoc` or `updateGoogleDoc` — no Markdown syntax. Use natural paragraph breaks and indentation only.
+2. **Apply native formatting** via `formatGoogleDocParagraph` and `formatGoogleDocText`:
+   - Title: `namedStyleType: "TITLE"` on the first line
+   - Section headers: `namedStyleType: "HEADING_1"`
+   - Sub-headers: `namedStyleType: "HEADING_2"`
+   - Bold key phrases: `bold: true` with `textToFind`
+   - Italic for quoted/template text: `italic: true`
+   - Subdued metadata (dates, versions): `foregroundColor: "#888888"` + `italic: true`
+3. **Batch independent formatting calls** in parallel — paragraph styles and text styles don't depend on each other once content is written.
+
+**Quick checklist before creating a Google Doc:**
+- No `#` headers — use `formatGoogleDocParagraph` with `namedStyleType`
+- No `**bold**` — use `formatGoogleDocText` with `bold: true`
+- No `*italic*` — use `formatGoogleDocText` with `italic: true`
+- No `---` dividers — use heading styles and spacing to create visual separation
+- No `- ` bullet markers — use indented text or numbered lists in plain text
