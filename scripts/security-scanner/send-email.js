@@ -34,9 +34,9 @@ function loadEnv(envPath) {
   }
 }
 
-// Load local .env, then runeval's .env on the VM for SMTP creds
+// Load local .env, then SMTP env file (path from SMTP_ENV_FILE or local .env)
 loadEnv(path.join(__dirname, '.env'));
-loadEnv('/var/www/runeval/.env');
+if (process.env.SMTP_ENV_FILE) loadEnv(process.env.SMTP_ENV_FILE);
 
 // ── Allowed recipient (loaded from .env above) ─────────────────────
 const ALLOWED_RECIPIENT = process.env.ALERT_EMAIL;

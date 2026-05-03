@@ -141,6 +141,43 @@ When documenting internal systems in a public repo:
 - Keep incident details focused on the **lesson**, not the infrastructure layout
 - If specifics are needed, put them in a private repo or local notes
 
+## Infrastructure Overshare in Context Files
+
+`context.md`, `CLAUDE.md`, and deploy scripts in public repos must NOT include:
+- **VM filesystem paths** (`/var/www/...`, `/opt/...`, `/home/deploy/...`)
+- **PM2 process names and port assignments** (maps the full service architecture)
+- **Internal API endpoint URLs** (e.g., `https://domain/api/internal-service/`)
+- **SSH aliases or VM connection patterns** (e.g., `ssh myvm 'grep TOKEN ...'`)
+- **Production health check URLs** with full domain+path
+- **References to private companion repos** by name (e.g., `project-private/`)
+- **Process-to-repo mappings** (reveals which GitHub repos power which services)
+
+**Instead:** Use `"see privateContext/infrastructure.md"` as a pointer. Infrastructure details belong in privateContext, which is never public. For scripts that need these values at runtime, use environment variables with `:?` guards (fail loudly if unset) or source from privateContext files.
+
+**Common violation patterns in deploy scripts:**
+```bash
+# BAD: Hardcoded paths and health check URLs
+cd /opt/myservice
+curl -sf https://mydomain.com/myservice/ > /dev/null
+
+# GOOD: Externalized via env vars
+DEPLOY_DIR="${DEPLOY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+cd "$DEPLOY_DIR"
+HEALTH_URL="${HEALTH_URL:-${APP_URL:-http://localhost:8080}/}"
+curl -sf "$HEALTH_URL" > /dev/null
+```
+
+**Common violation patterns in context.md:**
+```markdown
+# BAD:
+- Deploy: example.com/myapp via Apache ProxyPass to localhost:8080
+- PM2 process: myapp (id 4)
+- Port: 8080 (production), 5000 (dev)
+
+# GOOD:
+- Deploy details: see privateContext/infrastructure.md (myapp row)
+```
+
 ## History Rewriting — Collateral Damage
 
 `git filter-repo` replaces strings across **all commits including the current working tree**. This causes collateral damage when the replacement is too broad:
