@@ -122,6 +122,17 @@ bash ~/repos/agentGuidance/hooks/install-hooks.sh ~/repos/<repo-name>
 
 **Why:** The claude-tray-notifier incident (2026-04-10) showed that hardcoded VM credentials survived in a public repo for months because only pre-commit hooks existed on one repo. Pre-push hooks on all public repos would have caught this at push time regardless of which repo it happened in.
 
+### Legitimate `--no-verify` for Security Redactions
+
+The hooks scan the full `git diff`, including removed lines. When you're *removing* a sensitive identifier (redacting), the removed line still contains the identifier and triggers the hook. This is a known catch-22: the hook blocks the very commit that fixes the problem.
+
+**`--no-verify` is acceptable** when all of these are true:
+1. The commit is purely a security redaction (removing or replacing sensitive identifiers)
+2. The removed lines are the only hook violations (no new identifiers being added)
+3. The commit message explicitly states the bypass reason (e.g., "Security remediation: --no-verify used because pre-commit hook flags the removal lines")
+
+This pattern was validated across 7+ repos during the 2026-05 infrastructure redaction sweep (claude-tray-notifier, claudeNet, groceryGenius, manchu-translator, valueSortify, youtubeSpeedSetAndRemember, claude-bakeoff, agentGuidance).
+
 ## Pre-Commit Checklist (Manual Fallback)
 
 When the automated hook isn't installed, verify before committing to any public repo:
