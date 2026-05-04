@@ -115,6 +115,44 @@ Each reviewer agent should:
 | Shell-interpolating JSON into script strings | Special chars break syntax | Write to temp file, read in target language (see below) |
 | Hardcoded timezone offset `timedelta(hours=-4)` | Breaks at DST transitions | Use `ZoneInfo('America/New_York')` or equivalent TZ library |
 | `head -c N` before parsing structured output | Silent data loss — truncation drops blocks downstream code depends on | Size limit to max expected output, or extract specific fields first |
+| `res.json({ error: err.message })` | Information disclosure — leaks paths, DB strings, stack traces | Return generic message, log details server-side (see below) |
+| `child_process.exec(cmd + userInput)` | Command injection via string interpolation | Use `execFile(binary, [args])` with separate args array (see below) |
+
+## Error Detail Leak Prevention
+
+Never expose raw error messages, stack traces, internal paths, hostnames, or database connection strings in HTTP responses. This is OWASP "Improper Error Handling" and was found in 6+ repos during a 2026-05 audit.
+
+```js
+// ❌ Leaks internal paths, DB connection strings, etc.
+catch (error) {
+  res.status(500).json({ error: error.message });
+  // or: res.status(500).json({ error: 'Failed', details: String(error) });
+}
+
+// ✅ Generic message to client, full error logged server-side
+catch (error) {
+  console.error('Route /api/foo failed:', error);
+  res.status(500).json({ error: 'Internal server error' });
+}
+```
+
+**Common leak vectors:** `details: String(error)`, `error: err.message`, `os.hostname()` in health endpoints, MulterError raw messages, CLI exit codes in spawn error handlers.
+
+**Affected repos (fixed 2026-05):** health-hub, freeGames, manchu-translator, auto-shorts, claude-auto-merger, promptlibrary.
+
+## Command Injection: exec vs execFile
+
+Never use `child_process.exec()` with string interpolation for user-influenced values. `exec()` runs through a shell, so semicolons, backticks, and pipe characters in the input become shell commands.
+
+```js
+// ❌ Command injection — url could contain `; rm -rf /`
+exec(`open "${url}"`);
+
+// ✅ execFile bypasses the shell entirely
+execFile('open', [url]);
+```
+
+**Why:** freeGames `openInBrowser()` passed user-controlled URLs through `exec()`. Fixed in run #253 by switching to `execFile()` with a URL validation guard rejecting non-http(s) protocols.
 
 ## Prisma globalThis Singleton — Always Cache in Production
 
