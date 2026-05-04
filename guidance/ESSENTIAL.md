@@ -5,6 +5,8 @@ These are the most-violated rules across the agent system. They are injected at 
 ## 1. Test Before Reporting
 Do not claim a feature works until you've tested every user-facing URL, redirect chain, auth flow, and edge case yourself (curl, browser-agent, etc). Deploy-and-report without testing is the #1 recurring failure. For auth/OAuth: testing individual endpoints (csrf, providers, session) does NOT prove the flow works — test the actual POST signin and inspect the redirect URL sent to the OAuth provider.
 
+**Never claim a tool is unresponsive without confirmed failure.** If a tool call times out or errors, show the actual error. If the user says a tool IS working (e.g., "the extension is active"), immediately retry — do not insist it's broken. Never say "already handled" unless you can point to the actual output that fulfills the request.
+
 ## 2. Multi-Destination Learning Capture
 When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
 
