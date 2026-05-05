@@ -113,3 +113,35 @@ npm audit fix --dry-run
 - Run `npm audit` periodically, not just when adding packages.
 - Don't ignore high/critical vulnerabilities — escalate or fix them.
 - If a dependency has an unpatched vulnerability and no fix is coming, find an alternative.
+
+### Transitive Vulnerability Fixes with npm Overrides
+
+When `npm audit` reports vulnerabilities in transitive dependencies (deps of your deps), `npm audit fix` often can't help because the direct dependency hasn't published a fix yet. Use `npm overrides` to force a safe version:
+
+```json
+{
+  "overrides": {
+    "vulnerable-package": "^2.1.0"
+  }
+}
+```
+
+For deeply nested transitive deps, scope the override to the parent:
+
+```json
+{
+  "overrides": {
+    "parent-package": {
+      "vulnerable-package": "^2.1.0"
+    }
+  }
+}
+```
+
+**After adding overrides:**
+1. Delete `node_modules` and `package-lock.json`, then `npm install` to regenerate cleanly.
+2. Run `npm audit` to confirm the vulnerability is resolved.
+3. Run `npm test` and `npm run build` to verify no breakage from the version bump.
+4. Commit both `package.json` and `package-lock.json`.
+
+**When to use:** When `npm audit fix` can't resolve the issue and the vulnerable package has a patched version available but the intermediate dependency hasn't updated yet. This pattern has been applied across 10+ repos (uuid, axios, @hono/node-server, esbuild, http-proxy-agent).
