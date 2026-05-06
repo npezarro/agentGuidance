@@ -56,9 +56,11 @@ token=$(ssh myhost 'grep TOKEN /path/to/.env')
 
 ## Every Repo Must Have
 
-1. **`.gitignore`** — includes `.env`, `.env.local`, `*.pem`, `credentials.json`
+1. **`.gitignore`** — includes `.env`, `.env.local`, `*.pem`, `credentials.json`, `.claude/`
 2. **`.env.example`** — documents required variables with placeholder values
 3. **No inline defaults that leak specifics** — use `YOUR_VALUE` or `:?` to require the var
+
+**Why `.claude/`?** The `.claude/settings.json` file contains agent hook configurations (curl-pipe-bash patterns, remote-exec URLs) that reveal internal architecture and represent a supply-chain risk in public repos. Security scan #20 (2026-05-06) confirmed this was systemic across 10+ repos and remediated it portfolio-wide. Any config files containing infrastructure details (repo lists, port maps, process names) should also use gitignored files with `.example` templates.
 
 ## Sensitive Identifiers (Non-Secret Leaks)
 
