@@ -27,10 +27,11 @@ _get_bot_token() {
     return
   fi
   local token
-  # Fetch from VM — resolve connection and path from privateContext
+  # Fetch from VM — resolve connection details from env
+  local vm_connect="${PRIVATE_CONTEXT_PATH:-$HOME/repos/privateContext}/vm-connect.env"
   local vm_alias vm_bot_env
-  vm_alias=$(grep '^VM_SSH_ALIAS=' "$HOME/repos/privateContext/vm-connect.env" 2>/dev/null | cut -d= -f2 || echo "")
-  vm_bot_env=$(grep '^DISCORD_BOT_ENV=' "$HOME/repos/privateContext/vm-connect.env" 2>/dev/null | cut -d= -f2 || echo "")
+  vm_alias=$(grep '^VM_SSH_ALIAS=' "$vm_connect" 2>/dev/null | cut -d= -f2 || echo "")
+  vm_bot_env=$(grep '^DISCORD_BOT_ENV=' "$vm_connect" 2>/dev/null | cut -d= -f2 || echo "")
   [ -z "$vm_alias" ] || [ -z "$vm_bot_env" ] && return
   token=$(ssh "$vm_alias" "grep -oP 'DISCORD_BOT_TOKEN=\K.*' '$vm_bot_env'" 2>/dev/null)
   if [ -n "$token" ]; then

@@ -267,9 +267,8 @@ ACTIVITY=$(echo "$ACTIVITY" | redact_sensitive)
 # The bot handles all Discord formatting, threading, and posting to
 # #cli-interactions, #prompts, and #logging via the /ingest endpoint.
 #
-# The health server binds to 127.0.0.1 on the VM, so we try local first
-# (works when CLI runs on the VM), then fall back to SSH (local PC → VM).
-INGEST_PORT="${HEALTH_PORT:-9090}"
+# Try local ingest first, fall back to SSH relay.
+INGEST_PORT="${HEALTH_PORT:-${DISCORD_INGEST_PORT:-9090}}"
 INGEST_URL="http://127.0.0.1:${INGEST_PORT}/ingest"
 VM_SSH_KEY="${VM_SSH_KEY:-$HOME/.ssh/vm_key}"
 VM_HOST="${VM_HOST:-deploy-vm}"

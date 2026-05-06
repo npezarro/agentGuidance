@@ -6,12 +6,12 @@
 
 set -euo pipefail
 
-RULES_SRC="$HOME/repos/privateContext/rules"
+RULES_SRC="${PRIVATE_CONTEXT_PATH:-$HOME/repos/privateContext}/rules"
 RULES_DST="$HOME/.claude/rules"
 
 if [ ! -d "$RULES_SRC" ]; then
-  echo "Error: privateContext/rules/ not found at $RULES_SRC" >&2
-  echo "Clone privateContext first: gh repo clone npezarro/privateContext ~/repos/privateContext" >&2
+  echo "Error: rules source not found at $RULES_SRC" >&2
+  echo "Ensure the private context repo is cloned locally, or set PRIVATE_CONTEXT_PATH." >&2
   exit 1
 fi
 

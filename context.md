@@ -31,9 +31,9 @@ Full session closeout: `privateContext/deliverables/closeouts/2026-04-19-md-link
 
 ## Environment Notes
 - **Repo:** PUBLIC; do not commit secrets or infrastructure details
-- **Private context:** `~/repos/privateContext` (private repo) contains account details, infra specifics, env var lists, pending manual actions, and completed work log. Consult it for sensitive information instead of storing it here.
+- **Private context:** Separate private repo contains account details, infra specifics, and env vars. Consult it for sensitive information instead of storing it here.
 - **Propagation script:** `scripts/propagate-hooks.sh` pushes `.claude/settings.json` + `CLAUDE.md` + `.gitattributes` to all repos
-- **Recurring tasks:** `recurring-tasks/runner.sh` is the shared runner; task configs and prompts live in `~/repos/privateContext/recurring-tasks/`
+- **Recurring tasks:** `recurring-tasks/runner.sh` is the shared runner; task configs live in the private context repo
 
 ## Active Branch
 main

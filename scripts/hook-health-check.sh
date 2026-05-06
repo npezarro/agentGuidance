@@ -83,11 +83,7 @@ fi
 [ -f "$HOME/.secrets" ] && source "$HOME/.secrets"
 SMTP_USER="${SMTP_USER:-}"
 ALERT_EMAIL="${ALERT_EMAIL:-}"
-REPORT_PW=$(grep "^GMAIL_APP_PW=" "$HOME/.secrets" 2>/dev/null | sed "s/^GMAIL_APP_PW=//; s/^'//; s/'$//" || true)
-if [ -z "$REPORT_PW" ]; then
-  # Fallback to security scanner env
-  REPORT_PW=$(grep "^SMTP_PASS=" "$HOME/repos/agentGuidance/scripts/security-scanner/.env" 2>/dev/null | sed 's/^SMTP_PASS=//; s/^"//; s/"$//' || true)
-fi
+REPORT_PW="${GMAIL_APP_PW:-${SMTP_PASS:-}}"
 
 if [ -n "$REPORT_PW" ]; then
   FAILURE_LIST=""
