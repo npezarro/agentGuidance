@@ -1,19 +1,20 @@
 # WordPress Auto-Posting Setup
 
-Claude Code sessions automatically post a private WordPress draft at the end of each interaction via the `Stop` hook. This works on any environment where Claude Code runs — CLI, VM, or cloud sandbox (claude.ai/code).
+Claude Code sessions automatically save a markdown file at the end of each interaction via the `Stop` hook. Files are committed to `~/repos/wordpressPosts` for manual review before publishing to WordPress.
 
 ## How It Works
 
 ```
 Claude Code session ends
-  → Stop hook fires
-  → Fetches post-to-wordpress.sh from agentGuidance repo
-  → Reads last user prompt + assistant response from transcript
-  → Redacts secrets (app passwords, API keys, tokens, IPs)
-  → Posts as a private draft to your WordPress site via WP REST API
+  -> Stop hook fires
+  -> Fetches post-to-wordpress.sh from agentGuidance repo
+  -> Reads last user prompt + assistant response from transcript
+  -> Redacts secrets (app passwords, API keys, tokens, IPs)
+  -> Writes a .md file with YAML frontmatter to ~/repos/wordpressPosts/
+  -> Commits and pushes to GitHub
 ```
 
-The hook exits silently if credentials aren't found — nothing breaks.
+The hook exits silently if the repo doesn't exist or jq isn't installed.
 
 ## Architecture
 
@@ -21,137 +22,59 @@ The hook exits silently if credentials aren't found — nothing breaks.
 |-----------|----------|
 | Hook config | `.claude/settings.json` (per-repo, propagated by `scripts/propagate-hooks.sh`) |
 | Posting script | `hooks/post-to-wordpress.sh` (fetched at runtime from agentGuidance) |
-| Credentials | Environment variables or `.env` file (never committed) |
+| Output repo | `~/repos/wordpressPosts` (private GitHub repo) |
 
-## Required Credentials
+## File Format
 
-Two environment variables:
+Each .md file includes YAML frontmatter:
 
-| Variable | Description |
-|----------|-------------|
-| `WP_USER` | WordPress username |
-| `WP_APP_PASSWORD` | WordPress application password (not the account password) |
-
-### Credential Resolution Order
-
-The script checks in this order and uses the first match:
-
-1. Environment variables (set via `settings.local.json` `"env"` block or shell)
-2. `$HOME/.env`
-
-## Setup by Environment
-
-### Your Server — Set `.env`
-
-Create or update `$HOME/.env` with your WordPress credentials:
-
-```
-WP_USER=YOUR_WP_USERNAME
-WP_APP_PASSWORD=<application password>
+```yaml
+---
+title: "Session Closeout: Feature X"
+date: 2026-05-06 15:43:46
+session_id: abc123
+project: my-repo
+cwd: /home/user/repos/my-repo
+---
 ```
 
-The `.env` file is sourced automatically by the hook. No additional setup needed.
+Followed by the full assistant response (redacted).
 
-### Claude Code CLI (other machines)
+## Title Extraction
 
-Create `$HOME/.env` with the two variables:
+Priority: first markdown heading > first sentence (10+ chars) > project name + date fallback.
 
-```bash
-echo 'WP_USER=YOUR_WP_USERNAME' >> ~/.env
-echo 'WP_APP_PASSWORD=<your-app-password>' >> ~/.env
-```
+## Deduplication
 
-### Claude Code on the Web (claude.ai/code)
+- Session-based: same `session_id` won't produce a second file
+- Content-based: identical content (sha256 hash) won't produce a duplicate
+- Cache dir: `~/.cache/wp-posts/` (auto-cleaned after 7 days)
 
-Cloud sandboxes don't have access to the server's `.env`. Provide credentials via the project-level settings local file:
+## Redaction
 
-1. In the cloud sandbox, create `.claude/settings.local.json` in the repo root:
+Patterns scrubbed before writing:
+- WordPress app passwords, GitHub tokens/PATs
+- OpenAI/generic API keys, Bearer tokens
+- Basic Auth headers, environment variable values (PASSWORD, SECRET, TOKEN, etc.)
+- Credential URLs, private keys, private IPs (10.x, 192.168.x, 172.16-31.x)
 
-```json
-{
-  "env": {
-    "WP_USER": "YOUR_WP_USERNAME",
-    "WP_APP_PASSWORD": "<your-app-password>"
-  }
-}
-```
+## Publishing to WordPress
 
-2. This file is gitignored by default (Claude Code never commits `settings.local.json`). Credentials stay local to that sandbox session.
-
-**Note:** You may need to recreate this file each time a new sandbox spins up, depending on sandbox persistence.
-
-## Creating a WordPress Application Password
-
-If you need a new application password (e.g., the current one is revoked or you need a separate one for cloud):
-
-1. Log in to your WordPress admin dashboard
-2. Go to **Users → Profile** (or the specific user's profile)
-3. Scroll to **Application Passwords**
-4. Enter a name (e.g., `claude-code-cloud`) and click **Add New Application Password**
-5. Copy the generated password immediately — it's shown only once
-6. The password format is: `xxxx xxxx xxxx xxxx xxxx xxxx` (six groups of four characters, spaces optional)
-
-Alternatively, via WP-CLI on your server:
-
-```bash
-wp user application-password create YOUR_WP_USERNAME claude-code-cloud --porcelain
-```
-
-This outputs only the password string.
-
-## WordPress API Details
-
-| Setting | Value |
-|---------|-------|
-| Site | Your WordPress site URL (set via `WP_SITE` env var or hardcoded in the hook) |
-| API endpoint | `<your-site>/wp-json/wp/v2/posts` |
-| Auth method | HTTP Basic Auth (base64-encoded `user:app_password`) |
-| Post status | `private` (not visible to the public) |
-| Timeout | 10 seconds |
-
-## Post Format
-
-Each post includes:
-
-- **Title:** First ~60 characters of the user's prompt
-- **Body:** The user's prompt (blockquoted), the assistant's response, session metadata (timestamp, session ID, working directory)
-- **Redaction:** Secrets, tokens, API keys, private IPs, and credentials are pattern-matched and scrubbed before posting
+To publish a selected post, use WP-CLI on the VM or the WP REST API. See private context files for connection details and credentials.
 
 ## Propagation
 
-The hook is propagated to all repos via:
+The hook config is propagated to all repos via:
 
 ```bash
-cd ~/agentGuidance
-bash scripts/propagate-hooks.sh --dry-run   # preview
-bash scripts/propagate-hooks.sh             # push to all repos
+cd ~/repos/agentGuidance
+bash scripts/propagate-hooks.sh
 ```
-
-This copies `.claude/settings.json` and `CLAUDE.md` to every repo. The settings include both the SessionStart hook (fetches global rules) and the Stop hook (auto-posting).
-
-## Manual / Agent-Initiated Posts
-
-The auto-posting above is for session transcripts via the Stop hook. For **manual posts** (buying guides, deliverables, reports), post directly on the VM since the WP site is hosted there:
-
-```bash
-# Via WP-CLI (preferred — handles formatting, categories, tags)
-ssh deploy-vm "wp post create --post_title='My Title' --post_content='<content>' --post_status=draft"
-
-# Via local REST API on the VM
-ssh deploy-vm "curl -s -X POST http://localhost/wp-json/wp/v2/posts \
-  -u \$WP_USER:\$WP_APP_PASSWORD \
-  -H 'Content-Type: application/json' \
-  -d '{\"title\":\"My Title\",\"content\":\"<content>\",\"status\":\"draft\"}'"
-```
-
-**Why direct on VM:** The WP site runs on the VM itself, so direct access avoids remote auth complexity. Use WP-CLI for structured posts and the REST API for programmatic use.
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Posts not appearing | Check that `WP_USER` and `WP_APP_PASSWORD` are set. Run `source ~/.env && echo $WP_USER` to verify. |
-| 401 Unauthorized | Application password may be revoked. Create a new one in WP admin. |
-| 403 Forbidden | The WP user may not have `publish_posts` capability. Verify the user role is Editor or Administrator. |
-| Hook not firing | Check `.claude/settings.json` exists in the repo and contains the `Stop` hook. |
-| Truncated posts | By design — prompts over 300 chars and responses over 2000 chars are truncated with a note. |
+| Files not appearing | Check that `~/repos/wordpressPosts` exists and is a git repo |
+| Hook not firing | Check `.claude/settings.json` exists in the repo and contains the `Stop` hook |
+| Push failing | Check git remote and SSH key setup for wordpressPosts repo |

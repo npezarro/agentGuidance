@@ -55,8 +55,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     RANGE="$REMOTE_SHA..$LOCAL_SHA"
   fi
 
-  # Scan the diff for sensitive patterns
-  SCAN_OUTPUT=$(git diff "$RANGE" 2>/dev/null | "$SCAN_SCRIPT" 2>&1 || true)
+  # Scan only added/modified lines (not deletions) for sensitive patterns
+  SCAN_OUTPUT=$(git diff "$RANGE" 2>/dev/null | grep '^+' | grep -v '^+++' | "$SCAN_SCRIPT" 2>&1 || true)
 
   if echo "$SCAN_OUTPUT" | grep -q "BLOCKED"; then
     echo ""

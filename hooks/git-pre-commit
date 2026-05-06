@@ -31,8 +31,8 @@ if [ -n "$REMOTE_URL" ] && command -v gh &>/dev/null; then
   fi
 fi
 
-# Scan the staged diff for sensitive patterns
-SCAN_OUTPUT=$(git diff --cached | "$SCAN_SCRIPT" 2>&1 || true)
+# Scan only added/modified lines (not deletions) for sensitive patterns
+SCAN_OUTPUT=$(git diff --cached | grep '^+' | grep -v '^+++' | "$SCAN_SCRIPT" 2>&1 || true)
 
 if echo "$SCAN_OUTPUT" | grep -q "BLOCKED"; then
   echo ""
