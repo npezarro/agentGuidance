@@ -1,112 +1,22 @@
 #!/bin/bash
-# Post each Claude Code turn as a private WordPress post
+# Save each Claude Code session closeout as a .md file in ~/repos/wordpressPosts
 # Triggered by the Stop hook event
+# Previously posted directly to WordPress; now writes locally for manual review.
 
 set -euo pipefail
 
-# --- Credential Resolution ---
-# Priority: env vars (set via settings.json "env" block) > .env files > exit silently
-if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
-  for envfile in "$HOME/.env"; do
-    if [ -f "$envfile" ]; then
-      while IFS='=' read -r key value; do
-        # Skip comments and empty lines
-        [[ "$key" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "$key" ]] && continue
-        # Remove surrounding quotes from value
-        value="${value%\"}"
-        value="${value#\"}"
-        value="${value%\'}"
-        value="${value#\'}"
-        # Trim whitespace
-        key="$(echo "$key" | xargs)"
-        export "$key=$value"
-      done < "$envfile"
-      break
-    fi
-  done
-fi
+REPO_DIR="${HOME}/repos/wordpressPosts"
 
-if [ -z "${WP_USER:-}" ] || [ -z "${WP_APP_PASSWORD:-}" ]; then
-  exit 0  # No credentials available — skip silently
+# Skip if repo doesn't exist
+if [ ! -d "$REPO_DIR/.git" ]; then
+  exit 0
 fi
 
 if ! command -v jq &>/dev/null; then
-  echo "ERROR: jq is required but not installed" >&2
-  exit 1
+  exit 0
 fi
 
-# --- Markdown to HTML ---
-# Convert markdown to proper HTML for WordPress rendering.
-# Uses python-markdown if available; falls back to basic sed conversion.
-md_to_html() {
-  local input
-  input=$(cat)
-  converted=$(echo "$input" | python3 -c "
-import sys
-text = sys.stdin.read()
-try:
-    import markdown
-    print(markdown.markdown(text, extensions=['tables', 'fenced_code']))
-except ImportError:
-    import re, html as h
-    t = h.escape(text)
-    # fenced code blocks
-    t = re.sub(r'\`\`\`(\w*)\n(.*?)\`\`\`', lambda m: '<pre><code>' + m.group(2) + '</code></pre>', t, flags=re.S)
-    # headings
-    t = re.sub(r'^#### (.+)$', r'<h4>\1</h4>', t, flags=re.M)
-    t = re.sub(r'^### (.+)$', r'<h3>\1</h3>', t, flags=re.M)
-    t = re.sub(r'^## (.+)$', r'<h2>\1</h2>', t, flags=re.M)
-    t = re.sub(r'^# (.+)$', r'<h1>\1</h1>', t, flags=re.M)
-    # bold and italic
-    t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
-    t = re.sub(r'\*(.+?)\*', r'<em>\1</em>', t)
-    # inline code
-    t = re.sub(r'\`([^\`]+)\`', r'<code>\1</code>', t)
-    # unordered lists
-    t = re.sub(r'((?:^- .+\n?)+)', lambda m: '<ul>\n' + re.sub(r'^- (.+)$', r'<li>\1</li>', m.group(0), flags=re.M) + '</ul>\n', t, flags=re.M)
-    # ordered lists
-    t = re.sub(r'((?:^\d+\. .+\n?)+)', lambda m: '<ol>\n' + re.sub(r'^\d+\. (.+)$', r'<li>\1</li>', m.group(0), flags=re.M) + '</ol>\n', t, flags=re.M)
-    # blockquotes
-    t = re.sub(r'((?:^> .+\n?)+)', lambda m: '<blockquote>\n' + re.sub(r'^> (.+)$', r'<p>\1</p>', m.group(0), flags=re.M) + '</blockquote>\n', t, flags=re.M)
-    # images
-    t = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src=\"\2\" alt=\"\1\" />', t)
-    # horizontal rules
-    t = re.sub(r'^---+$', '<hr />', t, flags=re.M)
-    # links
-    t = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href=\"\2\">\1</a>', t)
-    # paragraphs (double newlines)
-    t = re.sub(r'\n\n+', '</p>\n<p>', t.strip())
-    t = '<p>' + t + '</p>'
-    # clean up empty paragraphs and paragraphs wrapping block elements
-    t = re.sub(r'<p>\s*</p>', '', t)
-    t = re.sub(r'<p>\s*(<h[1-4])', r'\1', t)
-    t = re.sub(r'(</h[1-4]>)\s*</p>', r'\1', t)
-    t = re.sub(r'<p>\s*(<ul>)', r'\1', t)
-    t = re.sub(r'(</ul>)\s*</p>', r'\1', t)
-    t = re.sub(r'<p>\s*(<ol>)', r'\1', t)
-    t = re.sub(r'(</ol>)\s*</p>', r'\1', t)
-    t = re.sub(r'<p>\s*(<blockquote>)', r'\1', t)
-    t = re.sub(r'(</blockquote>)\s*</p>', r'\1', t)
-    t = re.sub(r'<p>\s*(<img )', r'\1', t)
-    t = re.sub(r'(<img [^>]*/>)\s*</p>', r'\1', t)
-    t = re.sub(r'<p>\s*(<pre>)', r'\1', t)
-    t = re.sub(r'(</pre>)\s*</p>', r'\1', t)
-    t = re.sub(r'<p>\s*(<hr)', r'\1', t)
-    t = re.sub(r'(<hr />)\s*</p>', r'\1', t)
-    print(t)
-" 2>/dev/null) || converted="$input"
-  echo "$converted"
-}
-
-WP_SITE="${WP_SITE:-https://example.com}"
-WP_API="${WP_SITE}/wp-json/wp/v2/posts"
-AUTH=$(echo -n "${WP_USER}:${WP_APP_PASSWORD}" | base64)
-
 # --- Redaction ---
-# Scrub sensitive information from text before posting to WordPress.
-# Defense-in-depth: agent.md also instructs Claude to self-censor,
-# but this catches anything that slips through.
 redact_sensitive() {
   sed -E \
     -e 's/[A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4} [A-Za-z0-9]{4}/[REDACTED_APP_PASSWORD]/g' \
@@ -140,67 +50,37 @@ if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ] || [ -z "$LAST_ASSIS
 fi
 
 # --- Deduplication ---
-# Prevent duplicate posts from the same session or identical content.
-# Track by session_id and content hash in a local cache directory.
 WP_CACHE_DIR="$HOME/.cache/wp-posts"
 mkdir -p "$WP_CACHE_DIR"
-
-# Clean up cache entries older than 7 days
 find "$WP_CACHE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 
-# Check session-based dedup: skip if this session already posted
 if [ -n "$SESSION_ID" ] && [ -f "$WP_CACHE_DIR/session-${SESSION_ID}" ]; then
   exit 0
 fi
 
-# Check content-based dedup: skip if identical content was recently posted
 CONTENT_HASH=$(printf '%s' "$LAST_ASSISTANT_MSG" | sha256sum | cut -d' ' -f1)
 if [ -f "$WP_CACHE_DIR/hash-${CONTENT_HASH}" ]; then
   exit 0
 fi
 
 # Extract the last user prompt from transcript
-# User messages have type="user" and message.content is a string (not tool_result arrays)
-# Use jq --slurp with reverse to handle files with/without trailing newlines
 USER_PROMPT=$(jq -rs '[.[] | select(.type == "user" and (.message.content | type == "string"))] | last | .message.content // empty' "$TRANSCRIPT_PATH" 2>/dev/null)
 
-# Skip if we couldn't find a user prompt
 if [ -z "$USER_PROMPT" ]; then
   exit 0
 fi
 
-# Redact sensitive information from both prompt and response
+# Redact sensitive information
 USER_PROMPT=$(echo "$USER_PROMPT" | redact_sensitive)
 LAST_ASSISTANT_MSG=$(echo "$LAST_ASSISTANT_MSG" | redact_sensitive)
 
-# Summarize long prompts — keep first line + truncate body
-PROMPT_LEN=${#USER_PROMPT}
-PROMPT_DISPLAY="$USER_PROMPT"
-if [ "$PROMPT_LEN" -gt 300 ]; then
-  FIRST_LINE=$(echo "$USER_PROMPT" | head -1 | cut -c1-120)
-  PROMPT_DISPLAY="${FIRST_LINE}...
-
-<em>[Full prompt truncated — ${PROMPT_LEN} chars. See transcript for complete text.]</em>"
-fi
-
-# Summarize long assistant responses — keep first ~2000 chars
-RESPONSE_LEN=${#LAST_ASSISTANT_MSG}
-RESPONSE_DISPLAY="$LAST_ASSISTANT_MSG"
-if [ "$RESPONSE_LEN" -gt 2000 ]; then
-  RESPONSE_DISPLAY=$(echo "$LAST_ASSISTANT_MSG" | head -c 2000)
-  RESPONSE_DISPLAY="${RESPONSE_DISPLAY}...
-
-<em>[Response truncated — ${RESPONSE_LEN} chars total. See transcript for complete output.]</em>"
-fi
-
-# Get working directory and extract project name for narrative framing
+# Get working directory and extract project name
 CWD=$(jq -r '.cwd // "unknown"' < "$INPUT_FILE")
 PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-DATE_HUMAN=$(date '+%B %-d, %Y')
+DATE_SLUG=$(date '+%Y-%m-%d')
 
-# Build the title from the response content — since the response IS the blog post.
-# Priority: first markdown heading > first sentence > project + date fallback.
+# Build the title from the response content
 RESPONSE_HEADING=$(echo "$LAST_ASSISTANT_MSG" | grep -m1 -E '^#{1,4} ' | sed 's/^#\+ //')
 if [ -n "$RESPONSE_HEADING" ]; then
   TITLE=$(echo "$RESPONSE_HEADING" | cut -c1-70)
@@ -216,57 +96,40 @@ else
   fi
 fi
 
-# --- Convert markdown to HTML ---
-RESPONSE_HTML=$(echo "$RESPONSE_DISPLAY" | md_to_html)
+# Build a filesystem-safe slug from the title
+SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' | cut -c1-80)
+FILENAME="${DATE_SLUG}-${SLUG}.md"
+FILEPATH="${REPO_DIR}/${FILENAME}"
 
-# --- "Previously on..." recap ---
-# Fetch the last 3 private posts to build a recap section, like a TV series cold open.
-# Fails silently — if the API is unreachable, we just skip the recap.
-RECAP_HTML=""
-RECENT_POSTS=$(curl -s --max-time 5 \
-  -H "Authorization: Basic ${AUTH}" \
-  "${WP_API}?per_page=3&status=private&orderby=date&order=desc" 2>/dev/null)
+# Handle filename collisions
+COUNTER=1
+while [ -f "$FILEPATH" ]; do
+  FILENAME="${DATE_SLUG}-${SLUG}-${COUNTER}.md"
+  FILEPATH="${REPO_DIR}/${FILENAME}"
+  COUNTER=$((COUNTER + 1))
+done
 
-if [ -n "$RECENT_POSTS" ] && echo "$RECENT_POSTS" | jq -e '.[0].id' &>/dev/null; then
-  RECAP_ITEMS=$(echo "$RECENT_POSTS" | jq -r '.[] | "<li><a href=\"" + .link + "\">" + .title.rendered + "</a></li>"' 2>/dev/null)
-  if [ -n "$RECAP_ITEMS" ]; then
-    RECAP_HTML="<div style=\"background:#f7f7f7; border-left:4px solid #999; padding:12px 16px; margin-bottom:24px;\">
-<p><strong>Previously on&hellip;</strong></p>
-<ul style=\"margin:8px 0 0 0;\">
-${RECAP_ITEMS}
-</ul>
-</div>
+# Build the markdown file with frontmatter
+cat > "$FILEPATH" <<MDEOF
+---
+title: "${TITLE//\"/\\\"}"
+date: ${TIMESTAMP}
+session_id: ${SESSION_ID}
+project: ${PROJECT}
+cwd: ${CWD}
+---
 
-"
-  fi
-fi
+${LAST_ASSISTANT_MSG}
+MDEOF
 
-# --- Build post content ---
-# The response IS the blog post. No template wrapper — just recap, content, and metadata.
-CONTENT="${RECAP_HTML}${RESPONSE_HTML}
+# Commit and push
+cd "$REPO_DIR"
+git add "$FILENAME" 2>/dev/null || true
+git commit -m "Add: ${TITLE}" --no-gpg-sign 2>/dev/null || true
+git push origin HEAD 2>/dev/null || true
 
-<hr />
-<p style='color:#888; font-size:0.9em;'>Logged on ${DATE_HUMAN} at ${TIMESTAMP} &mdash; Session <code>${SESSION_ID}</code> in <code>${CWD}</code></p>"
-
-# Create the WordPress post (private, filed under "Claude Journals" category)
-PAYLOAD=$(jq -n \
-  --arg title "$TITLE" \
-  --arg content "$CONTENT" \
-  --arg status "private" \
-  '{title: $title, content: $content, status: $status, categories: [16]}')
-
-HTTP_CODE=$(curl -s -X POST "$WP_API" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Basic ${AUTH}" \
-  -d "$PAYLOAD" \
-  -o /dev/null \
-  -w "%{http_code}" \
-  --max-time 10 2>/dev/null) || true
-
-# Record successful post in dedup cache
-if [ "${HTTP_CODE:-0}" -ge 200 ] && [ "${HTTP_CODE:-0}" -lt 300 ]; then
-  [ -n "$SESSION_ID" ] && echo "$TIMESTAMP" > "$WP_CACHE_DIR/session-${SESSION_ID}"
-  echo "$TIMESTAMP" > "$WP_CACHE_DIR/hash-${CONTENT_HASH}"
-fi
+# Record in dedup cache
+[ -n "$SESSION_ID" ] && echo "$TIMESTAMP" > "$WP_CACHE_DIR/session-${SESSION_ID}"
+echo "$TIMESTAMP" > "$WP_CACHE_DIR/hash-${CONTENT_HASH}"
 
 exit 0
