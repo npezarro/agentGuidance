@@ -56,7 +56,7 @@ token=$(ssh myhost 'grep TOKEN /path/to/.env')
 
 ## Every Repo Must Have
 
-1. **`.gitignore`** — includes `.env`, `.env.local`, `*.pem`, `credentials.json`
+1. **`.gitignore`** — includes `.env`, `.env.local`, `*.pem`, `credentials.json`, `.claude/`
 2. **`.env.example`** — documents required variables with placeholder values
 3. **No inline defaults that leak specifics** — use `YOUR_VALUE` or `:?` to require the var
 
@@ -130,7 +130,7 @@ When the automated hook isn't installed, verify before committing to any public 
 2. No IP addresses in code (check: `grep -rn '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' .`)
 3. No absolute paths to home directories
 4. No private repo names or usernames in test fixtures, docs, or comments (check against the private reference database)
-5. `.gitignore` covers `.env*` files
+5. `.gitignore` covers `.env*` files and `.claude/` directory
 6. Config files use environment variables, not hardcoded values
 
 ## Architecture Documentation
