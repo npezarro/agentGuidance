@@ -5,7 +5,7 @@
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
-- Auto-posting system is live: every Claude Code response becomes a private WordPress draft and a Discord embed
+- Auto-posting system is live: every Claude Code response writes a .md file to ~/repos/wordpressPosts/ and a Discord embed
 - `progress.md` is a mandatory core instruction; every commit must include a progress.md entry
 - **`progress.md` uses `merge=union`** via `.gitattributes` across all 15 repos to prevent merge conflicts
 - **`context.md` update frequency reduced**: now only updated on final branch commit (before PR) or during Session Wrap-Up
