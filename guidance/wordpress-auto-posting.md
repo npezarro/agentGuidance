@@ -60,7 +60,7 @@ Patterns scrubbed before writing:
 
 ## Publishing to WordPress
 
-To publish a selected post, use WP-CLI on the VM or the WP REST API. See private context files for connection details and credentials.
+Do NOT post directly to WordPress via WP-CLI or the REST API. The file-based workflow (write .md to `~/repos/wordpressPosts/`, commit, push) is the current standard. Posts are reviewed and published separately. For deep closeouts and manual session reports, write the .md file to `~/repos/wordpressPosts/` with the same YAML frontmatter format.
 
 ## Propagation
 

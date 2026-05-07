@@ -59,11 +59,11 @@ Links to the most important files created or modified.
 
 ### 2. WordPress Post
 
-Post the document to WordPress as a permanent, searchable record. Use the SSH posting method (`~/repos/agentGuidance/hooks/post-to-wordpress.sh` or direct `wp-cli` via SSH).
+Write a .md file to `~/repos/wordpressPosts/` with the closeout content, commit, and push. Do NOT post directly to WordPress via WP-CLI or the REST API. The file-based workflow is the current standard; posts are reviewed and published separately.
 
 ### 3. Discord Notification
 
-Post to `#cli-interactions` with a link to the WordPress post and a brief summary. This replaces the standard closeout Discord post (don't double-post).
+Post to `#cli-interactions` with a brief summary. This replaces the standard closeout Discord post (don't double-post).
 
 ### 4. File Links
 
