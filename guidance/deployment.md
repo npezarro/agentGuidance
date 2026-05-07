@@ -97,6 +97,21 @@ RedirectMatch ^/app$ /app/
 This pattern affected ClaudeNet, Epic Auth, and other services after adding an OIDC-protected project index page (2026-04-28). The `/manchu` route already had this redirect, which is why it worked while others broke.
 
 **When adding a new ProxyPass directive**, always check whether it uses trailing slashes and add the `RedirectMatch` if so.
+## .env Protection During rsync Deploys
+
+When using `rsync --delete` to deploy, **always `--exclude '.env'`**. The `--delete` flag removes server-side files not in the source, which will overwrite the production `.env` (with its production-specific values like database ports, API endpoints) with local dev config.
+
+```bash
+# GOOD: Exclude .env from rsync
+rsync -az --delete --exclude '.env' --exclude 'node_modules' ./dist/ "$DEPLOY_TARGET"
+
+# BAD: rsync --delete with no .env exclusion
+rsync -az --delete ./dist/ "$DEPLOY_TARGET"
+```
+
+**Post-deploy .env integrity check:** After rsync, verify critical env vars on the server still have production values. A silent overwrite causes hard-to-diagnose failures (e.g., wrong database port, wrong API base URL) that look like application bugs.
+
+**Why this matters:** A real deploy overwrote a production database port with a local dev port, causing all connections to fail silently. The root cause was `rsync --delete` without `--exclude .env`.
 
 ## VM SSH Access
 
