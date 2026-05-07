@@ -18,6 +18,7 @@ Always `git commit && git push` BEFORE posting links to Discord (#file-links, #c
 - Browser tabs after restart: use `ensure` command, don't ask user to refresh
 - Files from known repos: `git pull` to get them locally, don't ask user to provide
 - Long text to Termius: write to a file and scp, don't ask user to paste
+- **WSL/Windows boundary:** Chrome, Electron apps, and other Windows programs read from the Windows filesystem, not WSL. After changing files they consume (browser extension, Electron app, etc.), you MUST sync to the Windows copy (`cd /mnt/c/... && git pull`) BEFORE asking the user to reload. WSL repo changes are invisible to Windows apps.
 - **Specs, compatibility, upgradeability:** Research it yourself (WebSearch, WebFetch, page-reader) before recommending. Never tell the user "check if X is upgradeable" when you can look up the service manual yourself. The user should receive answers, not homework.
 
 ## 5. Guidance Updates Go to Repo Files, Not Just Memory
