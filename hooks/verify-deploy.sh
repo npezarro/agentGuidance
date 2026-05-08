@@ -51,6 +51,30 @@ while IFS= read -r SVC; do
     fi
   done <<< "$URLS"
 
+  # Next.js chunk integrity check: verify JS chunks referenced in HTML actually load.
+  # Stale standalone builds serve HTML referencing chunk hashes that no longer exist,
+  # causing client-side "page couldn't load" while health API returns 200.
+  IS_NEXTJS=$(jq -r --arg svc "$SVC" '.services[$svc].nextjs // false' "$REGISTRY" 2>/dev/null)
+  if [ "$IS_NEXTJS" = "true" ]; then
+    FIRST_URL=$(jq -r --arg svc "$SVC" '.services[$svc].urls[0] // empty' "$REGISTRY" 2>/dev/null)
+    if [ -n "$FIRST_URL" ]; then
+      PAGE_HTML=$(curl -sL --max-time 10 "$FIRST_URL" 2>/dev/null || true)
+      # Extract first /_next/static/chunks/ JS URL from the HTML
+      CHUNK_PATH=$(echo "$PAGE_HTML" | grep -oP '/_next/static/chunks/[^"'"'"'\s]+\.js' | head -1 || true)
+      if [ -n "$CHUNK_PATH" ]; then
+        # Build absolute URL: strip path from FIRST_URL to get origin+basepath
+        BASE_URL=$(echo "$FIRST_URL" | sed 's|/$||')
+        CHUNK_URL="${BASE_URL}${CHUNK_PATH}"
+        CHUNK_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$CHUNK_URL" 2>/dev/null || echo "000")
+        if [ "$CHUNK_CODE" = "200" ]; then
+          PASSES="${PASSES}  [PASS] ${SVC} chunk integrity (${CHUNK_CODE})\n"
+        else
+          FAILURES="${FAILURES}  [FAIL] ${SVC} stale build: JS chunk returned HTTP ${CHUNK_CODE} at ${CHUNK_URL}\n"
+        fi
+      fi
+    fi
+  fi
+
 done <<< "$SERVICES"
 
 # Clean up tracker
