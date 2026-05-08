@@ -10,6 +10,17 @@
 6. Dependencies are locked (`package-lock.json` committed).
 7. **If `package.json` or `package-lock.json` changed, run `npm install` on the target before restarting.** Missing this causes crash loops from missing modules.
 
+## Deploy After Every Change to a Deployed App
+
+If you commit changes to a repo that has a live deployment, **deploy immediately**. Do not accumulate commits without deploying. Stale builds are the #1 cause of "page couldn't load" errors in Next.js standalone apps: the HTML references JS chunk IDs from a build that no longer matches the server code or static assets.
+
+This applies especially when:
+- Prisma schema or migrations change (the generated client in the standalone build becomes stale)
+- Any client component or page changes (static chunk hashes change per build)
+- Dependencies are added or updated
+
+If you intentionally skip deploying (e.g., batching changes), note it in context.md so the next session knows a deploy is pending.
+
 ## Post-Deploy Verification
 
 "It built clean" is not "it works." Run these within 30 seconds of every deploy:
@@ -19,6 +30,7 @@
 3. `pm2 logs <process> --lines 20` to scan for errors, uncaught exceptions, or crash loops in the first 30 seconds.
 4. If the app has authentication, verify the sign-in flow works end-to-end.
 5. **Test the actual user-facing behavior yourself** before asking the user to verify. Use the browser agent for interactive pages, `curl` for APIs, or direct tool invocation. Never declare "done, try it out" without verifying it works.
+   - For Next.js apps: curl a real page (not just the health endpoint) and check for the error boundary pattern (`This page could not be found` or `couldn't load`). The health API can return 200 while every page is broken due to stale chunks.
 6. Update `context.md` with deployment status and any issues observed.
 7. If any check fails, **do not move on**. Diagnose and fix before declaring the deploy complete.
 
