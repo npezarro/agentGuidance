@@ -1,7 +1,7 @@
 #!/bin/bash
 # Save each Claude Code session closeout as a .md file in ~/repos/wordpressPosts
 # Triggered by the Stop hook event
-# Previously posted directly to WordPress; now writes locally for manual review.
+# Writes to the local wordpressPosts git repo for review; does NOT post to WordPress directly.
 
 set -euo pipefail
 
