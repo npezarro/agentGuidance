@@ -1,4 +1,4 @@
-<!-- browser-page-reader.md | Last updated: 2026-03-25 -->
+<!-- browser-page-reader.md | Last updated: 2026-05-10 -->
 # Browser Page Reader (page-reader)
 
 ## What It Is
@@ -62,9 +62,10 @@ Key fields in the JSON output:
 
 ## Signal Detection
 Automatically detects:
-- **Closed/expired jobs**: "no longer accepting", "position filled", "this job is closed", expired JSON-LD dates
+- **Closed/expired jobs**: "no longer accepting", "position filled", "this job is closed", "job not found", "couldn't find that page", expired JSON-LD dates
 - **Login walls**: Password fields + "sign in to continue" patterns
 - **Captchas**: reCAPTCHA, hCaptcha iframes
+- **Cloudflare challenges**: Detects `cf-mitigated:challenge` header and 403 responses, waits up to 12s for auto-resolution before extracting content. Enables reading pages behind Cloudflare bot protection (e.g., OpenAI careers).
 - **Redirects**: When the final URL differs from the requested URL
 
 ## Stealth Mode
