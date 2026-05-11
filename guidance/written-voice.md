@@ -104,14 +104,76 @@ He hedges when genuinely uncertain, not out of weakness.
 - These are notably more structured than his casual writing — he takes them seriously
 
 ### Professional/public-facing (LinkedIn posts, referral blurbs, published writing)
-- The warmth and friendliness carry forward — Nick never sounds corporate or stiff
+- The warmth and friendliness carry forward, Nick never sounds corporate or stiff
 - BUT the casual mannerisms are tamed: no extended vowels, no "lol", emoticons rare or absent
 - Exclamation marks still appear but are measured, not every sentence
-- Sentence structure tightens up — still conversational, but less run-on
+- Sentence structure tightens up, still conversational, but less run-on
 - Enthusiasm shows through word choice and specificity, not through "Yayyy" or ":D"
 - Concrete numbers and results do the heavy lifting in place of casual energy
 - Think: "the warmth of the person emails with the structure of the role pitch emails"
-- Example register: "I've been building AI agent systems for the past month and the compound learning is wild. Each session makes the system a little smarter than the last one." — warm, specific, no emoticons
+
+#### LinkedIn posts specifically
+- **~150-250 words.** Short. Not blog posts.
+- Opens with the problem, no preamble: "I've been using Claude Code a lot and ran into an annoying problem"
+- Short paragraphs (1-3 sentences each)
+- Conversational connectors: "So I built...", "My fix was pretty simple", "The pattern is pretty simple"
+- No dashes as connectors (not em dashes, not ` - ` either). Use periods, commas, or start a new sentence.
+- Always includes a GitHub link to the relevant (public) repo
+- Ends with a soft engagement question: "What's working for you?", "Curious what approaches are working for people"
+- Names things specifically: "OAuth usage endpoint", "bash, curl, and Python 3", "SessionStart hook"
+- One emoticon or emoji max, at the very end if at all: ", 😅" or ", :)"
+
+**Published examples (use these as the primary reference, not the bullet points above):**
+
+> Claude Max shows your usage on the website but there's no way to check it from the CLI, and your tools definitely can't check it themselves.
+> So I built a bash script that queries Anthropic's undocumented OAuth usage endpoint and shows real-time utilization across both the 5-hour and 7-day rolling windows: current percentage, when each window resets, and a "gate mode" that returns an exit code.
+>
+> The gate mode is the part I most frequently use. I run autonomous dev agents overnight and without guardrails they'll burn through the entire quota by morning. The gate check lets agents pause when usage gets high, so I'm not waking up to a maxed 5hr window and watching the clock until 1PM.
+>
+> They still get work done, they just pace around the limits.
+>
+> I also run it as a Claude Code SessionStart hook. Every new session opens with a usage snapshot. Beats finding out you're rate-limited three minutes into a task.
+>
+> Zero dependencies beyond bash, curl, and Python 3. JSON output if you want to pipe it somewhere. MIT licensed.
+>
+> Let me know if I missed a simpler way to do this, 😅
+>
+> https://lnkd.in/e5pwFJ3J
+
+> I've been using Claude Code a lot and ran into an annoying problem: the CLI doesn't retain any context between sessions. So every time I close out and come back, I'm starting from scratch (plus I don't get to benefit from learnings from the CLI interactions).
+>
+> My fix was pretty simple. I created a claude.md file that points to a centralized agent.md where I keep all my agent instructions. The agent now automatically persists context in commit messages and follows a set of best practices I've refined over time. One file, referenced across all my repos and environments.
+>
+> Hot tip: if you need Claude to run commands or interact via SSH on your behalf, the CLI is where that happens. That flexibility is exactly why I needed a better way to carry context forward.
+>
+> You can check out my approach here:
+> https://lnkd.in/eGQKSgRT
+>
+> What's working for you with Claude Code? Curious what instructions others are finding useful.
+
+> Got a great question from a friend related to my last post about my Claude Code agent instructions: how did I actually build them up from zero?
+>
+> Short answer: a week of trial and error, then one focused session to formalize everything.
+>
+> I started by writing down the stuff I kept repeating to Claude Code across sessions. Things like "test on localhost before shipping changes" and "make a plan before executing." Basic stuff, but I was tired of saying it every time.
+>
+> Then I fed context from my actual Claude Code sessions back into Claude and asked it to suggest additional instructions based on patterns it noticed. We went back and forth on a few things and I added the ones that made sense.
+>
+> The rest came from specific problems I ran into during real work:
+>
+> The agent kept crashing mid-task on large operations. So I added instructions to break work into phases, avoid assuming previous state, and plan for feasibility before executing.
+>
+> It would reference PR numbers that had already been merged, so I had to add a check to verify PR URLs aren't already taken before creating new ones.
+>
+> I also realized that if the remote agent.md file ever failed to fetch (network error, timeout), the whole setup would break. So I built in a fallback clause: if the curl fails, continue with the local CLAUDE.md in the repo root without blocking.
+>
+> The pattern is pretty simple. Every time I hit a repeatable issue, I add an instruction to prevent it from happening again. The file is a living document and it grows as my usage does.
+>
+> All that being said, maybe I'm missing something on how I should be leveraging auto memory so feel free to tell me how to do things better if you've got insight, :).
+>
+> Repo with both files: https://lnkd.in/eGQKSgRT
+>
+> Original post for context: https://lnkd.in/ekYyCWDg
 
 ### Book club / group discussion: Brief prompts, not declarations
 - "What a lovely book." — simple emotional opener
