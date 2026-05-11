@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Stop hook: blocks if any repo TOUCHED THIS SESSION has uncommitted or unpushed changes.
+# Stop hook: blocks if any FILE written this session is still uncommitted or unpushed.
 # Reads /tmp/claude-repos-touched-{session_id} (populated by track-repo-writes PostToolUse hook).
-# Outputs blocking JSON if dirty repos found, exits silently if all clean.
+# Only checks the specific files written, not all repo state (avoids false positives from
+# pre-existing untracked files).
 set -euo pipefail
 
 INPUT=$(cat)
@@ -11,38 +12,37 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 TRACK_FILE="/tmp/claude-repos-touched-${SESSION_ID}"
 [ -f "$TRACK_FILE" ] || exit 0
 
-DIRTY=""
-UNPUSHED=""
+DIRTY_FILES=""
+UNPUSHED_REPOS=""
+declare -A CHECKED_REPOS 2>/dev/null || true
 
-# De-duplicate repo list
-REPOS=$(sort -u "$TRACK_FILE")
+while IFS=$'\t' read -r repo_root file_path; do
+  [ -d "$repo_root/.git" ] || continue
+  repo_name=$(basename "$repo_root")
 
-while IFS= read -r dir; do
-  [ -d "$dir/.git" ] || continue
-  repo_name=$(basename "$dir")
-
-  # Check uncommitted changes (staged + unstaged tracked files)
-  changes=$(cd "$dir" && git diff --name-only HEAD 2>/dev/null || true)
-  staged=$(cd "$dir" && git diff --cached --name-only 2>/dev/null || true)
-  # Also check for new untracked files that aren't gitignored
-  untracked=$(cd "$dir" && git ls-files --others --exclude-standard 2>/dev/null || true)
-  if [ -n "$changes" ] || [ -n "$staged" ] || [ -n "$untracked" ]; then
-    DIRTY="${DIRTY}${repo_name}, "
+  # Check if this specific file has uncommitted changes
+  rel_path=$(realpath --relative-to="$repo_root" "$file_path" 2>/dev/null || basename "$file_path")
+  status=$(cd "$repo_root" && git status --porcelain -- "$rel_path" 2>/dev/null || true)
+  if [ -n "$status" ]; then
+    DIRTY_FILES="${DIRTY_FILES}${repo_name}/${rel_path}, "
   fi
 
-  # Check unpushed commits
-  upstream=$(cd "$dir" && git rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo "")
-  if [ -n "$upstream" ]; then
-    ahead=$(cd "$dir" && git rev-list '@{u}'..HEAD --count 2>/dev/null || echo "0")
-    if [ "$ahead" -gt 0 ]; then
-      UNPUSHED="${UNPUSHED}${repo_name} (${ahead}), "
+  # Check unpushed commits per repo (only once per repo)
+  if [ -z "${CHECKED_REPOS[$repo_root]+x}" ] 2>/dev/null; then
+    CHECKED_REPOS[$repo_root]=1
+    upstream=$(cd "$repo_root" && git rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo "")
+    if [ -n "$upstream" ]; then
+      ahead=$(cd "$repo_root" && git rev-list '@{u}'..HEAD --count 2>/dev/null || echo "0")
+      if [ "$ahead" -gt 0 ]; then
+        UNPUSHED_REPOS="${UNPUSHED_REPOS}${repo_name} (${ahead}), "
+      fi
     fi
   fi
-done <<< "$REPOS"
+done < "$TRACK_FILE"
 
 MSG=""
-[ -n "$DIRTY" ] && MSG="Uncommitted changes: ${DIRTY%, }. "
-[ -n "$UNPUSHED" ] && MSG="${MSG}Unpushed commits: ${UNPUSHED%, }. "
+[ -n "$DIRTY_FILES" ] && MSG="Uncommitted files: ${DIRTY_FILES%, }. "
+[ -n "$UNPUSHED_REPOS" ] && MSG="${MSG}Unpushed commits: ${UNPUSHED_REPOS%, }. "
 
 if [ -n "$MSG" ]; then
   printf '{"decision":"block","reason":"GIT-PUSH GATE: %sCommit and push before stopping."}\n' "$MSG"

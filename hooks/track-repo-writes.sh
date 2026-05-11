@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Edit|Write: logs the repo root to a session tracking file.
-# The check-unpushed.sh Stop hook reads this file to know which repos to check.
+# PostToolUse hook for Edit|Write: logs the specific file path to a session tracking file.
+# The check-unpushed.sh Stop hook reads this file to check only these specific files.
 set -euo pipefail
 
 INPUT=$(cat)
@@ -23,6 +23,6 @@ REPO_ROOT=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && git rev-parse --show-top
 cd "$REPO_ROOT"
 git check-ignore -q "$FILE_PATH" 2>/dev/null && exit 0
 
-# Append repo root (deduped at read time by check-unpushed.sh)
-echo "$REPO_ROOT" >> "/tmp/claude-repos-touched-${SESSION_ID}"
+# Log both repo root and the specific file (tab-separated)
+echo "${REPO_ROOT}	${FILE_PATH}" >> "/tmp/claude-repos-touched-${SESSION_ID}"
 exit 0
