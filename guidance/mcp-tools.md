@@ -17,6 +17,7 @@ Rules for choosing between available MCP tool providers when multiple cover the 
 |-----------|----------|
 | Read Gmail, Calendar, Drive | Claude AI MCP |
 | Search Gmail, Calendar, Drive | Claude AI MCP |
+| Create formatted Google Doc from .md | `md-to-gdoc.js` or HTML upload via Claude AI MCP |
 | Create/update Drive files | piotr google-drive MCP |
 | Sheets formatting | piotr google-drive MCP |
 | Slides creation | piotr google-drive MCP |
@@ -25,21 +26,17 @@ Rules for choosing between available MCP tool providers when multiple cover the 
 
 **Never write raw Markdown to Google Docs.** Google Docs does not render Markdown syntax — `#`, `**`, `---`, etc. appear as literal characters.
 
-**Pattern for formatted Google Docs:**
+**Preferred: HTML upload (handles all formatting automatically)**
 
-1. **Write plain text content** via `createGoogleDoc` or `updateGoogleDoc` — no Markdown syntax. Use natural paragraph breaks and indentation only.
-2. **Apply native formatting** via `formatGoogleDocParagraph` and `formatGoogleDocText`:
-   - Title: `namedStyleType: "TITLE"` on the first line
-   - Section headers: `namedStyleType: "HEADING_1"`
-   - Sub-headers: `namedStyleType: "HEADING_2"`
-   - Bold key phrases: `bold: true` with `textToFind`
-   - Italic for quoted/template text: `italic: true`
-   - Subdued metadata (dates, versions): `foregroundColor: "#888888"` + `italic: true`
-3. **Batch independent formatting calls** in parallel — paragraph styles and text styles don't depend on each other once content is written.
+Convert markdown to HTML, then upload via Google Drive API with `contentMimeType: "text/html"`. Google Drive's HTML import correctly applies: headings (h1-h6), bold/italic, real tables, bullet/numbered lists, hyperlinks, and horizontal rules.
 
-**Quick checklist before creating a Google Doc:**
-- No `#` headers — use `formatGoogleDocParagraph` with `namedStyleType`
-- No `**bold**` — use `formatGoogleDocText` with `bold: true`
-- No `*italic*` — use `formatGoogleDocText` with `italic: true`
-- No `---` dividers — use heading styles and spacing to create visual separation
-- No `- ` bullet markers — use indented text or numbered lists in plain text
+- **Buying guides:** Use `node ~/repos/buying-assistant/scripts/md-to-gdoc.js <file.md> --folder <folderId>`. This handles conversion + upload in one step.
+- **Other repos:** Convert to HTML (e.g. `npx marked <file.md>`), then upload via `mcp__claude_ai_Google_Drive__create_file` with `contentMimeType: "text/html"` and the HTML as `textContent`.
+
+**Fallback: Manual formatting (for small docs or surgical edits)**
+
+1. **Write plain text content** via `createGoogleDoc` or `updateGoogleDoc` — no Markdown syntax.
+2. **Apply native formatting** via `formatGoogleDocParagraph` (namedStyleType: HEADING_1/HEADING_2) and `formatGoogleDocText` (bold/italic).
+3. **Batch independent formatting calls** in parallel.
+
+**Do NOT use `createGoogleDoc`/`updateGoogleDoc` for long-form docs with tables.** These tools only accept plain text; tables cannot be created through them.
