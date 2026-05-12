@@ -53,6 +53,11 @@ Each app needs:
 - health-hub (`/health-hub`, port 3002)
 - finance-tracker (`/finance`, port 3008)
 - student-transcript (`/student`, port 3009)
+- shopper (`/shopper`, port 3090, tunneled from WSL)
+
+### AUTH_URL origin-only pattern for tunneled apps
+
+When an app is tunneled (e.g., WSL -> VM via SSH), Apache's `ProxyPreserveHost On` and `X-Forwarded-Host` may not correctly reach the Next.js standalone server. NextAuth then uses `localhost:PORT` as the origin, producing wrong callback URLs. Fix: set `AUTH_URL=https://example.com` (bare origin, no path). With pathname="/", `setEnvDefaults()` won't override the explicit `basePath: "/api/auth"`, but origin is set correctly. This is simpler than debugging header forwarding through SSH tunnels.
 
 ### Why this replaced per-app workarounds
 
