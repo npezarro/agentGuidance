@@ -241,6 +241,7 @@ In casual writing, specifics take the form of place names, dates, and references
 
 ## What Nick Does NOT Do
 
+- **No inline air-quotes in cover letters.** Never use quotation marks around phrases for emphasis or to frame concepts (e.g., don't write: not just "build the feature" but "quantify the tradeoffs"). Just state the idea directly. This applies to all application materials (cover letters, additional info, outreach drafts).
 - **No buzzwords.** Doesn't say "synergy", "leverage", "paradigm shift."
 - **No throat-clearing.** Never opens with "So I wanted to talk about..." or "In today's post, we'll explore..."
 - **No rhetorical hooks.** Doesn't open with "Have you ever wondered...?"
