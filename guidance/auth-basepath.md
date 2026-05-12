@@ -32,7 +32,34 @@ All subpath-deployed apps now use a **centralized OAuth callback proxy** at `aut
 4. Google redirects to the proxy; proxy reads `__auth_target` cookie and 302 redirects to `/<app>/api/auth/callback/google?code=...&state=...`
 5. The downstream app handles the callback normally
 
-### Downstream app setup
+### Adding a new app (step-by-step)
+
+Follow these steps exactly. Do NOT attempt per-app callback routing, customFetch, or Apache auth rewrites.
+
+1. **`.env`**:
+   ```env
+   AUTH_SECRET=<shared secret from privateContext/auth-proxy-env.md>
+   AUTH_URL=https://example.com          # bare origin, NO path
+   AUTH_TRUST_HOST=true
+   ```
+2. **`auth.ts`** (NextAuth config):
+   ```typescript
+   basePath: "/api/auth",               // explicit, prevents AUTH_URL override
+   ```
+3. **`proxy.ts`** (Next.js 16) or **`middleware.ts`** (Next.js 15):
+   - If the project uses `src/` directory, place in `src/proxy.ts`
+   - Set `__auth_target` cookie to the app's basePath (e.g., `"/myapp"`)
+   - Matcher: `["/api/auth/signin/:path*"]`
+4. **`layout.tsx`**:
+   ```tsx
+   <SessionProvider basePath="/<app>/api/auth">
+   ```
+5. **Apache** (VM): Add `ProxyPass /<app> http://127.0.0.1:<port>/<app>` only. Do NOT add `/api/auth/callback/` rules.
+6. **Google Console**: No changes needed — `https://example.com/api/auth/callback/google` is already registered.
+7. **Test**: POST the signin flow and verify `redirect_uri` in the Google redirect matches the registered URI. Do NOT just test GET endpoints.
+8. **Update this file**: Add the app to the "Apps using the proxy" list below.
+
+### Downstream app setup (summary)
 
 Each app needs:
 - Shared `AUTH_SECRET` (for state JWT encoding/decoding across apps)

@@ -42,5 +42,8 @@ After a mistake: (1) check if a rule already exists in guidance, (2) if yes, pat
 ## 11. Gather Context Before Debugging
 Before diving into a fix, read your own context: relevant memory files, the repo's CLAUDE.md, guidance files for the domain, and wiki pages. The answer is often already documented. Skipping this step is the #1 cause of multi-hour debugging loops that end with applying a fix that was already in memory. This applies doubly when the domain has known complexity (auth, deployment, cross-repo flows).
 
+**Mandatory pre-reads for known-complex domains:**
+- **OAuth/auth on subpath apps**: Read `guidance/auth-basepath.md` BEFORE writing any auth code. It documents the centralized auth-proxy pattern, the step-by-step new-app checklist, and a list of approaches that DO NOT work. Multiple sessions have wasted hours trying approaches already documented as broken.
+
 ## 12. Time-Box Approach Switching
 If you've tried 2+ variations of the same approach without progress (e.g., changing a config value back and forth), stop and try a fundamentally different approach. If stuck for 15+ minutes, spawn a debugger agent for fresh analysis. Repeating the same category of fix with different values is brute force, not debugging.
