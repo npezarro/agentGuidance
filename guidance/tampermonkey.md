@@ -1,5 +1,17 @@
 # Tampermonkey Userscript Standards
 
+## Preferred Platform: Chrome Automation Hub
+
+**New browser automation scripts should default to the Chrome Automation Hub extension** (`~/repos/chrome-automation`) rather than Tampermonkey. The extension provides module management, URL pattern matching, autoRun/FAB-triggered execution, and avoids TM's per-tab sandbox CPU overhead.
+
+**Still use Tampermonkey when:**
+- Script needs `GM_xmlhttpRequest` for CORS bypass on sites that block extension fetch
+- Remote agent pattern with server-side orchestration (freeGames, phone-agent)
+- Mobile Firefox automation (extensions don't run on Firefox Android)
+- A dedicated extension already exists (browser-agent, browser-logs, cowork-bridge)
+
+See `chrome-automation/CLAUDE.md` for the module system, porting guide, and world selection rules.
+
 ## Auto-Update Headers (Required)
 
 Every `.user.js` file must include `@updateURL` and `@downloadURL`. For private repos, point at `example.com` (not GitHub raw URLs — auth fails for private repos).
