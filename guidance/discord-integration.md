@@ -57,6 +57,8 @@ A PostToolUse hook (`auto-file-links.sh`) automatically detects when `git push` 
 
 **What qualifies as a readable artifact:** Reports, analyses, proposals, summaries, application materials — files the user is meant to open and read. Do NOT post links for routine code changes, config files, test files, or internal docs like READMEs.
 
+**All substantive interaction outputs must be pushed to .md files.** This is not limited to "large" outputs. Any CLI interaction that produces a meaningful deliverable (analysis, research, recommendations, comparison, report) must be written to a .md file in the relevant repo, committed, and pushed. Conversation-only output is ephemeral and hard to reference later; files in repos are permanent and searchable.
+
 **Rules:**
 - No external posting without explicit instruction. Discord reporting via the webhook script is the one exception -- that's internal.
 - Long messages auto-thread. The webhook script splits messages exceeding 2000 chars automatically.
