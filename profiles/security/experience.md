@@ -29,6 +29,13 @@
 **Learned:** git commit author metadata is a consistent PII vector across all repos in a portfolio -- when a developer occasionally forgets to set privacy email in git config, the real email leaks into every commit from that session. npm audit HIGH findings in dev/build dependencies of a static frontend app are LOW runtime risk -- always assess the deployment context before severity-rating dependency vulns.
 
 ---
+## 2026-05-12 | multi-repo security scan (GOGAutoRdeem, aisleOffersFilterClaimandTracking, humblechoice-oneclickclaim, rakutenOfferAutoAdder, reddit-bottom-sheet-blocker, markdownMakerBookmarklet)
+**Task:** Full 10-phase security scan of 6 userscript / browser extension / bookmarklet repos
+**What worked:** Reading build.sh explicitly in markdownMakerBookmarklet -- scripts remain the highest-signal target even in small repos. Correctly dismissing secret/token/password grep hits in markdownMakerBookmarklet as sanitization logic rather than actual leaks (the tool actively redacts credentials from page captures). GitHub Actions ${{ secrets.X }} references confirmed safe across all repos.
+**What didn't:** N/A -- clean scan pass.
+**Learned:** When a repo's grep hits for "secret/token/password" come from a credential-scrubbing function rather than credential storage, that is a POSITIVE signal (tool does the right thing), not a finding. Always read the surrounding code before filing. All 6 repos now use npezarro@users.noreply.github.com privacy email consistently -- the personal-email-leak vector seen in earlier scans has been remediated.
+
+---
 ## 2026-03-30 | claude-token-tracker
 **Task:** Pre-publication security audit of a CLI tool that parses Claude Code session transcripts for token usage tracking
 **What worked:** Full file read + targeted grep for secrets, PII, URLs, known infra details. Cross-referencing test fixture paths against known private repo names. Checking npm audit, git history (single commit), author email, .gitignore coverage.
@@ -55,6 +62,20 @@
 **What worked:** Sequential repo processing remains reliable. Excluding minified libs (html2canvas.min.js, papaparse.min.js, xlsx.full.min.js) from secrets grep immediately -- learned from previous scan of same repos. Checking git author emails explicitly caught the persistent PII leak across all repos.
 **What didn't:** N/A -- clean execution leveraging prior experience patterns
 **Learned:** These 6 repos have a remarkably consistent pattern: all share identical .claude/settings.json with remote-exec hooks, all lack .gitignore, and all leak the same personal email in git metadata. This suggests a portfolio-wide template issue -- fixing the template/workflow once would remediate all repos simultaneously. The absence of .gitignore across an entire portfolio is a systemic risk, not an individual repo oversight.
+
+---
+## 2026-05-12 | multi-repo security scan (ChatGPTCompletionChime, GeminiCompletionChime, youtubeSpeedSetAndRemember, LIScreenshot, iconscribepublic, claude-bakeoff)
+**Task:** Full 10-phase security scan of 6 public repos
+**What worked:** Inspecting named security-remediation commits directly with `git show <hash>` -- reveals exactly what was removed and whether values were real or already-redacted placeholders. This confirmed claude-bakeoff's hardcoded secrets were scrubbed to REDACTED_* before the initial push. Checking every security-fix commit message in git log (`ac69127`, `1d70199`, `8e07ed7`, `b6d90d4`) to trace the full remediation history. Filtering minified libs from secrets grep before assessing findings (LIScreenshot).
+**What didn't:** N/A -- clean execution.
+**Learned:** When git log shows commits named "remove hardcoded secrets" or "replace hardcoded path," always inspect those commits with `git show` to determine (a) whether real values were ever present or only placeholders, and (b) whether the removed value is still visible in the `+` side of an earlier commit. In claude-bakeoff, the `/home/npezarro/repos/groceryGenius` path appeared in the `+` diff of `b6d90d4` (the file-creation commit) and was only removed in `8e07ed7` -- making it recoverable from git history. A `$HOME` substitution in a new commit is NOT a history remediation; the hardcoded path persists in the diff of the commit that first introduced the file. npm audit moderate findings in vite/esbuild dev dependencies are LOW runtime risk for static frontend apps (iconscribepublic) -- the dev server is not exposed in production.
+
+---
+## 2026-05-12 | multi-repo security scan (claudeNet, claude-browser-agent, reddit-auto-hide, claude-usage-monitor)
+**Task:** Full 10-phase security scan of 4 public repos covering a messaging server, browser automation agent, Reddit userscript, and usage CLI tool
+**What worked:** Sequential per-repo scanning; all 4 repos confirmed using npezarro@users.noreply.github.com privacy email consistently -- no PII in git metadata. Reading deploy.sh in each repo confirmed all infra details (host, user, key path) are driven entirely from environment variables, not hardcoded. npm audit on claudeNet came back completely clean (0 vulns across 216 dependencies).
+**What didn't:** N/A -- all 4 repos were clean
+**Learned:** When token/secret grep hits all originate from auth middleware, test fixtures using synthetic test tokens, and .env.example placeholder documentation -- these are collectively POSITIVE signals that secrets are handled correctly (env-var injection, token hashing, never hardcoded). reddit-auto-hide's accessToken reads are a standard userscript pattern (reading the page's own session token to call the site's API on behalf of the logged-in user) -- not a hardcoded credential or a leak. Single-file userscripts with no .gitignore and no package.json are inherently minimal attack surface.
 
 ---
 ## 2026-03-31 | multi-repo security scan (groceryGenius, claude-token-tracker, agentGuidance, page-reader, valueSortify, claude-bakeoff, youtubeSpeedSetAndRemember)
@@ -157,3 +178,17 @@
 **Task:** Implemented and documented a portable pre-commit hook that scans staged diffs for sensitive identifiers before allowing commits to public repos
 **What worked:** Tracked hook in `hooks/git-pre-commit` with `scripts/install-hooks.sh` installer. Hook pipes `git diff --cached` through `security-scan.sh` and blocks on BLOCKED output. Graceful degradation: if security-scan.sh isn't available (no privateContext), it warns but allows the commit — prevents blocking external contributors.
 **Learned:** Automated pre-commit scanning catches leaks that manual checklists miss, especially during bulk edits and security redaction work (the same session that added this hook saw an accidental file deletion from an overly broad `git add`). The hook-as-tracked-file pattern (vs .git/hooks/ only) means the hook survives clones and is version-controlled. The install script is needed because git doesn't auto-install hooks from tracked files.
+
+---
+## 2026-05-12 | multi-repo security scan (agentGuidance, autonomousDev, page-reader, browser-agent, groceryGenius, claude-tray-notifier)
+**Task:** Full 10-phase security scan of 6 public GitHub repos for secrets, PII, infra exposure
+**What worked:** Sequential repo scanning remained reliable. Checking fix-checker/config.json in autonomousDev directly (committed JSON with REDACTED placeholders) confirmed proper scrubbing. Reading deploy.sh and build-and-host.sh in browser-agent and claude-tray-notifier confirmed all infra credentials are env-var-driven with no hardcoded values. Verifying git author emails across all repos -- all consistently use the noreply GitHub address.
+**What didn't:** N/A -- clean execution
+**Learned:** The autonomousDev repo is a successfully scrubbed ops-heavy repo: all infra references (VM host, channel IDs, repo root paths, bot token commands) are replaced with REDACTED_ prefixed placeholders. The claude-tray-notifier install-mac.sh contains an explicit reference to "privateContext/claude-tray-token" -- this discloses the existence of a private credential-storage repository but not any actual secret. This is a LOW finding (architecture disclosure) not a credential leak. repos that use REDACTED_ prefixes consistently throughout are easier to audit than those that use generic examples.
+
+---
+## 2026-05-12 | multi-repo security scan (portfolio, mic-volume-guard, valueSortify, manchu-translator, claude-token-tracker)
+**Task:** Full 10-phase security scan of 5 public repos spanning a resume repo, PowerShell utility, React app, Node.js backend, and TypeScript CLI
+**What worked:** Sequential per-repo scanning. Checking git log --oneline for high-signal commit messages ("Redact infrastructure details") that indicate prior exposure, then using `git show <commit>^:<file>` to confirm exactly what was in the pre-redaction version. Extending grep to cover .ps1 files for the PowerShell repo. Reading ecosystem.config.js files directly for port/process-name disclosure in git history.
+**What didn't:** N/A -- clean systematic pass
+**Learned:** A "Redact infrastructure details" commit message is an immediate red flag -- always inspect the pre-redaction commit to confirm what was exposed. In this case the pre-redaction context.md contained real port numbers (3110/3111), PM2 process names, reverse-tunnel SSH flags (-R 3111:127.0.0.1:3111), and Apache vhost config file path -- all now in public git history within --depth 50. The VM hostname itself used a placeholder even before redaction, so the most sensitive detail was never committed. Distinction matters: infra topology/ports in git history = MEDIUM overshare; actual hostname/credentials = HIGH/CRITICAL. npm audit 0-vuln results across all three Node repos confirms dependency hygiene is sound.
