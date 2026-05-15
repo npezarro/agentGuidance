@@ -4,11 +4,17 @@ Use when a session involves significant decisions, new systems, architectural ch
 
 ## When to Use
 
-- User explicitly requests it
-- Session established a new system, agent, or workflow
-- Session involved architectural decisions with trade-offs
-- Session produced learnings that affect multiple repos
-- Multi-hour sessions covering complex ground
+**Comprehensive closeout is the default for all interactive sessions.** It runs automatically at session end without requiring `--dc` or any explicit trigger.
+
+Additionally, it is especially important for sessions that:
+- Established a new system, agent, or workflow
+- Involved architectural decisions with trade-offs
+- Produced learnings that affect multiple repos
+- Covered complex ground over multiple hours
+
+### Self-Service Open Items
+
+When the closeout process surfaces open items, address them independently rather than just documenting them. Fix what can be fixed, push what needs pushing, capture what needs capturing. Only escalate to the user when a genuine decision or input is required.
 
 ## What It Produces
 

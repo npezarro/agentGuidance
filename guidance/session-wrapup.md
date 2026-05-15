@@ -9,6 +9,12 @@ These are plain-text triggers the user types in conversation (NOT slash commands
 - **`--closeout`** — Standard session report. Write a full structured report in conversation AND send the same content to Discord via the webhook script. Sections: What was done (with file paths), Key decisions, What's working, Open items, Repos touched.
 - **`--deep-closeout`** (alias: **`--dc`**) — Comprehensive documentation for important sessions. Follow the full process in `guidance/comprehensive-closeout.md` (produces a durable markdown document in privateContext, a .md file in wordpressPosts repo, and Discord report).
 
+### Automatic Deep Closeout (Default Behavior)
+
+**Deep closeout runs automatically at the end of every interactive session.** Do not wait for the user to type `--dc`; treat it as the default session-end procedure. Follow the full process in `guidance/comprehensive-closeout.md`.
+
+When the closeout surfaces open items or follow-ups, **address them independently** rather than just listing them. Only escalate to the user when genuine input or a decision is required. Self-service everything mechanical (fixes, pushes, context updates, learning captures, etc.).
+
 **Before ending any session where you wrote or changed code, you MUST complete all of these steps.** Do not wait to be asked; this is automatic.
 
 1. **Review what's left.** Before doing anything mechanical, stop and think through:
