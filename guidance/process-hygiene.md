@@ -71,6 +71,30 @@ When a PM2-managed job runs on a schedule (cron trigger), external systems (fix-
 
 **Why:** deal-scout's housing-scout ran ~24 times/day instead of once because fix-checker (10-min scan interval) retriggered it via the shared ecosystem config. Adding a 20-hour cooldown guard fixed this. Any scheduled job that runs via PM2 cron or `pm2 restart` is vulnerable to the same pattern.
 
+## Stale Git Lock Files
+
+When automated processes (hooks, cron jobs, PM2 services) get killed mid-git-operation (by hook timeout, OOM, SIGTERM), they leave `.git/index.lock` files that silently block all subsequent git operations in that repo. No error is surfaced to the caller; git commands simply fail.
+
+**Real-world impact:** A hook timeout in claude-token-tracker left a lock file that blocked usage sync for an entire month. The `!usage` command showed "No sessions recorded" with no indication that a stale lock was the cause.
+
+**Prevention:** Any automated script that runs git commands should check for and remove stale lock files before operating:
+
+```bash
+# Remove lock files older than 60 seconds (safe threshold)
+LOCK_FILE="$REPO_PATH/.git/index.lock"
+if [ -f "$LOCK_FILE" ]; then
+  LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$LOCK_FILE") ))
+  if [ "$LOCK_AGE" -gt 60 ]; then
+    rm -f "$LOCK_FILE"
+    echo "Removed stale git lock (age: ${LOCK_AGE}s)"
+  fi
+fi
+```
+
+**Why 60 seconds?** Normal git operations complete in under a second. A lock older than 60 seconds is almost certainly stale. Don't remove younger locks, as they may belong to an active operation.
+
+**Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
