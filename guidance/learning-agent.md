@@ -14,7 +14,7 @@ Learnings get lost because:
 
 ### Runner
 - Location: `~/repos/autonomousDev/learnings-pass/`
-- Invoked by: Cron (hourly at :43)
+- Invoked by: Cron (every 4 hours at :43)
 - Runtime: Claude CLI with a focused prompt
 - Timeout: 30 minutes (`MAX_TIMEOUT=1800` in run.sh)
 
@@ -107,7 +107,7 @@ The learning agent needs a focused prompt that:
 
 ## Decisions (finalized 2026-04-05)
 
-1. **Frequency:** Every 1 hour (cron at :43). Skips when 5d or 7d usage >= 90%.
+1. **Frequency:** Every 4 hours (cron at :43). Skips when 5d or 7d usage >= 90%. Reduced from hourly on 2026-05-08 to conserve token budget.
 2. **Discord channel:** `#learnings` (dedicated channel, `DISCORD_LEARNINGS_WEBHOOK_URL` env var).
 3. **Approval flow:** Staged — all changes on branches with PRs. User reviews and merges. No direct commits to main.
 4. **Scope:** Observes and suggests on everything — auto-dev, fix-checker, all repo CLAUDE.md files, agentGuidance itself.
