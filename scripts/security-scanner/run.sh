@@ -92,8 +92,10 @@ touch "$RUN_LOG" && chmod 600 "$RUN_LOG"
 
 log "Spawning Claude to scan $REPO_COUNT public repos..."
 
+# First pass: Haiku (fast, cheap — pattern matching is deterministic)
 timeout 2700 "$CLAUDE_BIN" \
   -p \
+  --model haiku \
   --dangerously-skip-permissions \
   --verbose \
   --output-format stream-json \
@@ -126,6 +128,61 @@ HIGH_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: high' || true)
 MEDIUM_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: medium' || true)
 LOW_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: low' || true)
 TOTAL_FINDINGS=$((CRITICAL_COUNT + HIGH_COUNT + MEDIUM_COUNT + LOW_COUNT))
+
+# ── Escalation: Sonnet for critical/high findings ────────────────────
+# Haiku does the broad scan cheaply; Sonnet re-analyzes anything serious
+
+if [ $EXIT_CODE -eq 0 ] && [ $((CRITICAL_COUNT + HIGH_COUNT)) -gt 0 ]; then
+  log "Escalating to Sonnet: $CRITICAL_COUNT critical, $HIGH_COUNT high findings need deeper analysis"
+  ESCALATION_LOG="$LOGS_DIR/escalation-${DATE_TAG}.log"
+  touch "$ESCALATION_LOG" && chmod 600 "$ESCALATION_LOG"
+
+  ESCALATION_PROMPT="You are reviewing security scan results from a first-pass scan (Haiku). It found $CRITICAL_COUNT critical and $HIGH_COUNT high severity findings in public repos.
+
+FIRST PASS FINDINGS:
+$RESULT
+
+For each critical/high finding:
+1. Verify it is a genuine exposure (not a false positive from test fixtures, example configs, or placeholder values)
+2. Assess the actual risk (is the credential still active? is the repo truly public?)
+3. Recommend specific remediation steps (rotation, history rewrite, .gitignore)
+
+Output confirmed findings in the same SEVERITY format. Downgrade false positives to SEVERITY: false-positive."
+
+  timeout 900 "$CLAUDE_BIN" \
+    -p \
+    --model sonnet \
+    --dangerously-skip-permissions \
+    --verbose \
+    --output-format stream-json \
+    <<< "$ESCALATION_PROMPT" \
+    > "$ESCALATION_LOG" 2>&1
+
+  ESCALATION_EXIT=$?
+  if [ $ESCALATION_EXIT -eq 0 ]; then
+    ESCALATION_RESULT=$(grep -m1 '"type":"result"' "$ESCALATION_LOG" 2>/dev/null \
+      | jq -r '.result // ""' 2>/dev/null \
+      | head -c 16000 \
+      || echo "")
+    if [ -n "$ESCALATION_RESULT" ]; then
+      RESULT="$ESCALATION_RESULT"
+      # Re-parse with escalated results (false positives may have been removed)
+      CRITICAL_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: critical' || true)
+      HIGH_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: high' || true)
+      MEDIUM_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: medium' || true)
+      LOW_COUNT=$(echo "$RESULT" | grep -c 'SEVERITY: low' || true)
+      TOTAL_FINDINGS=$((CRITICAL_COUNT + HIGH_COUNT + MEDIUM_COUNT + LOW_COUNT))
+      log "Sonnet escalation completed — verified findings: $TOTAL_FINDINGS"
+    fi
+
+    ESCALATION_COST=$(grep '"type":"result"' "$ESCALATION_LOG" 2>/dev/null \
+      | jq -r 'select(.total_cost_usd) | "$\(.total_cost_usd | tostring | .[0:6])"' 2>/dev/null \
+      | tail -1 || echo "")
+    [ -n "$ESCALATION_COST" ] && COST="$COST + $ESCALATION_COST (escalated)"
+  else
+    log "WARN: Sonnet escalation failed (exit: $ESCALATION_EXIT), using Haiku results"
+  fi
+fi
 
 # ── Update state (atomic write) ─────────────────────────────────────
 
