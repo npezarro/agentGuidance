@@ -46,6 +46,18 @@ Two hooks mechanically enforce post-deploy verification, even if the agent skips
 
 **Why this exists:** The #1 failure mode was agents deploying, declaring "done," and leaving without testing. The Stop hook makes this structurally impossible for registered services.
 
+## Next.js Standalone Symlink Fix
+
+When using `output: 'standalone'` in `next.config`, Next.js produces a minimal server in `.next/standalone/` but does NOT include the `static/` or `public/` directories. Without symlinks, all CSS, JS, and static assets return 404.
+
+Add a `postbuild` script to `package.json`:
+
+```json
+"postbuild": "bash -c 'STANDALONE=.next/standalone; [ -d \"$STANDALONE\" ] && { rm -rf $STANDALONE/.next/static && ln -sf ../../../.next/static $STANDALONE/.next/static; [ -d public ] && rm -rf $STANDALONE/public && ln -sf ../../public $STANDALONE/public; echo \"[postbuild] standalone symlinks created\"; } || true'"
+```
+
+npm runs `postbuild` automatically after `build`. This pattern is used in finance-tracker and netflix-social.
+
 ## Python Version Compatibility
 
 The GCP VM runs **Python 3.9**. Modern type annotation syntax (`X | None`, `list[str]`, `dict[str, Any]`) requires Python 3.10+. Code using these features will raise `TypeError` at runtime on the VM.
