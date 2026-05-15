@@ -28,6 +28,9 @@ For change history, see `progress.md`.
 - Change history (that belongs in `progress.md`, not here). Keep `context.md` focused on current state.
 
 ### Environment Notes must include (when applicable)
+
+**Public repo caveat:** For public repositories, do NOT include specific infrastructure values below. Instead write `see privateContext/infrastructure.md` as a pointer. See `guidance/secrets-hygiene.md` section "Infrastructure Overshare in Context Files" for full rules. The items below apply to **private repos only**:
+
 - SSH user and hostname
 - PM2 process name and port
 - Web server config file path (e.g., Apache VirtualHost location)
