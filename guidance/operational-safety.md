@@ -112,6 +112,26 @@ count=$(grep -c 'pattern' file || true)
 
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
 
+## Claude CLI Rate Limit Detection in Service Wrappers
+
+**The scenario:** A service wraps `claude -p` (e.g., via `spawn` or `execFile`) and reads stdout for the AI response. When the user hits their usage limit, Claude CLI exits with code 0 but outputs a rate limit message instead of a real response (e.g., "You've hit your limit... resets 3:50pm PT"). The service treats this as a successful result, returning garbage content to the user.
+
+**Real incident (2026-05-15):** Shopper's Docker bridge server returned rate limit text as a "completed" buying guide. Jobs were marked successful with useless content because the bridge only checked exit code, not output content.
+
+**Fix:** After collecting stdout from any `claude -p` subprocess, check for rate limit patterns before treating the output as valid:
+
+```javascript
+const output = stdout.trim();
+if (output.match(/you've hit your limit/i) || output.match(/resets \d+:\d+[ap]m/i)) {
+  // Return 429 or retry error, NOT success
+  return { error: "AI at capacity", status: 429 };
+}
+```
+
+**Rule:** Any service wrapping Claude CLI must detect rate limit responses and translate them to errors (HTTP 429 or equivalent). Do not rely on exit codes alone; rate limit messages arrive on stdout with exit code 0.
+
+**Where this applies:** shopper bridge, error_handler Claude invocations, any future service that pipes prompts to `claude -p` and parses stdout.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
@@ -122,21 +142,13 @@ Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook fail
 - Hooks must have timeouts (10s max). A hung webhook should not block the session.
 - If a hook fails, log the failure and continue. Do not abort the parent session.
 
-### Stop hooks that invoke Claude (critical recursion risk)
+### Stop Hook Safety Framework
 
-Stop hooks fire on ALL session exits, including pipe-mode (`-p`) sessions. If a Stop hook spawns a Claude session (even Haiku), that session's exit will re-trigger the Stop hook, creating an infinite chain.
+**Full reference: `guidance/stop-hook-safety.md`** — tiered classification (Tier 1 observation, Tier 2 verification, Tier 3 Claude-invoking), shared guard library, templates, and checklists.
 
-**Mandatory guards when a hook invokes Claude:**
-1. **Env var circuit breaker:** The script that calls Claude must `export GUARD_VAR=1` before the invocation. The hook must check `[ "${GUARD_VAR:-}" = "1" ] && exit 0` at the top.
-2. **Content fingerprint:** The hook should grep the conversation for its own prompt signature and bail if found (catches cases where env vars don't propagate).
+**Shared guard library: `hooks/lib/stop-hook-guard.sh`** — provides env var circuit breaker, PID lockfile, and per-hour rate limiter. All Tier 3 hooks must source this with `--invokes-claude`.
 
-**Real incident (2026-05-15):** `score-session.sh` Stop hook ran the session scorer (`claude -p --model haiku`) on every session exit. The scorer's session exit re-triggered the hook. Result: 4,888 recursive sessions in one day, 199M tokens (78% of the week's usage). Fixed by adding `CLAUDE_SCORER_ACTIVE` env var guard + content pattern match. See `memory/fix_scorer_recursion.md`.
-
-**Pre-flight checklist for any new hook that calls `claude`:**
-- [ ] Does it set an env var guard before invoking Claude?
-- [ ] Does the hook check that env var and exit early?
-- [ ] Does it have a content-based fallback detection?
-- [ ] Is there a token budget or invocation count limit?
+**Real incident (2026-05-15):** `score-session.sh` Stop hook ran the session scorer (`claude -p --model haiku`) on every session exit. The scorer's session exit re-triggered the hook. Result: 4,888 recursive sessions in one day, 199M tokens (78% of the week's usage). Fixed by adding env var guard + content pattern match. Now standardized via the guard library.
 
 ## Job Recovery Safety
 

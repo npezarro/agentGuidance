@@ -80,6 +80,7 @@ Load on-demand based on the current task:
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
 - `guidance/ESSENTIAL.md` -- **auto-loaded** top-10 most-violated rules (always in context)
 - `guidance/comprehensive-closeout.md` -- detailed session documentation for important conversations
+- `guidance/stop-hook-safety.md` -- tiered stop hook classification, guard library, Tier 3 recursion prevention
 - `guidance/mcp-tools.md` -- MCP tool provider selection (Claude AI vs piotr google-drive)
 - `guidance/prior-work-lookup.md` -- finding past conversations and prior work
 - `guidance/research-quality.md` -- curating high-quality references and study resources
