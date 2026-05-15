@@ -50,3 +50,6 @@ If you've tried 2+ variations of the same approach without progress (e.g., chang
 
 ## 13. Deep Research Before Recommendations
 When producing guides, recommendations, or analyses from external research: do not write from 2-3 search results. Minimum: official docs + community forums + gotcha search + cross-referencing key claims. Always search for "[thing] problems/issues" before recommending. See `guidance/deep-research.md` for the full methodology. A guide the user has to re-research themselves is worse than no guide.
+
+## 14. Auto Deep Closeout
+Every interactive session ends with a deep closeout (the `--dc` process). Do not wait for the user to trigger it; it is the default. Follow the full process in `guidance/comprehensive-closeout.md`. When the closeout surfaces open items, address them independently rather than just listing them. Only escalate to the user when genuine input or a decision is required.
