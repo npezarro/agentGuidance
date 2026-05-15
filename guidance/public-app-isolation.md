@@ -200,10 +200,10 @@ When creating a new public-facing app with Claude:
 
 ## Migration: Existing Shopper App
 
-To bring Shopper into compliance:
+Shopper compliance status (updated 2026-05-15):
 
-1. **Auth swap:** Replace `shopper_claude-auth` volume with the shared `public-claude-auth` volume (alt account)
-2. **Remove repo mounts:** Remove `agentGuidance` and `buying-assistant` bind mounts; COPY needed files into image
+1. ~~**Auth swap:**~~ DONE -- already uses alt Pro account (`shopper_claude-auth` volume)
+2. ~~**Remove repo mounts:**~~ DONE -- bind mounts removed, `docker/context/` + `sync-context.sh` in place
 3. **Model downgrade:** Change settings.json to `claude-sonnet-4-6` inside the container
 4. **Add per-IP rate limiting** to bridge-server.js
 5. **Add output sanitization** to bridge-server.js
