@@ -27,3 +27,24 @@
 **What worked:** Reviewed in dependency order: schema first (data model correctness), then API routes (do they match the schema?), then auth (is access properly gated?). Found that the Bot model's `capabilities` field was a JSON column storing an untyped array, meaning the API could accept any shape. Recommended adding a Zod schema for runtime validation to complement Prisma's storage-level types.
 **What didn't:** Tried reviewing all routes simultaneously, jumping between files. Lost track of which routes had auth middleware and which did not. Switched to reviewing one resource at a time (all bot routes, then all user routes) which made gaps more visible.
 **Learned:** Review API codebases one resource at a time, not one file at a time. Checking all routes for "bots" together makes it obvious when one route is missing auth middleware that all the others have. File-by-file review scatters related routes across multiple passes and makes inconsistencies harder to spot.
+
+---
+## 2026-05-15 | agentGuidance batch PR review
+**Task:** Review 6 learning-agent PRs for merge readiness: correctness, secrets, duplicates, append-only compliance.
+**What worked:** Fetched all 6 diffs in parallel, then verified claims against live state (crontab for cron frequency, hooks/ listing for renamed script). Caught that #208 and #206 were near-duplicates modifying the same file and line, with #206 being strictly better (includes rationale paragraph). Flagged a residual line from #208 not covered by #206 as a follow-up action item.
+**What didn't:** Nothing significant -- parallel diff fetching and metadata retrieval kept the review fast.
+**Learned:** When reviewing batches of auto-generated PRs (learning agent output), always verify factual claims against live system state (crontab, filesystem, git log). Duplicate detection requires comparing not just titles but exact lines touched and diff content. When recommending one duplicate over another, check if the rejected PR has any unique additions worth preserving as follow-ups.
+
+---
+## 2026-05-15 | agentGuidance batch PR review (5 PRs: #213-#217)
+**Task:** Review 5 learning-agent PRs for merge readiness: secrets scan, factual correctness, append-only compliance, duplicate detection.
+**What worked:** Fetched all 5 diffs in parallel, then ran targeted checks: verified --no-chrome is a real CLI flag, confirmed JSON.stringify(Infinity) behavior, validated Next.js redirect+basePath auto-prepend semantics. Scanned all diffs for credential patterns (passwords, API keys, IPs, SSH keys) -- all clean. Detected that 3 PRs (#213, #214, #215) all insert rows at the same line in code-review.md, which creates a merge-order dependency.
+**What didn't:** Nothing significant -- the parallel approach kept review time low.
+**Learned:** When multiple PRs touch the same table or list at the same insertion point, flag the merge-order dependency explicitly. The content of each may be correct independently, but merging them requires sequential rebase. Also: security experience log entries that discuss audit findings (mentioning "secret", "token", "API key") will trip automated secret scanners -- read them in context to distinguish discussion-of-secrets from actual-secrets before flagging.
+
+---
+## 2026-05-15 | agentGuidance PR batch #197-#205
+**Task:** Review 9 PRs for merge readiness: secrets, factual correctness, duplicates, append-only compliance.
+**What worked:** Fetched all 9 diffs in parallel, then read the current state of every modified file to check for duplicates and context. Verified the Node 20 EOL claim (April 30, 2026) via nodejs.org. Compared #199 and #204 side-by-side since both added npm overrides to the same file; identified #204 as the more complete version and #199 as having one unique pattern ($devDep reference syntax) worth preserving after rebase. Also caught a corrupted UTF-8 character in #199's diff on an existing line.
+**What didn't:** Could have checked research-quality.md earlier to confirm deep-research.md was complementary rather than overlapping; ended up reading it after forming an initial opinion.
+**Learned:** When two PRs modify the same file at the same location, compare both diffs side-by-side before recommending merge order. The more complete PR should merge first; the other should rebase and contribute only its unique additions. Also: always verify factual date claims (EOL dates, deprecation timelines) against primary sources rather than trusting PR authors.
