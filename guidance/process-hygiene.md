@@ -49,6 +49,43 @@ pm2 list
 
 Don't blindly start a service on a port that's occupied. Either stop the existing process (if it's yours) or use a different port. If the existing process belongs to another session, coordinate — don't kill it.
 
+### PM2 Restart EADDRINUSE Crash Loop
+
+**The scenario:** PM2 restarts a process (e.g., after a crash or `pm2 restart`). The old Node process doesn't release its port before PM2 starts the new instance. The new process throws `EADDRINUSE` and crashes. PM2 restarts again immediately. Repeat indefinitely.
+
+**Real incidents (2026-05-15):** Shopper and pm-interview-practice both hit this on the same day. Shopper's root cause was that PM2 was running `next start` directly, which PM2 couldn't track properly for graceful shutdown. Error handler also failed to detect it initially — EADDRINUSE was miscategorized as infra, not config.
+
+**Three-layer fix:**
+
+1. **Add `kill_timeout` and `listen_timeout` to ecosystem.config.js/cjs** — gives the old process time to shut down before the new one starts:
+   ```js
+   {
+     kill_timeout: 3000,    // ms to wait for SIGTERM before SIGKILL
+     listen_timeout: 3000   // ms to wait for the app to listen on its port
+   }
+   ```
+
+2. **Add graceful shutdown handler in the server code** — without this, SIGTERM doesn't close the HTTP server cleanly:
+   ```js
+   process.on('SIGTERM', () => {
+     server.close(() => process.exit(0));
+   });
+   process.on('SIGINT', () => {
+     server.close(() => process.exit(0));
+   });
+   ```
+
+3. **Use a start.sh wrapper for Next.js standalone apps** — `next start` as the PM2 command loses process tracking. A wrapper script lets PM2 signal the actual node process:
+   ```bash
+   #!/bin/bash
+   # start.sh — wrapper for PM2: loads .env, sets vars, runs standalone server
+   set -a; source "$(dirname "$0")/.env"; set +a
+   exec node "$(dirname "$0")/.next/standalone/server.js"
+   ```
+   Then in ecosystem.config.cjs: `script: 'start.sh'` instead of `script: 'node', args: '.next/standalone/server.js'`.
+
+**Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + recent EADDRINUSE in logs = this crash loop pattern. EADDRINUSE in PM2 is always a code/config problem, not an infrastructure problem.
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
