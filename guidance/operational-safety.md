@@ -106,6 +106,12 @@ count=$(grep -c 'pattern' file || true)
 
 **Detection:** The `autonomous-health` monitor scans all repos for Claude subprocess calls missing the flag (check 5: `check_permission_flags`).
 
+**Also required: `--no-chrome`** for headless environments. Claude CLI may attempt to open a browser (e.g., for OAuth or dashboard). In headless VMs or PM2 processes, this silently hangs or errors. Add `--no-chrome` alongside `--dangerously-skip-permissions` for all automated invocations:
+- `claude --print --no-chrome -p "..."`
+- `$CLAUDE_BIN -p --dangerously-skip-permissions --no-chrome`
+
+**Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
