@@ -132,3 +132,13 @@ git bisect good <hash>  # this commit was working
 - Write a regression test if possible.
 - Document the root cause in the commit message.
 - Update `context.md` if the fix reveals something about the environment.
+
+### 9. SQLite & Prisma Specifics
+
+- **Database is locked**: In SQLite, concurrent writes cause locking.
+  - **Fix**: Move updateMany or createMany calls OUT of loops. Consolidate into a single operation per user/batch.
+  - **Pragma**: Use PRAGMA busy_timeout=5000; to make SQLite wait instead of failing immediately.
+- **executeRawUnsafe vs queryRawUnsafe**:
+  - PRAGMA journal_mode=WAL; returns a result (the new mode), so it often requires queryRawUnsafe.
+  - PRAGMA busy_timeout=5000; does NOT return a result, so use executeRawUnsafe.
+  - Prisma/SQLite sometimes incorrectly reports 'Execute returned results' when using queryRawUnsafe for WAL mode if it's already set. Catch and ignore this specific error string.
