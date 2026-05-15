@@ -153,6 +153,9 @@ execFile('open', [url]);
 ```
 
 **Why:** freeGames `openInBrowser()` passed user-controlled URLs through `exec()`. Fixed in run #253 by switching to `execFile()` with a URL validation guard rejecting non-http(s) protocols.
+| `if (secret === input)` | Timing attack leaks secret length/content | Use `crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))` |
+| `new URL(userInput)` without scheme check | SSRF via `file://`, `data://`, `javascript://` | Validate `url.protocol` is `http:` or `https:` before use |
+| `path.join(base, userInput)` unsanitized | Path traversal via `../` sequences | Strip `..`, leading `/`, and non-alphanumeric chars from user path segments |
 
 ## Prisma globalThis Singleton — Always Cache in Production
 
