@@ -142,3 +142,15 @@ git bisect good <hash>  # this commit was working
   - PRAGMA journal_mode=WAL; returns a result (the new mode), so it often requires queryRawUnsafe.
   - PRAGMA busy_timeout=5000; does NOT return a result, so use executeRawUnsafe.
   - Prisma/SQLite sometimes incorrectly reports 'Execute returned results' when using queryRawUnsafe for WAL mode if it's already set. Catch and ignore this specific error string.
+- **`connection_limit=1` is required for SQLite in Next.js apps.** Next.js can spawn multiple worker threads; without `connection_limit=1`, they contend for the same SQLite file and cause "Database is locked" timeouts. Add to the DATABASE_URL:
+  ```
+  DATABASE_URL="file:./production.db?connection_limit=1&timeout=30&pool_timeout=30"
+  ```
+  Or inject dynamically in your Prisma singleton (lib/prisma.ts) if the URL is set without params. Source: runeval had 7 commits resolving this before stabilizing on the URL param approach (2026-05-15).
+- **WAL mode + busy_timeout at app startup** (in lib/prisma.ts singleton):
+  ```ts
+  if (process.env.DATABASE_URL?.startsWith('file:')) {
+    prisma.$executeRawUnsafe('PRAGMA journal_mode=WAL;').catch(() => {});
+    prisma.$executeRawUnsafe('PRAGMA busy_timeout=5000;').catch(() => {});
+  }
+  ```
