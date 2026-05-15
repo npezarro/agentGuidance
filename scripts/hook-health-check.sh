@@ -19,7 +19,7 @@ log() { echo "[$TIMESTAMP] $*" | tee -a "$LOG_FILE"; }
 FAILURES=()
 
 # --- 1. GitHub raw CDN (hook scripts must be fetchable) ---
-for script in post-to-discord.sh post-closeout.sh post-to-wordpress.sh; do
+for script in post-to-discord.sh post-closeout.sh save-to-wp-repo.sh; do
   URL="https://raw.githubusercontent.com/npezarro/agentGuidance/main/hooks/${script}"
   HTTP_CODE=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" != "200" ]; then
@@ -57,7 +57,7 @@ else
   log "FAIL: DISCORD_WEBHOOK_URL not configured"
 fi
 
-# --- 4. WordPress REST API (post-to-wordpress.sh dependency) ---
+# --- 4. WordPress REST API (save-to-wp-repo.sh dependency) ---
 WP_SITE="${WP_SITE:-https://example.com}"
 WP_CODE=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "${WP_SITE}/wp-json/wp/v2/posts?per_page=1" 2>/dev/null || echo "000")
 if [ "$WP_CODE" = "200" ] || [ "$WP_CODE" = "401" ]; then

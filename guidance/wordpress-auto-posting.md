@@ -7,7 +7,7 @@ Claude Code sessions automatically save a markdown file at the end of each inter
 ```
 Claude Code session ends
   -> Stop hook fires
-  -> Fetches post-to-wordpress.sh from agentGuidance repo
+  -> Fetches save-to-wp-repo.sh from agentGuidance repo
   -> Reads last user prompt + assistant response from transcript
   -> Redacts secrets (app passwords, API keys, tokens, IPs)
   -> Writes a .md file with YAML frontmatter to ~/repos/wordpressPosts/
@@ -21,7 +21,7 @@ The hook exits silently if the repo doesn't exist or jq isn't installed.
 | Component | Location |
 |-----------|----------|
 | Hook config | `.claude/settings.json` (per-repo, propagated by `scripts/propagate-hooks.sh`) |
-| Posting script | `hooks/post-to-wordpress.sh` (fetched at runtime from agentGuidance) |
+| Posting script | `hooks/save-to-wp-repo.sh` (fetched at runtime from agentGuidance) |
 | Output repo | `~/repos/wordpressPosts` (private GitHub repo) |
 
 ## File Format
