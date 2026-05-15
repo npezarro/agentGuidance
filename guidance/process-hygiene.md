@@ -95,6 +95,22 @@ fi
 
 **Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
 
+## Bash `set -u` with Optional Parameters
+
+When scripts use `set -u` (nounset), referencing an unset positional parameter like `$2` causes an immediate exit. This breaks scripts where positional args are optional.
+
+**Fix:** Use `${N:-}` (empty default) or `${N:-default}` for any positional parameter that may not be passed:
+
+```bash
+# WRONG — exits if $2 is not provided under set -u
+if [[ "$2" == "--bg" ]]; then
+
+# RIGHT — defaults to empty string
+if [[ "${2:-}" == "--bg" ]]; then
+```
+
+**Why:** browser-agent's CLI hit this (2cd17b7, 2026-05-15). The `open` command's `$2` was conditionally checked for `--bg` but failed when omitted. Applies to any script using `set -euo pipefail` with optional args.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
