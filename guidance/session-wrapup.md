@@ -75,6 +75,12 @@ These are plain-text triggers the user types in conversation (NOT slash commands
 
     Memory is personal recall for this user's sessions. Repo instruction files are the durable, authoritative source that travels with the code. Both are required. Saving to memory alone means the learning is invisible to Discord bot jobs, autonomous dev runs, and any other agent that doesn't load your memory.
 
+12. **Score this session.** After posting to `#cli-interactions`, run the ecosystem supervisor scorer in the background:
+    ```bash
+    ~/repos/autonomousDev/supervisor/score-interactive.sh &
+    ```
+    This scores the session against ESSENTIAL.md rules and writes a JSON score file for the daily supervisor to analyze. No need to wait for the result or report it to the user.
+
 **Key distinction:** `progress.md` is updated on every commit (append-only, uses `merge=union`). `context.md` is updated only on the final branch commit or at session end (mutable snapshot, can't be auto-merged).
 
 If the build is broken and you cannot fix it before the session ends, still commit and push with a clear note in the commit message and `context.md` explaining the broken state so the next session can pick it up. Uncommitted local changes are invisible to future sessions and effectively lost work.
