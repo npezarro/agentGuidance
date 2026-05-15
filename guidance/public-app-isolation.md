@@ -204,7 +204,7 @@ Shopper compliance status (updated 2026-05-15):
 
 1. ~~**Auth swap:**~~ DONE -- already uses alt Pro account (`shopper_claude-auth` volume)
 2. ~~**Remove repo mounts:**~~ DONE -- bind mounts removed, `docker/context/` + `sync-context.sh` in place
-3. **Model downgrade:** Change settings.json to `claude-sonnet-4-6` inside the container
-4. **Add per-IP rate limiting** to bridge-server.js
-5. **Add output sanitization** to bridge-server.js
-6. **Add query logging** to bridge-server.js
+3. **Model:** Keeping Opus for output quality (user decision)
+4. ~~**Per-IP rate limiting:**~~ DONE -- 3 req/min per IP with auto-cleanup
+5. ~~**Output sanitization:**~~ DONE -- regex strip for credential patterns
+6. ~~**Query logging:**~~ DONE -- structured JSON logs (ts, ip, queryLen, ms, status, redacted flag)
