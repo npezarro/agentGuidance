@@ -83,5 +83,6 @@ Load on-demand based on the current task:
 - `guidance/mcp-tools.md` -- MCP tool provider selection (Claude AI vs piotr google-drive)
 - `guidance/prior-work-lookup.md` -- finding past conversations and prior work
 - `guidance/research-quality.md` -- curating high-quality references and study resources
+- `guidance/deep-research.md` -- research depth and methodology before producing guides or recommendations
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
 - `guidance/repo-creation.md` -- checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure

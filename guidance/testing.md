@@ -170,7 +170,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
@@ -179,7 +179,7 @@ jobs:
 **Python repos** use a similar pattern with `setup-python@v5`, `pip install`, and `pytest`.
 
 **Key rules:**
-- Pin Node.js to 20 (matches CI standard). Don't use `node-version: 'lts/*'` — some Node 22+ APIs (Promise.withResolvers, Object.groupBy) will pass locally but fail CI.
+- Pin Node.js to 22 (current LTS). Node 20 reached EOL on April 30, 2026; repos still using Node 20 in CI should migrate. Don't use `node-version: 'lts/*'` as it can shift unexpectedly.
 - The file is named `test.yml`, not `ci.yml`.
 - Branch trigger must match the repo's actual default branch (`main` vs `master`).
 - When adding first tests to a repo, also add the CI workflow so tests run on every PR.

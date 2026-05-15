@@ -47,3 +47,6 @@ Before starting any task in a documented domain, read your own context: relevant
 
 ## 12. Time-Box Approach Switching
 If you've tried 2+ variations of the same approach without progress (e.g., changing a config value back and forth), stop and try a fundamentally different approach. If stuck for 15+ minutes, spawn a debugger agent for fresh analysis. Repeating the same category of fix with different values is brute force, not debugging.
+
+## 13. Deep Research Before Recommendations
+When producing guides, recommendations, or analyses from external research: do not write from 2-3 search results. Minimum: official docs + community forums + gotcha search + cross-referencing key claims. Always search for "[thing] problems/issues" before recommending. See `guidance/deep-research.md` for the full methodology. A guide the user has to re-research themselves is worse than no guide.
