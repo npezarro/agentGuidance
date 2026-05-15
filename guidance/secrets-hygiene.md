@@ -178,7 +178,26 @@ curl -sf "$HEALTH_URL" > /dev/null
 - Deploy details: see privateContext/infrastructure.md (myapp row)
 ```
 
-## History Rewriting — Collateral Damage
+## History Rewriting — Techniques and Collateral Damage
+
+### Email-Only Rewrites with Mailmap
+
+To change commit author/committer emails without touching file content (e.g., removing personal emails from public repo history), use `--mailmap`:
+
+```bash
+# 1. Unshallow first — filter-repo refuses to run on shallow clones
+git fetch --unshallow 2>/dev/null || true
+
+# 2. Create a mailmap file
+echo "Name <new@email.com> <old@email.com>" > /tmp/mailmap
+
+# 3. Rewrite history (changes metadata only, not file content)
+git filter-repo --mailmap /tmp/mailmap --force
+```
+
+This is the right tool when `npm audit` or security scans flag personal emails in commit metadata. It does not touch file content, so collateral damage risk is minimal compared to `--replace-text`.
+
+### Collateral Damage from Content Rewrites
 
 `git filter-repo` replaces strings across **all commits including the current working tree**. This causes collateral damage when the replacement is too broad:
 
