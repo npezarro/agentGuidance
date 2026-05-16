@@ -142,3 +142,14 @@ git bisect good <hash>  # this commit was working
   - PRAGMA journal_mode=WAL; returns a result (the new mode), so it often requires queryRawUnsafe.
   - PRAGMA busy_timeout=5000; does NOT return a result, so use executeRawUnsafe.
   - Prisma/SQLite sometimes incorrectly reports 'Execute returned results' when using queryRawUnsafe for WAL mode if it's already set. Catch and ignore this specific error string.
+- **Prisma singleton: always assign to global, even in production.** The common Next.js pattern guards the globalForPrisma assignment with `if (process.env.NODE_ENV !== 'production')`. But in production, Next.js worker threads reload modules without reinitializing globals — removing the guard causes a new PrismaClient per request, which exhausts the connection pool and causes OOM crashes. Fix:
+  ```ts
+  export const prisma = globalForPrisma.prisma || createPrisma();
+  globalForPrisma.prisma = prisma;  // always, not just in dev
+  ```
+  Source: finance-tracker hit an OOM crash loop in production until this guard was removed (2026-05-15).
+- **Next.js apps OOMing under load: increase heap size in ecosystem.config.** The default Node.js heap is ~512MB. Next.js SSR under load can exceed this. Set via PM2 `env`:
+  ```js
+  env: { NODE_OPTIONS: '--max-old-space-size=1024' }
+  ```
+  Also raise `max_memory_restart` from the default 250M to match (e.g., `1G`). Source: finance-tracker crash loop resolved by both the Prisma singleton fix and heap increase (2026-05-15).
