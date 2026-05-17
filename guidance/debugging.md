@@ -138,7 +138,39 @@ git bisect good <hash>  # this commit was working
 - **Database is locked**: In SQLite, concurrent writes cause locking.
   - **Fix**: Move updateMany or createMany calls OUT of loops. Consolidate into a single operation per user/batch.
   - **Pragma**: Use PRAGMA busy_timeout=5000; to make SQLite wait instead of failing immediately.
-- **executeRawUnsafe vs queryRawUnsafe**:
-  - PRAGMA journal_mode=WAL; returns a result (the new mode), so it often requires queryRawUnsafe.
-  - PRAGMA busy_timeout=5000; does NOT return a result, so use executeRawUnsafe.
-  - Prisma/SQLite sometimes incorrectly reports 'Execute returned results' when using queryRawUnsafe for WAL mode if it's already set. Catch and ignore this specific error string.
+- **executeRawUnsafe vs queryRawUnsafe for PRAGMAs**:
+  - Use `$queryRawUnsafe` for **both** `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000`. Even though busy_timeout doesn't always return a result, `$queryRawUnsafe` is safer — `$executeRawUnsafe` triggers Prisma's "Execute returned results" error when Prisma unexpectedly gets back a result row.
+  - Catch and ignore the `"Execute returned results"` error for both PRAGMAs — it means the PRAGMA worked (or was already set). Log all other errors.
+  ```ts
+  prisma.$queryRawUnsafe(`PRAGMA journal_mode=WAL;`).catch((err) => {
+    if (!err.message?.includes("Execute returned results")) {
+      console.error("Failed to enable WAL mode:", err);
+    }
+  });
+  prisma.$queryRawUnsafe(`PRAGMA busy_timeout=5000;`).catch((err) => {
+    if (!err.message?.includes("Execute returned results")) {
+      console.error("Failed to set busy_timeout:", err);
+    }
+  });
+  ```
+  **Why:** Runeval hit a crash loop (2026-05-16) from `$executeRawUnsafe` triggering the error on busy_timeout. Using `$queryRawUnsafe` + catch-and-ignore for both is the stable pattern.
+
+### 10. Prisma + PostgreSQL: Use pg.Pool, Not Raw Connection String
+
+When using `@prisma/adapter-pg` (PrismaPg), pass a `pg.Pool` instance — not a raw connection string — to get proper connection pool control.
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+  max: 10,                   // max connections in pool
+  idleTimeoutMillis: 30000,  // close idle connections after 30s
+  connectionTimeoutMillis: 5000, // fail fast if no connection available in 5s
+});
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
+```
+
+**Why:** `new PrismaPg({ connectionString })` creates an unmanaged pool with no limits, max, or timeout configuration. Passing a `pg.Pool` instance lets you control pool size and prevent connection exhaustion under load. Source: finance-tracker refactor (2026-05-16) that resolved connection management issues.
