@@ -138,7 +138,26 @@ git bisect good <hash>  # this commit was working
 - **Database is locked**: In SQLite, concurrent writes cause locking.
   - **Fix**: Move updateMany or createMany calls OUT of loops. Consolidate into a single operation per user/batch.
   - **Pragma**: Use PRAGMA busy_timeout=5000; to make SQLite wait instead of failing immediately.
-- **executeRawUnsafe vs queryRawUnsafe**:
-  - PRAGMA journal_mode=WAL; returns a result (the new mode), so it often requires queryRawUnsafe.
-  - PRAGMA busy_timeout=5000; does NOT return a result, so use executeRawUnsafe.
-  - Prisma/SQLite sometimes incorrectly reports 'Execute returned results' when using queryRawUnsafe for WAL mode if it's already set. Catch and ignore this specific error string.
+- **executeRawUnsafe vs queryRawUnsafe for PRAGMAs**:
+  - Use `$queryRawUnsafe` for BOTH `PRAGMA journal_mode=WAL;` AND `PRAGMA busy_timeout=5000;`.
+  - Using `$executeRawUnsafe` for busy_timeout causes a spurious "Execute returned results" error.
+  - Catch and ignore BOTH `"Execute returned results"` and `"Raw query failed"` error strings — either can appear depending on Prisma version and whether WAL mode was already set.
+
+  ```typescript
+  try {
+    await client.$queryRawUnsafe(`PRAGMA journal_mode=WAL;`);
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    if (!msg.includes("Execute returned results") && !msg.includes("Raw query failed")) {
+      console.warn("SQLite WAL mode issue:", msg);
+    }
+  }
+  try {
+    await client.$queryRawUnsafe(`PRAGMA busy_timeout=5000;`);
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    if (!msg.includes("Execute returned results") && !msg.includes("Raw query failed")) {
+      console.warn("SQLite busy_timeout issue:", msg);
+    }
+  }
+  ```
