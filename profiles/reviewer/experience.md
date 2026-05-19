@@ -48,3 +48,24 @@
 **What worked:** Fetched all 9 diffs in parallel, then read the current state of every modified file to check for duplicates and context. Verified the Node 20 EOL claim (April 30, 2026) via nodejs.org. Compared #199 and #204 side-by-side since both added npm overrides to the same file; identified #204 as the more complete version and #199 as having one unique pattern ($devDep reference syntax) worth preserving after rebase. Also caught a corrupted UTF-8 character in #199's diff on an existing line.
 **What didn't:** Could have checked research-quality.md earlier to confirm deep-research.md was complementary rather than overlapping; ended up reading it after forming an initial opinion.
 **Learned:** When two PRs modify the same file at the same location, compare both diffs side-by-side before recommending merge order. The more complete PR should merge first; the other should rebase and contribute only its unique additions. Also: always verify factual date claims (EOL dates, deprecation timelines) against primary sources rather than trusting PR authors.
+
+---
+## 2026-05-19 | shopper PR #2 accuracy review
+**Task:** Review PR #2 (docs: document Discord notifications, job queue, follow-up, and link verification) for accuracy and completeness against the actual 2026-05-18 git history.
+**What worked:** Fetched PR diff, current CLAUDE.md, and all 12 commits from 2026-05-18 in parallel. Then ran git show --stat on every commit to categorize features. Cross-referenced PR claims (constant values like MAX_CONCURRENT=3, MAX_FOLLOW_UPS=5, MAX_QUEUE=10) against actual source code. Caught a commit count discrepancy (PR says 15, actual is 12) and identified 5 commits whose features were not documented in the PR.
+**What didn't:** Nothing significant -- the parallel approach kept review fast.
+**Learned:** When a docs PR claims to cover "all features from N commits," always count the actual commits independently. Also verify the commit range boundaries: the PR claimed 902be11 through c51ceec (7 commits), but 5 earlier commits on the same day fell outside that range and introduced undocumented features (API error detection, BRIDGE_SECRET in docker-compose, auth fix, link-verifier creation, link verification timing change).
+
+---
+## 2026-05-19 | auth-proxy cross-repo review
+**Task:** Verify auth-proxy security hardening commit (ALLOWED_TARGETS allowlist, structured logging) and cross-repo documentation consistency with shopper.
+**What worked:** Grepped all repos for `__auth_target` in middleware.ts files to verify every downstream app's cookie value matches the ALLOWED_TARGETS set. This immediately surfaced that runeval's cookie-setting code lives in proxy.ts (not middleware.ts), which is a known issue from the shopper SECURITY-AUDIT.md. Cross-referencing CLAUDE.md docs in both repos confirmed bidirectional documentation consistency.
+**What didn't:** Nothing significant -- parallel reads of both repos kept the review fast.
+**Learned:** When reviewing an allowlist-based security control, verify both directions: (1) every allowlist entry has a corresponding downstream implementation, and (2) every downstream implementation has a corresponding allowlist entry. Also check that the downstream implementations are actually wired up (correct file path, exported correctly) -- an allowlist entry for a non-functional app gives false confidence.
+
+---
+## 2026-05-19 | autonomousDev fix-checker prompt PRs (#153 + private #1)
+**Task:** Review paired PRs adding context-gathering gate and post-merge verification to fix-checker prompt (S157/S158 suggestions).
+**What worked:** Read both the public and private prompt diffs in parallel, then compared them against each other and against the suggestion history (S157/S158 escalation chain across runs #559, #563, #564, #565). Checked structural placement of new sections in both files to confirm they were inserted at the equivalent location. Caught an unrelated SSH alias-to-IP change bundled into the private PR.
+**What didn't:** Nothing significant -- parallel fetching of both PRs, both prompts on main, and the suggestion context gave a complete picture in two rounds.
+**Learned:** When reviewing paired PRs (public + private repo), always diff the two diffs against each other. The private PR bundled an unrelated SSH change (VM alias to raw IP) that the public PR did not have. Bundled unrelated changes in paired PRs are easy to miss if you only review each PR in isolation. Also: when a suggestion has an escalation chain (S157 -> S158 -> S158 3rd escalation), read the full chain to understand what was originally requested versus what was actually implemented -- the implementation may be a subset.
