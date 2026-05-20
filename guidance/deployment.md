@@ -113,6 +113,33 @@ rsync -az --delete ./dist/ "$DEPLOY_TARGET"
 
 **Why this matters:** A real deploy overwrote a production database port with a local dev port, causing all connections to fail silently. The root cause was `rsync --delete` without `--exclude .env`.
 
+## PM2 + ESM Module Incompatibility
+
+**PM2 cluster mode is incompatible with ESM modules.** When a Node.js service uses `"type": "module"` in `package.json` or imports `.mjs` files, setting `exec_mode: "cluster"` in the PM2 ecosystem config will crash the process on start.
+
+**Fix:** Use a `start.sh` bash wrapper and `exec_mode: "fork"`:
+
+```bash
+# start.sh
+#!/bin/bash
+cd /var/www/<service>
+source .env 2>/dev/null || true
+exec node server.js
+```
+
+```js
+// ecosystem.config.cjs
+{
+  script: "./start.sh",
+  interpreter: "bash",
+  exec_mode: "fork",  // NOT cluster
+}
+```
+
+Benefits: `start.sh` also loads `.env` before the process starts, ensuring env vars are available at cold start without relying on PM2's env injection (which can miss vars in some setups).
+
+Repos using this pattern: `claude-auto-merger`, `shopper`.
+
 ## VM SSH Access
 
 The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
