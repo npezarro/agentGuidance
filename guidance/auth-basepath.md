@@ -217,6 +217,25 @@ Before deploying auth changes to any subpath app:
 4. **Cookie path consistency**: Do CSRF and callback hit the same cookie domain/path?
 5. Only then declare auth working.
 
+## Session Cookie Isolation (2026-05-20)
+
+When multiple NextAuth apps share a domain (e.g., `example.com`), they MUST have unique session cookie names. The default `__Secure-authjs.session-token` will collide: logging into one app overwrites the session for every other app.
+
+**Required in every app's NextAuth config:**
+```typescript
+cookies: {
+  sessionToken: {
+    name: "__Secure-<appname>.session-token",
+    options: { httpOnly: true, sameSite: "lax", path: "/", secure: true },
+  },
+},
+session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal apps
+```
+
+**Current cookie names:** finance, health-hub, student, runeval, shopper, travel.
+
+**Add to the new-app checklist:** When adding a new app, assign a unique cookie name following this pattern.
+
 ## Rules for Future Work
 
 1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.
