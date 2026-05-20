@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-05-15 | Security scanner: Haiku first-pass + Sonnet escalation, Gemini/Codex shadow runners
+2026-05-20 | WordPress auto-posting fix: removed direct WP publishing from VM, trashed 139 auto-posts
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -20,19 +20,21 @@
 - **auto-file-links.sh** broadened: now posts links for ALL .md files on push (excludes README/CHANGELOG/CLAUDE/MEMORY/config/.claude/)
 - **git-push-reminder.sh** hook added: PostToolUse on Edit|Write, reminds agent to commit+push when writing to a git repo with uncommitted changes. Added to ~/.claude/settings.json. Skips memory, .claude, .env, credentials, and gitignored files.
 
-## Recent Changes (2026-05-15)
+## Recent Changes (2026-05-20)
+- **WordPress auto-posting fix:** VM `~/.claude/settings.json` had old `post-to-wordpress.sh` Stop hook that directly published to WordPress. Replaced with fetch-from-GitHub `save-to-wp-repo.sh` pattern (exits silently since VM lacks wordpressPosts repo). Deleted old script. Trashed 139 auto-posts.
+- **Stale per-repo references:** 28 repos (8 VM, 20 local) still have old `post-to-wordpress.sh` URL in `.claude/settings.json`. Harmless (404s silently). Next `propagate-hooks.sh` run cleans them up.
+
+### Previous (2026-05-15)
 - **Security scanner model tiering:** Opus -> Haiku first pass + Sonnet escalation for critical/high findings (`scripts/security-scanner/run.sh`)
-- **Security scanner shadow runners:** `run-gemini.sh` (5:30 UTC) and `run-codex.sh` (6:00 UTC) for model comparison
-- **Shadow comparison tool:** `scripts/security-scanner/compare-shadows.py` -- run after ~7 days to evaluate handoff potential
 - **Stop hook safety framework:** `guidance/stop-hook-safety.md` + guard library at `hooks/lib/stop-hook-guard.sh`
 
 ## Open Work
+- **Run `propagate-hooks.sh`** to clean up 28 stale per-repo `post-to-wordpress.sh` references
 - **Evaluate shadow runner results ~May 22:** `python3 scripts/security-scanner/compare-shadows.py --days 7`
 - S6 (branch collision risk) and S7 (deployment cross-ref) still open, minor
-- Several repos still have local branches checked out on old feature branches (not blocking)
 - Recurring tasks infrastructure is generic; task configs and prompts live in `~/repos/privateContext/recurring-tasks/`
 
-Full session closeout: `privateContext/deliverables/closeouts/2026-05-15-token-optimization-shadow-runners.md`
+Full session closeout: `privateContext/deliverables/closeouts/2026-05-20-wordpress-auto-posting-fix.md`
 
 ## Environment Notes
 - **Repo:** PUBLIC; do not commit secrets or infrastructure details
