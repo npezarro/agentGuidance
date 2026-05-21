@@ -177,3 +177,22 @@ Don't claim the user did something (submitted an application, sent an email, pub
 - **Deploys:** Check PM2 status and server logs (see deployment.md § "Check the Server Before Asking")
 - **Git pushes:** Check `git log origin/main` or `gh pr list`
 - **Any user action:** Look for the completion artifact, not the preparation artifact
+
+## Health Monitor Self-Exclusion
+
+**When writing a health monitor or watchdog that scans PM2 processes, always skip the monitor's own process.**
+
+If a health monitor watches all processes — including itself — it can trigger auto-immune loops: the monitor detects its own high restart count, attempts to fix it, restarts itself, which increments the restart count, which triggers another fix attempt.
+
+**Pattern:**
+```python
+for proc in processes:
+    name = proc["name"]
+    if name == "fix-error-handler":  # skip self
+        continue
+    # ... health checks
+```
+
+**Why:** The fix-checker `error_handler.py` (2026-05-20) hit this: it scanned all PM2 processes including `fix-error-handler` itself. The dedup window increase (1h → 24h) was also needed to prevent repeated self-triggering within a single incident window.
+
+**Rule:** Any monitoring daemon that calls `pm2 jlist` and iterates over processes must exclude its own process name from health checks.
