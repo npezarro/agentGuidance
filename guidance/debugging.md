@@ -139,6 +139,6 @@ git bisect good <hash>  # this commit was working
   - **Fix**: Move updateMany or createMany calls OUT of loops. Consolidate into a single operation per user/batch.
   - **Pragma**: Use PRAGMA busy_timeout=5000; to make SQLite wait instead of failing immediately.
 - **executeRawUnsafe vs queryRawUnsafe**:
-  - PRAGMA journal_mode=WAL; returns a result (the new mode), so it often requires queryRawUnsafe.
-  - PRAGMA busy_timeout=5000; does NOT return a result, so use executeRawUnsafe.
-  - Prisma/SQLite sometimes incorrectly reports 'Execute returned results' when using queryRawUnsafe for WAL mode if it's already set. Catch and ignore this specific error string.
+  - Use `$queryRawUnsafe` for **both** `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000`.
+  - Both PRAGMAs return rows in some SQLite/Prisma versions. Using `$executeRawUnsafe` for `busy_timeout` causes spurious `'Execute returned results'` errors.
+  - Catch **both** `'Execute returned results'` and `'Raw query failed'` around PRAGMA calls — either can surface depending on SQLite/Prisma version combination.
