@@ -33,6 +33,15 @@ if ! flock -n 200; then
   exit 1
 fi
 
+# --- Usage gate (fail-closed) ---
+USAGE_SCRIPT="$HOME/repos/privateContext/check-usage.sh"
+if [ -x "$USAGE_SCRIPT" ]; then
+  if ! "$USAGE_SCRIPT" --gate 2>/dev/null; then
+    echo "SKIP: Usage over threshold"
+    exit 0
+  fi
+fi
+
 # --- Ensure report dir exists ---
 mkdir -p "$REPORT_DIR"
 
