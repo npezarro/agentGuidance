@@ -50,7 +50,7 @@ fi
 
 USAGE_SCRIPT="$HOME/repos/privateContext/check-usage.sh"
 if [ -x "$USAGE_SCRIPT" ]; then
-  if ! "$USAGE_SCRIPT" --gate 2>/dev/null; then
+  if ! "$USAGE_SCRIPT" --gate-at 50 2>/dev/null; then
     log "SKIP: Usage over threshold"
     exit 0
   fi
