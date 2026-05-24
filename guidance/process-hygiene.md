@@ -95,6 +95,24 @@ fi
 
 **Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
 
+## PM2 wait_ready Anti-Pattern
+
+Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the application explicitly calls `process.send('ready')` after initialization.
+
+When `wait_ready: true` is set on an app that never sends the ready signal, PM2 treats every startup as a timeout and enters a crash loop (repeated restarts with no successful online state).
+
+```js
+// BAD — causes crash loop if app doesn't send 'ready'
+{ name: "my-app", wait_ready: true }
+
+// GOOD — omit wait_ready or set false (the default)
+{ name: "my-app" }
+```
+
+**Why:** netflix-social hit this in 2026-05. The PM2 ecosystem config was created with `wait_ready: true` but the Next.js app has no `process.send('ready')` call. PM2 kept restarting it until `wait_ready` was removed.
+
+**Rule:** Only use `wait_ready: true` when you also add `process.send('ready')` to the application startup code. Otherwise, leave it out.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
