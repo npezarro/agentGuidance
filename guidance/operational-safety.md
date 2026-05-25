@@ -216,3 +216,39 @@ for proc in processes:
 **Why:** The fix-checker `error_handler.py` (2026-05-20) hit this: it scanned all PM2 processes including `fix-error-handler` itself. The dedup window increase (1h → 24h) was also needed to prevent repeated self-triggering within a single incident window.
 
 **Rule:** Any monitoring daemon that calls `pm2 jlist` and iterates over processes must exclude its own process name from health checks.
+
+### PM2 Log Artifacts and ANSI Codes in Error Handlers
+
+Two related patterns that cause error handler crash loops or Discord floods when reading PM2 log output:
+
+**1. PM2 log format artifacts in IGNORE_PATTERNS**
+
+PM2 log output contains formatting lines that are not actual errors: separator lines (`---`), the `pm2 logs` command echo, and the handler's own prefixed log lines (e.g., `[error-handler]`). Without ignore patterns for these, the handler classifies them as errors and alerts/loops on its own output.
+
+Always include these in `IGNORE_PATTERNS` for any PM2 log-reading error handler:
+```python
+IGNORE_PATTERNS = [
+    r"\[error-handler\]",  # handler's own log prefix
+    r"pm2 logs",           # pm2 command echo
+    r"^---$",              # PM2 separator lines
+]
+```
+
+**2. ANSI escape codes break dedup signatures**
+
+PM2 sometimes emits ANSI escape sequences in log lines (color codes, cursor movement). If not stripped before computing the error signature hash, the same underlying error produces different hashes across restarts → Discord flood.
+
+Always strip ANSI before pattern matching and dedup:
+```python
+import re
+ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE.sub('', text)
+
+# In your log-reading loop:
+clean_line = _strip_ansi(raw_line)
+signature = hashlib.md5(clean_line.encode()).hexdigest()
+```
+
+Source: trading-agent `error_handler.py` PRs #67/#68 (2026-05-24).
