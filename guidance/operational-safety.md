@@ -112,6 +112,26 @@ count=$(grep -c 'pattern' file || true)
 
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
 
+## Claude CLI Rate Limit Detection in Service Wrappers
+
+**The scenario:** A service wraps `claude -p` (e.g., via `spawn` or `execFile`) and reads stdout for the AI response. When the user hits their usage limit, Claude CLI exits with code 0 but outputs a rate limit message instead of a real response (e.g., "You've hit your limit... resets 3:50pm PT"). The service treats this as a successful result, returning garbage content to the user.
+
+**Real incident (2026-05-15):** Shopper's Docker bridge server returned rate limit text as a "completed" buying guide. Jobs were marked successful with useless content because the bridge only checked exit code, not output content.
+
+**Fix:** After collecting stdout from any `claude -p` subprocess, check for rate limit patterns before treating the output as valid:
+
+```javascript
+const output = stdout.trim();
+if (output.match(/you've hit your limit/i) || output.match(/resets \d+:\d+[ap]m/i)) {
+  // Return 429 or retry error, NOT success
+  return { error: "AI at capacity", status: 429 };
+}
+```
+
+**Rule:** Any service wrapping Claude CLI must detect rate limit responses and translate them to errors (HTTP 429 or equivalent). Do not rely on exit codes alone; rate limit messages arrive on stdout with exit code 0.
+
+**Where this applies:** shopper bridge, error_handler Claude invocations, any future service that pipes prompts to `claude -p` and parses stdout.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
