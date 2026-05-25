@@ -277,3 +277,17 @@ signature = hashlib.md5(clean_line.encode()).hexdigest()
 ```
 
 Source: trading-agent `error_handler.py` PRs #67/#68 (2026-05-24).
+
+**3. Log message prefixes that mis-trigger monitoring**
+
+Avoid structured-looking prefixes like `SUCCESS:`, `ERROR:`, or `WARN:` in info/success log messages of a monitoring daemon. If the daemon (or a downstream watcher) pattern-matches on its own log output, a `SUCCESS:` prefix in a normal info line can look like a different error class and re-enter the alert pipeline.
+
+```python
+# BAD — "SUCCESS:" could be caught by a pattern scanner watching for status keywords
+logger.info(f"SUCCESS: Claude fix complete (cost: ${cost:.4f})")
+
+# GOOD — plain message; log level already communicates severity
+logger.info(f"Claude fix complete (cost: ${cost:.4f})")
+```
+
+Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25).
