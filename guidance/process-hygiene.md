@@ -293,6 +293,12 @@ func()
 
 Source: trading-agent `run.sh` commit 4958408 (2026-05-25).
 
+**When applying this fix: search ALL shell scripts for inline Python blocks.** The same import pattern may exist in multiple scripts. Use:
+```bash
+grep -rn 'python.*-c\|-c "' *.sh
+```
+Real incident: fix was applied to `run.sh` but missed `run-daytrade.sh`, requiring a follow-up commit (a0426cc, 2026-05-25).
+
 ## Node.js 22 HTTP Gotchas
 
 ### Built-in `fetch` headersTimeout
