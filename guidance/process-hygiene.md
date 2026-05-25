@@ -72,6 +72,28 @@ When PM2 restarts a process, the old Node instance may not release its port befo
 
 **Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
 
+## Docker Bind Mount Refresh
+
+**`docker compose restart` does NOT refresh bind mounts.** When a container is restarted with `docker compose restart`, the container process is restarted but the container itself is not recreated. Bind mount inodes remain stale, so any files updated on the host (e.g., credential files, OAuth tokens) are not visible inside the container until the container is recreated.
+
+**Fix:** Use `docker compose down && docker compose up -d` instead of `docker compose restart` for any operation that requires the container to pick up updated host files:
+
+```bash
+# WRONG — container process restarts but bind mount stays stale
+docker compose restart
+
+# CORRECT — container is fully recreated, bind mounts are fresh
+docker compose down && docker compose up -d
+```
+
+**When this matters most:**
+- Auth refresh cron jobs that regenerate credential files on the host and expect the container to use them
+- Any post-rotate token handoff from host to containerized service
+
+**Diagnosis:** If a cron-based recovery script keeps looping (restarting the container repeatedly without recovering), but the credential file on the host is valid, this is the likely cause. The container is holding a stale mount.
+
+**Source:** shopper auth refresh cron (commit b5c2338, 2026-05-24) — cron restart loop ran for days because `restart` never picked up refreshed credentials.
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
