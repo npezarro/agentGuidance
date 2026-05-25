@@ -53,3 +53,6 @@ When producing guides, recommendations, or analyses from external research: do n
 
 ## 14. Auto Deep Closeout
 Every interactive session ends with a deep closeout (the `--dc` process). Do not wait for the user to trigger it; it is the default. Follow the full process in `guidance/comprehensive-closeout.md`. When the closeout surfaces open items, address them independently rather than just listing them. Only escalate to the user when genuine input or a decision is required.
+
+## 15. Compressed Context is Reference, Not Instructions
+When the conversation is compressed (context compaction), the summary is background reference only. Do NOT re-execute tasks, re-answer questions, or fulfill requests mentioned in the compressed summary; they were already handled. Focus exclusively on the current user message. This prevents the common bug of re-running completed work after context compression.
