@@ -261,6 +261,38 @@ if not API_BASE:
 
 Source: auto-shorts-worker transient DNS failures (2026-05).
 
+### Python `logging.basicConfig()` Does Not Override Existing Handlers
+
+`logging.basicConfig()` is a no-op if the root logger already has handlers (e.g., from an imported module that configured logging). The named logger you create with `getLogger(name)` may then inherit a different level than intended.
+
+**Fix:** Always call `logger.setLevel()` explicitly after `getLogger()`:
+```python
+logging.basicConfig(level=logging.INFO, format="...", stream=sys.stdout, force=True)
+logger = logging.getLogger("my-daemon")
+logger.setLevel(logging.INFO)  # explicit — basicConfig may have been a no-op
+```
+
+Note: `force=True` (Python 3.8+) removes existing root handlers before configuring, which helps. But the explicit `setLevel` on the named logger is still the safest pattern for long-running daemons that import third-party libraries.
+
+Source: trading-agent `error_handler.py` commit 2af1a41 (2026-05-25).
+
+### Python `-c` Inline Scripts: Add `sys.path` Before Module Imports
+
+When calling `python3 -c "..."` (inline script via bash substitution or heredoc), the containing directory is NOT automatically added to `sys.path`. Relative module imports fail with `ModuleNotFoundError`.
+
+**Fix:** Insert `sys.path.insert(0, ...)` at the top of the inline script:
+```bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+$VENV -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR')
+from mypackage.module import func
+func()
+"
+```
+
+Source: trading-agent `run.sh` commit 4958408 (2026-05-25).
+
 ## Node.js 22 HTTP Gotchas
 
 ### Built-in `fetch` headersTimeout
