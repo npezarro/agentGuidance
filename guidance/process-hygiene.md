@@ -111,6 +111,105 @@ if [[ "${2:-}" == "--bg" ]]; then
 
 **Why:** browser-agent's CLI hit this (2cd17b7, 2026-05-15). The `open` command's `$2` was conditionally checked for `--bg` but failed when omitted. Applies to any script using `set -euo pipefail` with optional args.
 
+## PM2 wait_ready Anti-Pattern
+
+Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
+
+Without that signal, PM2 treats every startup as a timeout and enters a crash loop.
+
+```js
+// BAD — crash loop if app never sends 'ready'
+{ name: "my-app", wait_ready: true }
+
+// GOOD — omit it (defaults to false)
+{ name: "my-app" }
+```
+
+Only set `wait_ready: true` when you also add `process.send('ready')` to the app startup code. Source: netflix-social (2026-05).
+
+## Next.js `experimental.mcpServer` Causes Extra Port Binding
+
+If `experimental: { mcpServer: true }` (or any truthy value) is set in `next.config.ts`, Next.js binds an additional port for its built-in MCP server. This causes `EADDRINUSE` when PM2 restarts overlap with that port still being held.
+
+**Fix:** Explicitly disable it:
+```ts
+const nextConfig: NextConfig = {
+  experimental: { mcpServer: false }
+};
+```
+
+Always set `mcpServer: false` in all PM2-managed Next.js apps. Source: travel-assistant (commit 20a2611, 2026-05).
+
+## Claude OAuth Token Refresh in Autonomous Agents
+
+**Do NOT rely on `claude -p` to refresh OAuth tokens.** It doesn't reliably trigger refresh — tokens can expire silently. Autonomous jobs that depend on a valid Claude token then fail with cryptic auth errors.
+
+**Correct approach:** Use the direct OAuth refresh_token grant via the platform API. Reference implementation: `~/repos/scripts/refresh-claude-token.sh` (cron every 3h, 4h-before-expiry threshold, temp files for token data to avoid shell interpolation).
+
+**Why it matters:** The usage API and all autonomous agent token reads go through the credentials file. An expired token causes every quota-gating job to silently fail or report misleading usage data.
+
+## Python HTTP Client Gotchas
+
+### urllib3.Retry: Unsupported Constructor Parameters
+
+`requests.urllib3.util.retry.Retry` does NOT accept `retry_on_connection_error` as a constructor parameter — it crashes the worker on import.
+
+```python
+retry = Retry(
+    total=5, connect=3, read=3, backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    # DO NOT: retry_on_connection_error=True  ← unsupported
+)
+```
+
+Source: auto-shorts-worker PRs #39/#40.
+
+### Localhost-First Probe for Co-Located Services
+
+When a Python worker and its API server are on the same VM, probe for localhost at startup instead of defaulting to the public HTTPS URL (avoids DNS/SSL overhead and DNS failures in isolated networks):
+
+```python
+import socket, os
+
+API_BASE = os.environ.get("SERVICE_API_BASE", "")
+if not API_BASE:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(('127.0.0.1', 3007)) == 0:
+                API_BASE = "http://localhost:3007/service"
+    except Exception:
+        pass
+    if not API_BASE:
+        API_BASE = "https://your-vm.example.com/service"
+```
+
+Source: auto-shorts-worker transient DNS failures (2026-05).
+
+## Node.js 22 HTTP Gotchas
+
+### Built-in `fetch` headersTimeout
+
+Node.js 22's built-in `fetch` (undici) has a default **5-minute `headersTimeout`**. Requests taking longer than 5 minutes fail silently with no clear indication the timeout is the cause.
+
+**Affected:** any long-running downstream call — Claude research queries (10-20 min), large file downloads, slow ML inference.
+
+**Fix:** Use `http.request` with an explicit timeout:
+```javascript
+const http = require('http');
+function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(options, (res) => { /* handle */ });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Timeout')));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+```
+
+Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
