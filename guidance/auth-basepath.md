@@ -82,6 +82,34 @@ Each app needs:
 - finance-tracker (`/finance`, port 3008)
 - student-transcript (`/student`, port 3009)
 - shopper (`/shopper`, port 3090, tunneled from WSL)
+- travel (`/travel`, port 3092, tunneled from WSL)
+- foodie (`/foodie`, port 3094, tunneled from WSL)
+
+### Mandatory auth.ts fields (NEVER remove or "simplify")
+
+Every subpath app's NextAuth config MUST include ALL of these. Removing any one silently breaks OAuth:
+
+```typescript
+NextAuth({
+  trustHost: true,                          // Required behind reverse proxy
+  secret: process.env.AUTH_SECRET,
+  basePath: "/api/auth",                    // Prevents AUTH_URL from overriding
+  session: { maxAge: 90 * 24 * 60 * 60 },
+  cookies: {
+    sessionToken: {
+      name: "__Secure-{appname}.session-token",  // Prevents cross-app session bleed
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure: true },
+    },
+  },
+  // ...providers, callbacks
+})
+```
+
+**Why custom cookie names matter:** All apps share the same domain. Without app-specific cookie names, a session from one app (e.g., shopper) can be read by another (e.g., foodie), causing "User not found" errors because the user exists in one DB but not the other.
+
+### Post-deploy verification command
+
+Run `/user:verify-oauth` after any auth-related deploy. It checks all required fields and runs the live signin flow test.
 
 ### AUTH_URL origin-only pattern for tunneled apps
 
