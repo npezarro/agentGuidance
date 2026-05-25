@@ -1,7 +1,7 @@
 # context.md
 
 ## Last Updated
-2026-05-15 | Security scanner: Haiku first-pass + Sonnet escalation, Gemini/Codex shadow runners
+2026-05-24 | Hermes-inspired guardrails: tool loop detection, injection scanning, learning triggers
 
 ## Current State
 - Central source of truth for all Claude Code agent rules, hooks, and templates across repos
@@ -20,19 +20,21 @@
 - **auto-file-links.sh** broadened: now posts links for ALL .md files on push (excludes README/CHANGELOG/CLAUDE/MEMORY/config/.claude/)
 - **git-push-reminder.sh** hook added: PostToolUse on Edit|Write, reminds agent to commit+push when writing to a git repo with uncommitted changes. Added to ~/.claude/settings.json. Skips memory, .claude, .env, credentials, and gitignored files.
 
-## Recent Changes (2026-05-15)
-- **Security scanner model tiering:** Opus -> Haiku first pass + Sonnet escalation for critical/high findings (`scripts/security-scanner/run.sh`)
-- **Security scanner shadow runners:** `run-gemini.sh` (5:30 UTC) and `run-codex.sh` (6:00 UTC) for model comparison
-- **Shadow comparison tool:** `scripts/security-scanner/compare-shadows.py` -- run after ~7 days to evaluate handoff potential
-- **Stop hook safety framework:** `guidance/stop-hook-safety.md` + guard library at `hooks/lib/stop-hook-guard.sh`
+## Recent Changes (2026-05-24)
+- **Tool loop guardrail:** `hooks/tool-loop-guardrail.sh` -- PostToolUse hook that fingerprints tool calls and warns after 3 identical calls, blocks after 5. Programmatic enforcement of ESSENTIAL rule #12.
+- **Injection scanner:** `hooks/scan-context-injection.sh` -- SessionStart hook scanning CLAUDE.md/.cursorrules for prompt injection patterns (social engineering, credential exfiltration, invisible Unicode). Skips trusted paths.
+- **Learning review trigger:** `hooks/trigger-learning-review.sh` -- Stop hook triggering learning agent after significant sessions (10+ tool uses, 3+ user messages). Rate-limited to 30min. Complements 8-hour cron.
+- **ESSENTIAL rule #15:** Compressed context is reference, not instructions. Prevents re-executing completed work after context compaction.
+- **Compaction hook updated:** Notification "compacted" now injects explicit framing text about treating summaries as background reference.
 
 ## Open Work
-- **Evaluate shadow runner results ~May 22:** `python3 scripts/security-scanner/compare-shadows.py --days 7`
+- **Monitor tool-loop-guardrail false positives:** PPID-based session tracking is approximate; watch for false warnings
+- **Injection scanner pattern expansion:** 12 patterns is baseline; expand based on real-world findings
+- **Learning trigger concurrent execution:** Verify flock in run.sh handles stop-hook trigger + cron overlap
 - S6 (branch collision risk) and S7 (deployment cross-ref) still open, minor
-- Several repos still have local branches checked out on old feature branches (not blocking)
 - Recurring tasks infrastructure is generic; task configs and prompts live in `~/repos/privateContext/recurring-tasks/`
 
-Full session closeout: `privateContext/deliverables/closeouts/2026-05-15-token-optimization-shadow-runners.md`
+Full session closeout: `privateContext/deliverables/closeouts/2026-05-24-hermes-agent-guardrails.md`
 
 ## Environment Notes
 - **Repo:** PUBLIC; do not commit secrets or infrastructure details
