@@ -138,7 +138,48 @@ git bisect good <hash>  # this commit was working
 - **Database is locked**: In SQLite, concurrent writes cause locking.
   - **Fix**: Move updateMany or createMany calls OUT of loops. Consolidate into a single operation per user/batch.
   - **Pragma**: Use PRAGMA busy_timeout=5000; to make SQLite wait instead of failing immediately.
-- **executeRawUnsafe vs queryRawUnsafe**:
-  - Use `$queryRawUnsafe` for **both** `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000`.
-  - Both PRAGMAs return rows in some SQLite/Prisma versions. Using `$executeRawUnsafe` for `busy_timeout` causes spurious `'Execute returned results'` errors.
-  - Catch **both** `'Execute returned results'` and `'Raw query failed'` around PRAGMA calls — either can surface depending on SQLite/Prisma version combination.
+- **executeRawUnsafe vs queryRawUnsafe for PRAGMAs**: Use `$queryRawUnsafe` for **both** `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000`. Catch and ignore `"Execute returned results"` — it means the PRAGMA worked. Log all other errors.
+  ```ts
+  prisma.$queryRawUnsafe(`PRAGMA journal_mode=WAL;`).catch((err) => {
+    if (!err.message?.includes("Execute returned results")) console.error("WAL enable failed:", err);
+  });
+  prisma.$queryRawUnsafe(`PRAGMA busy_timeout=5000;`).catch((err) => {
+    if (!err.message?.includes("Execute returned results")) console.error("busy_timeout failed:", err);
+  });
+  ```
+- **`connection_limit=1` required for SQLite in Next.js.** Next.js spawns multiple worker threads; without this they contend for the SQLite file and cause "Database is locked". Add to DATABASE_URL:
+  ```
+  DATABASE_URL="file:./production.db?connection_limit=1&timeout=30&pool_timeout=30"
+  ```
+  Source: runeval required 7 commits to stabilize on this (2026-05-15).
+- **Prisma singleton: always assign to global, even in production.** The common guard `if (process.env.NODE_ENV !== 'production')` before `globalForPrisma.prisma = prisma` is wrong — Next.js worker threads reload modules without reinitializing globals. Remove the guard:
+  ```ts
+  export const prisma = globalForPrisma.prisma || createPrisma();
+  globalForPrisma.prisma = prisma;  // always, not just in dev
+  ```
+  Source: finance-tracker OOM crash loop until this guard was removed (2026-05-15).
+- **Next.js apps OOMing under load:** Increase heap in PM2 ecosystem.config:
+  ```js
+  env: { NODE_OPTIONS: '--max-old-space-size=1024' }
+  ```
+  Also raise `max_memory_restart` to match (e.g., `1G`). Source: finance-tracker (2026-05-15).
+
+### 10. Prisma + PostgreSQL: Use pg.Pool, Not Raw Connection String
+
+When using `@prisma/adapter-pg` (PrismaPg), pass a `pg.Pool` instance for proper connection pool control:
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
+```
+
+`new PrismaPg({ connectionString })` creates an unmanaged pool with no limits. Source: finance-tracker refactor (2026-05-16).

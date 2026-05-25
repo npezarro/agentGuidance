@@ -225,3 +225,15 @@ When bash scripts use `head -c N` or `head -n N` to limit command output before 
 **Example:** `head -c 2000` on Claude CLI output truncated the `ACTIVITY_OBSERVED:` block that Discord threading depended on. The script ran without errors but produced empty summaries for weeks.
 
 **Fix:** Either size the limit to the maximum expected output (e.g., `head -c 10000` for Claude output), or extract the specific field first and truncate the extracted value. Never truncate structured output before parsing it.
+
+## Structured Output Format Compliance
+
+When a prompt specifies a strict output format (e.g., "ONLY valid JSON", "no markdown fences", "no explanation"), enforce it before submitting:
+
+1. **Parse the constraint first** — read the format requirement exactly.
+2. **Validate before submitting** — after writing the response, check it against the constraint.
+3. **Fix, don't annotate** — if a violation is found: STOP, regenerate correctly. Never submit both the violation and a self-diagnosis of it.
+
+**Common violations:** wrapping JSON in fences when told not to; adding explanatory text when told "no explanation"; submitting a self-diagnosis inside the violating output.
+
+**Why:** Multiple scoring sessions (2026-05-15) violated this pattern and then self-diagnosed the violation inside the same response — demonstrating the agent knew the rule and still didn't fix it. Hard format constraints are enforcement gates for downstream parsers. Identifying a violation is not fixing it.

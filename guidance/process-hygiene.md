@@ -49,6 +49,29 @@ pm2 list
 
 Don't blindly start a service on a port that's occupied. Either stop the existing process (if it's yours) or use a different port. If the existing process belongs to another session, coordinate — don't kill it.
 
+### PM2 Restart EADDRINUSE Crash Loop
+
+When PM2 restarts a process, the old Node instance may not release its port before the new one starts, causing `EADDRINUSE` → crash → PM2 restart → repeat.
+
+**Three-layer fix:**
+
+1. **`kill_timeout` and `listen_timeout` in ecosystem.config:**
+   ```js
+   { kill_timeout: 3000, listen_timeout: 3000 }
+   ```
+2. **Graceful shutdown handler in server code:**
+   ```js
+   process.on('SIGTERM', () => server.close(() => process.exit(0)));
+   ```
+3. **Use a `start.sh` wrapper for Next.js standalone** — `next start` as the PM2 script loses process tracking. A wrapper lets PM2 signal the actual node process:
+   ```bash
+   #!/bin/bash
+   set -a; source "$(dirname "$0")/.env"; set +a
+   exec node "$(dirname "$0")/.next/standalone/server.js"
+   ```
+
+**Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).

@@ -58,6 +58,22 @@ Add a `postbuild` script to `package.json`:
 
 npm runs `postbuild` automatically after `build`. This pattern is used in finance-tracker and netflix-social.
 
+## Next.js Standalone: Missing Packages (`serverExternalPackages`)
+
+When using `output: 'standalone'`, Next.js traces imports at build time but doesn't always capture server-only packages invoked indirectly (inside `.then()` handlers, dynamic requires, email libraries). Missing packages cause `MODULE_NOT_FOUND` at runtime.
+
+**Fix:** Add untraced packages to `serverExternalPackages` in `next.config.ts`:
+```ts
+const nextConfig: NextConfig = {
+  output: 'standalone',
+  serverExternalPackages: ['nodemailer'],
+};
+```
+
+Also wrap non-critical side effects (e.g., `sendEmail()`) in `try/catch` so they can't fail the main operation.
+
+**Packages commonly missing:** `nodemailer`, packages using native bindings, packages only imported in server action callbacks. Source: shopper standalone build (2026-05-15).
+
 ## Python Version Compatibility
 
 The GCP VM runs **Python 3.9**. Modern type annotation syntax (`X | None`, `list[str]`, `dict[str, Any]`) requires Python 3.10+. Code using these features will raise `TypeError` at runtime on the VM.
