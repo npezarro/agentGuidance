@@ -237,6 +237,37 @@ const nextConfig: NextConfig = {
 
 Always set `mcpServer: false` in all PM2-managed Next.js apps. Source: travel-assistant (commit 20a2611, 2026-05).
 
+## Next.js SSR Timezone/Hydration Mismatch
+
+Server-side rendering in Next.js formats dates with the **server's timezone** (UTC on the VM). The browser hydrates with the user's local timezone, causing hydration mismatch warnings and inconsistent timestamp display (e.g., "May 25, 2026, 12:00 AM" on server vs "May 24, 2026, 5:00 PM" in browser).
+
+**Fix:** Use a `"use client"` component with `Intl.DateTimeFormat(undefined, options)` and `suppressHydrationWarning` on the `<time>` element. Using `undefined` as the locale defers formatting to the browser's own locale and timezone:
+
+```tsx
+"use client";
+
+type Variant = "full" | "date" | "compact";
+
+const OPTIONS: Record<Variant, Intl.DateTimeFormatOptions> = {
+  full: { dateStyle: "medium", timeStyle: "short" },
+  date: { month: "short", day: "numeric", year: "numeric" },
+  compact: { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
+};
+
+export function LocalTimestamp({ date, variant = "full" }: { date: string; variant?: Variant }) {
+  const d = new Date(date);
+  return (
+    <time dateTime={d.toISOString()} suppressHydrationWarning>
+      {new Intl.DateTimeFormat(undefined, OPTIONS[variant]).format(d)}
+    </time>
+  );
+}
+```
+
+**Do NOT** use `new Date().toLocaleString()` or `date-fns` formatting directly in server components or shared components — these will use server timezone. Always route timestamps through a `"use client"` wrapper.
+
+Source: shopper, foodie, travel-assistant (commits 49da1e1, 78bbb74, d8b65c9 — 2026-05-25).
+
 ## Claude OAuth Token Refresh in Autonomous Agents
 
 **Do NOT rely on `claude -p` to refresh OAuth tokens.** It doesn't reliably trigger refresh — tokens can expire silently. Autonomous jobs that depend on a valid Claude token then fail with cryptic auth errors.
