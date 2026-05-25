@@ -1,6 +1,13 @@
 # DevOps Experience Log
 
 ---
+## 2026-05-24 | Docker bridge page-reader fallback via HTTP proxy
+**Task:** Enable Docker-containerized Claude CLI (shopper bridge) to use page-reader as a WebFetch fallback for bot-blocked pages.
+**What worked:** page-reader has a built-in HTTP server (`src/server.js`) that can be PM2-managed as `page-reader-proxy` on port 3092. Adding `extra_hosts: host.docker.internal:host-gateway` to docker-compose.yml lets the container reach WSL port 3092 via `http://host.docker.internal:3092/fetch?url=ENCODED_URL&stealth=true`. The Claude CLI system prompt (docker/CLAUDE.md) was updated to instruct Claude to retry failed WebFetch calls through this endpoint.
+**What didn't:** Docker containers can't exec binaries on the host, so calling `node ~/repos/page-reader/src/index.js` directly from inside the container was never an option. The HTTP proxy is the correct bridge.
+**Learned:** For any Docker-bridged Claude CLI that needs full-browser rendering, expose page-reader as an HTTP service (PM2 `page-reader-proxy`) and configure `extra_hosts: host.docker.internal:host-gateway` in docker-compose. Instruction in `guidance/browser-page-reader.md` "Calling from Docker Containers" section.
+
+---
 ## 2026-04-04 | pezantTools zero-downtime deploy
 **Task:** Deploy a new version of pezantTools to the GCP VM without dropping active file uploads.
 **What worked:** Checked `pm2 list` and `ss -tlnp` before touching anything. Built the new version locally, scp'd the build artifacts, then used `pm2 reload` (not restart) for zero-downtime process replacement. Verified the service was live with a curl health check after reload. Confirmed disk usage stayed under 80% with `df -h`.

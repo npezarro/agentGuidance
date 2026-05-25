@@ -78,5 +78,29 @@ node ~/repos/page-reader/src/index.js --stealth --wait 5000 <url>
 - Uses `domcontentloaded` instead of `networkidle` (avoids hanging on blocked trackers)
 - Sets US locale and timezone
 
+## Calling from Docker Containers
+
+The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible inside a Docker container. Use the `page-reader-proxy` PM2 service instead.
+
+**What it is:** An HTTP server (`src/server.js`) running from `~/repos/page-reader`, exposed on port 3092. PM2 process name: `page-reader-proxy`.
+
+**How to call it from a Docker container:**
+
+1. Add `host.docker.internal:host-gateway` to `extra_hosts` in `docker-compose.yml`:
+   ```yaml
+   extra_hosts:
+     - "host.docker.internal:host-gateway"
+   ```
+
+2. Call it via HTTP from inside the container:
+   ```
+   http://host.docker.internal:3092/fetch?url=ENCODED_URL&stealth=true
+   ```
+   URL-encode the target URL. Use `stealth=true` for bot-protected pages.
+
+**Pattern:** Use as a WebFetch fallback in Docker-bridged Claude CLI system prompts. If `WebFetch` returns a 500, 403, empty body, or bot-block page, retry via the proxy. Only fall back to this after direct WebFetch fails — the proxy uses a full headless browser and is slower.
+
+Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
+
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
