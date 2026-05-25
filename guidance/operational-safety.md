@@ -112,6 +112,31 @@ count=$(grep -c 'pattern' file || true)
 
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
 
+### Claude CLI Binary Path on VM
+
+The Claude CLI binary is at `/usr/bin/claude` on the VM — **not** `/usr/local/bin/claude`. Using the wrong fallback path causes silent `[Errno 2] No such file or directory` failures that drop all AI processing without any obvious error in service logs.
+
+**Real incident (2026-05-25):** `trading-agent/error_handler.py` had `CLAUDE_BIN = "/usr/local/bin/claude"` as the hardcoded default. All Claude invocations from the error handler failed silently. Fixed in commit af0cf3c by changing to `/usr/bin/claude`.
+
+**Rule:** When specifying a fallback path for the Claude CLI binary, always use `/usr/bin/claude`:
+
+```python
+# Python
+claude_bin = os.environ.get("CLAUDE_BIN", "/usr/bin/claude")
+```
+
+```javascript
+// Node
+const CLAUDE_BIN = process.env.CLAUDE_BIN || '/usr/bin/claude';
+```
+
+```bash
+# Bash
+CLAUDE_BIN="${CLAUDE_BIN:-/usr/bin/claude}"
+```
+
+**Note:** Always prefer the `CLAUDE_BIN` env var over hardcoding so deployments with non-standard paths can override it.
+
 ## Claude CLI Rate Limit Detection in Service Wrappers
 
 **The scenario:** A service wraps `claude -p` (e.g., via `spawn` or `execFile`) and reads stdout for the AI response. When the user hits their usage limit, Claude CLI exits with code 0 but outputs a rate limit message instead of a real response (e.g., "You've hit your limit... resets 3:50pm PT"). The service treats this as a successful result, returning garbage content to the user.
