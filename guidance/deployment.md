@@ -56,7 +56,35 @@ Add a `postbuild` script to `package.json`:
 "postbuild": "bash -c 'STANDALONE=.next/standalone; [ -d \"$STANDALONE\" ] && { rm -rf $STANDALONE/.next/static && ln -sf ../../../.next/static $STANDALONE/.next/static; [ -d public ] && rm -rf $STANDALONE/public && ln -sf ../../public $STANDALONE/public; echo \"[postbuild] standalone symlinks created\"; } || true'"
 ```
 
-npm runs `postbuild` automatically after `build`. This pattern is used in finance-tracker and netflix-social.
+npm runs `postbuild` automatically after `build`. This pattern is used in finance-tracker.
+
+**Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
+
+## GitHub Pages Static Export (No-Server Alternative)
+
+For apps that don't require SSR, auth, or server-side API routes, `output: 'export'` produces a static site that can be hosted on GitHub Pages for free — no VM, no PM2, no Apache config needed.
+
+```ts
+const nextConfig: NextConfig = {
+  basePath: "/repo-name",   // must match GitHub Pages subpath
+  output: "export",
+  images: { unoptimized: true },  // required — no Image Optimization API
+};
+```
+
+**When to use GitHub Pages over VM PM2:**
+- Pure demo/portfolio/static-content apps
+- No server-side API routes, database, or OAuth
+- No need for Apache ProxyPass config
+- App is public (no auth gate needed)
+
+**When to stay on VM PM2:**
+- Needs dynamic API routes, SQLite, or server-side rendering
+- Needs Google OAuth or any server-side auth
+- Needs a Docker bridge or external service integration
+- Needs Discord notifications, webhooks, or cron jobs
+
+**Deploy pattern:** Build locally → commit `out/` or let GitHub Actions build → GitHub Pages serves from the branch. Source: netflix-social (commit 928a1d7, 2026-05).
 
 ## Next.js Standalone: Missing Packages (`serverExternalPackages`)
 
