@@ -68,6 +68,24 @@ fi
 
 - Do **not** enable auto-merge unless explicitly asked.
 
+## GitHub API PR Creation: Qualify the Head Parameter
+
+When creating PRs via the GitHub REST API (Octokit) rather than `gh pr create`, the `head` parameter must be fully qualified as `owner:branch`, not just `branch`.
+
+```js
+// WRONG — causes "invalid head" errors, especially on newly-pushed branches
+await octokit.rest.pulls.create({ head: branch, ... });
+
+// CORRECT — qualify with the repo owner
+await octokit.rest.pulls.create({ head: `${owner}:${branch}`, ... });
+```
+
+**Why:** GitHub needs a few seconds to fully index a newly-pushed branch. Unqualified branch names fail more often during this window. Qualifying with the owner disambiguates the ref lookup and makes the API more reliable.
+
+**Also:** Add a 3s delay before calling `pulls.create` after a push event — GitHub's internal indexing isn't instant. Increase `maxAttempts` to 5 and retry on "invalid head" errors.
+
+**Note:** The `gh pr create` CLI handles head qualification internally. This only applies when using the REST API directly (e.g., in automated bots like claude-auto-merger). Source: auto-merger "invalid head" race condition fix (2026-05-15).
+
 ## Branch Hygiene
 
 Open PRs that sit unmerged cause cascading merge conflicts across all other branches. **This is the #1 cause of stuck work.** Prevent this:
