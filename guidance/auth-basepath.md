@@ -55,9 +55,10 @@ Follow these steps exactly. Do NOT attempt per-app callback routing, customFetch
    <SessionProvider basePath="/<app>/api/auth">
    ```
 5. **Apache** (VM): Add `ProxyPass /<app> http://127.0.0.1:<port>/<app>` only. Do NOT add `/api/auth/callback/` rules.
-6. **Google Console**: No changes needed — `https://example.com/api/auth/callback/google` is already registered.
-7. **Test**: POST the signin flow and verify `redirect_uri` in the Google redirect matches the registered URI. Do NOT just test GET endpoints.
-8. **Update this file**: Add the app to the "Apps using the proxy" list below.
+6. **auth-proxy/server.js** (`ALLOWED_TARGETS`): Add the app's base path (e.g., `"/myapp"`) to the `ALLOWED_TARGETS` array in the auth-proxy repo. This prevents open redirect attacks — the proxy validates the `__auth_target` cookie against this list before redirecting. If the app is not in the allowlist, auth silently fails with no error in the app. (Source: security commit 1817371, 2026-05-18.)
+7. **Google Console**: No changes needed — `https://example.com/api/auth/callback/google` is already registered.
+8. **Test**: POST the signin flow and verify `redirect_uri` in the Google redirect matches the registered URI. Do NOT just test GET endpoints.
+9. **Update this file**: Add the app to the "Apps using the proxy" list below.
 
 ### Downstream app setup (summary)
 
