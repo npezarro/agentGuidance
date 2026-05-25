@@ -95,6 +95,24 @@ fi
 
 **Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
 
+## Claude OAuth Token Refresh in Autonomous Agents
+
+**Do NOT rely on `claude -p` to refresh OAuth tokens.** `claude -p` does not reliably trigger token refresh — it can return successfully without refreshing, causing tokens to expire silently. Autonomous jobs (cron, PM2 services, background workers) that depend on a valid Claude token will then fail with cryptic auth errors.
+
+**Correct approach:** Use the direct OAuth refresh_token grant via `platform.claude.com/v1/oauth/token`:
+
+```bash
+# Read refresh_token from ~/.claude/.credentials.json
+# POST to https://platform.claude.com/v1/oauth/token
+# with grant_type=refresh_token
+# Write new tokens back to credentials file
+# Fall back to claude -p only as a last resort
+```
+
+**Why it matters:** The usage API and all autonomous agent token reads go through the credentials file. If the token expires and isn't refreshed, every job that checks quota or calls Claude will silently fail or report 0% usage (misleading the gating logic into thinking it's fine to proceed).
+
+**Reference implementation:** `~/repos/scripts/refresh-claude-token.sh` (cron every 3h, 4h-before-expiry threshold, temp files for token data to avoid shell interpolation of credentials).
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
