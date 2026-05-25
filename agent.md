@@ -78,6 +78,7 @@ Load on-demand based on the current task:
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/tampermonkey.md` -- TM script hosting and CAPTCHA bypass patterns
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
+- `guidance/learning-agent.md` -- hourly learning review: passes, staging, PR workflow
 - `guidance/ESSENTIAL.md` -- **auto-loaded** top-10 most-violated rules (always in context)
 - `guidance/comprehensive-closeout.md` -- detailed session documentation for important conversations
 - `guidance/stop-hook-safety.md` -- tiered stop hook classification, guard library, Tier 3 recursion prevention
