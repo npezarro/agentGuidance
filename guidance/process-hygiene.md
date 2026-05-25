@@ -95,6 +95,53 @@ fi
 
 **Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
 
+## Python HTTP Client Gotchas
+
+### urllib3.Retry: Unsupported Constructor Parameters
+
+`requests.urllib3.util.retry.Retry` does NOT accept `retry_on_connection_error` as a constructor parameter. Passing it raises a `TypeError` on import and crashes the worker. Use only supported params:
+
+```python
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
+
+retry = Retry(
+    total=5,
+    connect=3,
+    read=3,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    # DO NOT add: retry_on_connection_error=True  ← unsupported, crashes on import
+)
+adapter = HTTPAdapter(max_retries=retry)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+```
+
+**Why:** auto-shorts-worker PRs #39/#40 — worker crashed on startup because a Gemini-generated fix added `retry_on_connection_error=True` which is a non-existent parameter in the installed urllib3 version.
+
+### Localhost-First Probe for Co-Located Services
+
+When a Python worker and its API server can be co-located on the same VM, probe for localhost availability at startup instead of defaulting to the public HTTPS URL. This avoids DNS lookup overhead, SSL overhead, and DNS resolution failures in isolated network environments:
+
+```python
+import socket
+
+API_BASE = os.environ.get("SERVICE_API_BASE", "")
+if not API_BASE:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(('127.0.0.1', 3007)) == 0:
+                API_BASE = "http://localhost:3007/service"
+    except Exception:
+        pass
+    if not API_BASE:
+        API_BASE = "https://your-vm.example.com/service"
+```
+
+**Why:** auto-shorts-worker had transient DNS failures when polling the public URL even though the worker runs on the same VM as the API server. Using `requests.Session()` + localhost-first eliminates the failure mode.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
