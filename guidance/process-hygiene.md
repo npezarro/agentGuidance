@@ -49,6 +49,20 @@ pm2 list
 
 Don't blindly start a service on a port that's occupied. Either stop the existing process (if it's yours) or use a different port. If the existing process belongs to another session, coordinate — don't kill it.
 
+### Next.js `experimental.mcpServer` Causes Extra Port Binding
+
+If a Next.js app has `experimental: { mcpServer: true }` (or any truthy value) in `next.config.ts`, the framework binds an additional port for its built-in MCP server at startup. This causes `EADDRINUSE` when PM2 manages the process lifecycle (PM2 restarts overlap with the extra port still being held).
+
+**Fix:** Explicitly disable it in `next.config.ts`:
+
+```ts
+const nextConfig: NextConfig = {
+  experimental: { mcpServer: false }
+};
+```
+
+**Why it matters:** travel-assistant hit this in 2026-05. The `experimental.mcpServer` feature auto-enables itself in some Next.js versions when the MCP config is present. Always set it to `false` explicitly in all PM2-managed Next.js apps. Source: commit 20a2611.
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
