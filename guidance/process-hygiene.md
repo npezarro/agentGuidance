@@ -94,6 +94,58 @@ When a PM2-managed job runs on a schedule (cron trigger), external systems (fix-
 
 **Why:** deal-scout's housing-scout ran ~24 times/day instead of once because fix-checker (10-min scan interval) retriggered it via the shared ecosystem config. Adding a 20-hour cooldown guard fixed this. Any scheduled job that runs via PM2 cron or `pm2 restart` is vulnerable to the same pattern.
 
+## Node.js Concurrent-Run Lock File
+
+For jobs where overlapping runs are the problem (two cron triggers 5 minutes apart, second fires before first finishes), use a **PID-based O_EXCL lock file** instead of a cooldown guard:
+
+```javascript
+const LOCK_FILE = path.join(__dirname, '..', 'backups', '.job.lock');
+
+function acquireLock() {
+  try {
+    // O_EXCL: atomic create-or-fail — no race condition
+    const fd = fs.openSync(LOCK_FILE, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
+    fs.writeSync(fd, String(process.pid));
+    fs.closeSync(fd);
+    return true;
+  } catch {
+    // Lock exists — check if holder is still alive
+    try {
+      const pid = parseInt(fs.readFileSync(LOCK_FILE, 'utf8').trim());
+      process.kill(pid, 0); // throws ESRCH if process doesn't exist
+      return false; // lock holder still running
+    } catch {
+      // Stale lock — remove and retry once
+      try { fs.unlinkSync(LOCK_FILE); } catch {}
+      try {
+        const fd = fs.openSync(LOCK_FILE, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
+        fs.writeSync(fd, String(process.pid));
+        fs.closeSync(fd);
+        return true;
+      } catch { return false; }
+    }
+  }
+}
+
+function releaseLock() {
+  try { fs.unlinkSync(LOCK_FILE); } catch {}
+}
+
+if (!acquireLock()) {
+  console.log('[job] Another instance already running, skipping.');
+  process.exit(0);
+}
+process.on('exit', releaseLock);
+process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
+process.on('SIGINT', () => { releaseLock(); process.exit(0); });
+```
+
+**Key differences from cooldown guard:**
+- **Cooldown guard**: prevents re-runs within a time window (deal-scout, once per 20h)
+- **Lock file**: prevents concurrent overlap (shopper recovery, prevents duplicate bridge slots being consumed)
+
+**Why:** A 06:15 cron fire can overlap with a 06:10 run still processing through a slow bridge call (10-20 min). Lock file catches this; cooldown guard doesn't (it's based on when the job *started*, not whether it's still running). Source: shopper commit ba47e21.
+
 ## Stale Git Lock Files
 
 When automated processes (hooks, cron jobs, PM2 services) get killed mid-git-operation (by hook timeout, OOM, SIGTERM), they leave `.git/index.lock` files that silently block all subsequent git operations in that repo. No error is surfaced to the caller; git commands simply fail.
