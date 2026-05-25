@@ -95,6 +95,34 @@ fi
 
 **Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
 
+## Node.js 22 HTTP Gotchas
+
+### Built-in `fetch` headersTimeout
+
+Node.js 22's built-in `fetch` (undici) has a default **5-minute `headersTimeout`**. Requests that take longer than 5 minutes fail with a timeout error that gives no clear indication of the root cause.
+
+This affects any long-running downstream call: Claude research queries (10-20 min), large file downloads, or slow ML inference endpoints.
+
+**Fix:** Use Node.js `http.request` with an explicit timeout:
+
+```javascript
+const http = require('http');
+
+function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(options, (res) => { /* handle response */ });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Request timed out after ${timeoutMs}ms`));
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+```
+
+**Why:** Shopper's recovery scripts (`recover-from-wsl.js`, `run-recovery.js`) failed silently because Claude queries run 10-20 min. Fix: switched from built-in `fetch` to `http.request` with explicit 20-min timeout (commit a0caa5a, 2026-05-24). Any Node.js 22 app doing long-running HTTP calls is vulnerable.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
