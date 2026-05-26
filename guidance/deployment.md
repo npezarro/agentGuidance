@@ -1,5 +1,11 @@
 # Deployment
 
+## Staging-First Apps
+
+**shopper, finance-tracker, and travel-assistant always deploy through staging.** Use the `/staging` skill. Do not deploy these apps directly to production unless the user explicitly requests it (e.g., emergency hotfix).
+
+The staging workflow: provision ephemeral staging -> build -> 7 smoke tests -> promote tested artifacts to production -> tear down. See `~/.claude/skills/staging/SKILL.md` for the full procedure.
+
 ## Pre-Deploy Checklist
 
 1. All changes committed and pushed via PR.
