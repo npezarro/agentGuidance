@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-05-26 | Added LinkedIn milestone/story-time register to guidance/written-voice.md (full closeout: privateContext/deliverables/closeouts/2026-05-26-patent-linkedin-post-voice-guidance.md). Reminder: the secret scanner flags the private voice repo's name as a sensitive identifier — never name that repo in this public repo; reference it as "the dedicated voice repository."
+
+### Previous
 2026-05-20 | WordPress auto-posting fix: removed direct WP publishing from VM, trashed 139 auto-posts
 
 ## Current State
