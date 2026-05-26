@@ -224,6 +224,23 @@ Without that signal, PM2 treats every startup as a timeout and enters a crash lo
 
 Only set `wait_ready: true` when you also add `process.send('ready')` to the app startup code. Source: netflix-social (2026-05).
 
+## PM2 `--node-args` Breaks Bash-Interpreter Services
+
+When a PM2 service uses `interpreter: "bash"` (i.e., the `script` is a `.sh` wrapper), passing `--node-args` on the command line **crashes the service immediately**. PM2 passes `--node-args` as `interpreter_args`, which are forwarded to the interpreter binary — bash in this case. Bash does not understand V8 flags like `--max-old-space-size` and exits immediately.
+
+```bash
+# BAD — crashes bash-interpreter services (passes V8 flags to bash, not node)
+pm2 restart foodie --node-args="--max-old-space-size=512"
+
+# GOOD — export NODE_OPTIONS in start.sh instead
+export NODE_OPTIONS="--max-old-space-size=512"
+exec node .next/standalone/server.js
+```
+
+**Affected services:** Any PM2 process with `interpreter: "bash"` in its ecosystem config (e.g., Next.js apps using `start.sh` wrappers). Node-interpreter PM2 services (the default) are not affected — `--node-args` works correctly for them.
+
+Source: VM memory tuning session 2026-05-25 — applying `--node-args` caused immediate crashes on all bash-wrapped Next.js services (shopper, foodie, travel-assistant, finance-tracker).
+
 ## Next.js `experimental.mcpServer` Causes Extra Port Binding
 
 If `experimental: { mcpServer: true }` (or any truthy value) is set in `next.config.ts`, Next.js binds an additional port for its built-in MCP server. This causes `EADDRINUSE` when PM2 restarts overlap with that port still being held.
