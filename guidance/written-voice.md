@@ -123,6 +123,16 @@ He hedges when genuinely uncertain, not out of weakness.
 - Names things specifically: "OAuth usage endpoint", "bash, curl, and Python 3", "SessionStart hook"
 - One emoticon or emoji max, at the very end if at all: ", 😅" or ", :)"
 
+#### LinkedIn posts: milestone / story-time (achievements, launches, patents)
+A distinct mode from the tool-announcement posts above. These are stories and run longer (~350-450 words), but stay in the same formality band: warm, no emoticons, measured exclamation marks.
+- Open with the news plainly, then narrate how it came to be ("Ok, story time" energy). No throat-clearing.
+- Credit collaborators generously, by full name, with playful parenthetical descriptors: "parallel prompting with [name] (my fellow intrepid prompting pioneer)". Name everyone, not "the team."
+- End by celebrating others, not yourself: "Big congrats to my co-inventors...", "Shoutout to X and Y for going out and building full on businesses out of this!"
+- Playful coinages survive into the public register ("an epicly scrappy spreadsheet") — warmth via invented phrasing, not emoticons.
+- When tightening, cut tangential self-deprecating asides to keep the narrative moving; keep asides that add color.
+- Bridge to current work and drop a repo/portfolio link, let it speak (no soft-sell).
+- Full worked before/after lives in the dedicated voice repository's samples (the patent-grant post), alongside the full style guide.
+
 **Published examples (use these as the primary reference, not the bullet points above):**
 
 > Claude Max shows your usage on the website but there's no way to check it from the CLI, and your tools definitely can't check it themselves.
