@@ -183,3 +183,14 @@ const prisma = new PrismaClient({ adapter });
 ```
 
 `new PrismaPg({ connectionString })` creates an unmanaged pool with no limits. Source: finance-tracker refactor (2026-05-16).
+
+### 11. Tools Run by a `claude -p` Agent Must Be Non-Interactive
+
+A Discord/automation flow that dispatches work to a `claude -p` agent runs with no TTY. Any CLI the agent invokes that blocks on interactive input (e.g. a `readline` "approve/edit?" prompt) will hang silently, and the agent will quietly fall back to a worse path (or time out). Symptoms: "the tool exists and is wired up, but the nice pipeline never seems to actually run."
+
+Fixes:
+- Give the tool an `--auto`/`--yes` flag AND auto-enable it when `!process.stdin.isTTY`, so it never hangs regardless of how it's launched.
+- Don't depend on an `ANTHROPIC_API_KEY` for sub-steps — route model calls through the `claude -p` CLI (subscription auth) so the tool runs in the same keyless environment as the agent.
+- Make the tested tool the canonical path; prompts that re-describe a "manual fallback" flow drift and silently lose features (e.g. pricing).
+
+Source: fb-marketplace-poster consolidation (2026-05-27) — main.js readline confirm + SDK key dependency forced the Discord agent into a fallback prompt that skipped shopper pricing. See `privateContext/deliverables/closeouts/2026-05-27-fbm-shopper-resale-pricing.md`.
