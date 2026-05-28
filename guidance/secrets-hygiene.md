@@ -193,6 +193,20 @@ curl -sf "$HEALTH_URL" > /dev/null
 
 ## History Rewriting — Techniques and Collateral Damage
 
+### Installation: git-filter-repo Path Gotcha
+
+`git-filter-repo` installed via pip does **not** register as a git subcommand. Running `git filter-repo` will fail with "not a git command" unless the binary is on `$PATH`.
+
+On this machine (WSL), it's installed at `~/.local/bin/git-filter-repo` (not on PATH). Invoke directly:
+
+```bash
+~/.local/bin/git-filter-repo --invert-paths --path <file> --force
+```
+
+To check: `which git-filter-repo || ls ~/.local/bin/git-filter-repo`
+
+Source: portfolio resume PDF scrub (2026-05-26).
+
 ### Email-Only Rewrites with Mailmap
 
 To change commit author/committer emails without touching file content (e.g., removing personal emails from public repo history), use `--mailmap`:
