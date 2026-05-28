@@ -86,3 +86,17 @@ VM executor → ssh reverse tunnel → local machine SSH → shell → run-claud
 - Tell-tale diagnostic: `docker exec <container> stat <path>` showing `Links: 0` confirms the inode-replacement scenario.
 
 Discovered 2026-05-28 while debugging foodie + shopper + travel bridges returning auth:failed after host `claude /login`.
+
+### OAuth Max in headless containers needs explicit lifecycle handling (2026-05-28)
+**Rule:** Containers wrapping `claude -p` for unattended use cannot rely on the CLI's interactive re-auth flow. Refresh tokens expire on a clock (not on inactivity), so keepalive traffic does nothing — only re-auth helps.
+
+**Why:** Anthropic OAuth Max sessions auto-refresh access tokens on each CLI invocation, but the refresh token itself has a fixed lifetime (~30-60 days per Anthropic's current policy). When the refresh token expires, no amount of CLI traffic recovers it — the host must run `claude /login` interactively.
+
+**How to apply:** Any container that wraps `claude -p` needs three things:
+1. A /health endpoint that exposes auth state (e.g. `{"auth":"ok|failed|pending","authError":"..."}`).
+2. A watcher cron that restarts the container on stale credentials (handles the inode trap — see [[pattern_docker-bind-mount-inode-trap]]).
+3. A Discord alert when restart fails to restore auth (signals the host itself needs /login).
+
+Reference implementation: `~/repos/scripts/bridge-auth-refresh.sh` runs every 10min for shopper, foodie, and travel bridges. Do NOT add synthetic keepalive traffic — it's wasted tokens and doesn't extend refresh-token lifetime.
+
+For truly unattended workloads, prefer API key auth (`ANTHROPIC_API_KEY` env var) over OAuth Max.
