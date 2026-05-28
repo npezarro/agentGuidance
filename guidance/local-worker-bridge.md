@@ -74,3 +74,15 @@ VM executor → ssh reverse tunnel → local machine SSH → shell → run-claud
 4. **Command dispatch is not auto-wired.** New commands need updates in both the handler and the router regex.
 5. **Strip user input noise.** Mentions, extra whitespace, flags — clean the input before matching.
 6. **Dynamic paths over hardcoded paths.** Environment detection > hardcoded paths > nothing.
+
+### Docker single-file bind mounts capture inode, not path (2026-05-28)
+**Symptom:** A container that bind-mounts a single host file (e.g. `~/.claude/.credentials.json`) keeps serving stale contents after the host atomically replaces that file. Inside the container, `stat` shows `Links: 0` and an mtime from before the host rotation.
+
+**Why:** Docker single-file bind mounts capture the source by inode at container start. When the host writes via rename-into-place (which Claude CLI `/login`, editors, and most config writers do), the inode changes but the container still points at the original (now unlinked) inode.
+
+**How to apply:**
+- For credentials/configs that rotate on the host, restart the container after host-side rotation. The bridge-auth-refresh.sh cron does this automatically based on /health.
+- Better long-term fix: bind-mount the parent directory (`/path/to/.claude:/home/node/.claude:ro`) instead of a single file. Directory mounts re-read on each open.
+- Tell-tale diagnostic: `docker exec <container> stat <path>` showing `Links: 0` confirms the inode-replacement scenario.
+
+Discovered 2026-05-28 while debugging foodie + shopper + travel bridges returning auth:failed after host `claude /login`.
