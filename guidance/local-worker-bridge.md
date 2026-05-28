@@ -100,3 +100,16 @@ Discovered 2026-05-28 while debugging foodie + shopper + travel bridges returnin
 Reference implementation: `~/repos/scripts/bridge-auth-refresh.sh` runs every 10min for shopper, foodie, and travel bridges. Do NOT add synthetic keepalive traffic — it's wasted tokens and doesn't extend refresh-token lifetime.
 
 For truly unattended workloads, prefer API key auth (`ANTHROPIC_API_KEY` env var) over OAuth Max.
+
+### Bridge /health endpoints must expose auth state, not just liveness (2026-05-28)
+**Rule:** Any container that wraps an auth-dependent CLI must expose auth state via /health, not just process liveness.
+
+**Why:** Generic 5xx errors from the bridge ("AI service temporarily unavailable") collapse three distinct root causes — auth failure, rate limit, transient API error — into the same surface. Without /health distinguishing them, a 5-minute fix becomes a 2-hour log dive. The shopper/foodie bridge `/health` returns `{"auth":"ok|failed|pending","authError":"..."}`, which turned a multi-day mystery into a 30-second diagnosis.
+
+**How to apply:** When building a new Claude-CLI-wrapping bridge:
+1. Run an auth probe at container start and periodically (every ~60s).
+2. Expose the latest result on /health alongside queue depth and active job count.
+3. The probe can be a no-op query like `claude -p "ok"` — cheap, exercises the full auth path.
+4. Pair with [[pattern_oauth-max-headless-containers]] for the cron-driven recovery flow.
+
+Reference implementation: foodie/shopper/travel bridge-server.js auth probe + health endpoint.
