@@ -113,3 +113,33 @@ For truly unattended workloads, prefer API key auth (`ANTHROPIC_API_KEY` env var
 4. Pair with [[pattern_oauth-max-headless-containers]] for the cron-driven recovery flow.
 
 Reference implementation: foodie/shopper/travel bridge-server.js auth probe + health endpoint.
+
+### Bridge server self-exit on persistent auth failure (2026-05-28)
+**Rule:** Claude-CLI-wrapping bridge servers should exit with `process.exit(1)` after N consecutive auth failures, relying on Docker's restart policy to bring the container back fresh.
+
+**Why:** Even with an external `bridge-auth-refresh.sh` cron, there's a window (up to 10min) where the bridge serves `auth:failed` responses. The self-exit pattern closes this window — the bridge itself detects the stale credential state and triggers an immediate restart, picking up the new inode after `claude /login`.
+
+**How to implement:**
+```js
+let consecutiveAuthFailures = 0;
+const MAX_AUTH_FAILURES = 3; // 3 × 30min = 90min before self-exit
+
+function checkAuth() {
+  // ... run probe ...
+  if (isOk) {
+    consecutiveAuthFailures = 0;
+  } else {
+    consecutiveAuthFailures++;
+    if (consecutiveAuthFailures >= MAX_AUTH_FAILURES) {
+      console.error(JSON.stringify({ event: "auth_persistent_failure", msg: "Exiting for Docker restart" }));
+      process.exit(1); // Docker restarts container fresh, picking up new credential inode
+    }
+  }
+}
+```
+
+**Requirements:** Docker service must have `restart: unless-stopped` (or `always`) policy. Do NOT use this pattern with bare PM2 processes — exit(1) will not restart the process with fresh credentials.
+
+**Interaction with cron:** The cron (`bridge-auth-refresh.sh`) and self-exit are complementary. The cron handles scheduled recovery; self-exit handles the case where the cron hasn't fired yet (or misses a run). Both are needed.
+
+Source: foodie commit 8a35730, shopper commit f4d935b, travel commit 51950cc (2026-05-27).
