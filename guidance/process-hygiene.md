@@ -114,6 +114,25 @@ Never give the user long commands, URLs, or multi-line text to copy-paste manual
 
 **Why:** Repeated incidents of mangled pastes causing failed commands. The user works in Termius SSH client which breaks on multi-line and long-string paste. Writing to files and transferring is always reliable.
 
+## SCP Over Reverse SSH Tunnels
+
+`scp` hangs indefinitely when used over the reverse SSH tunnel (VM → localhost:2222 → WSL). The SSH command channel works fine, but the SCP data channel negotiation fails silently.
+
+**Why:** Reverse tunnels forward the SSH control channel correctly, but SCP's separate data channel negotiation fails silently over loopback tunnels.
+
+**Fix:** Use `ssh+cat` piping for file transfers over the reverse tunnel:
+```bash
+# Instead of: scp vm:remote/path local/path
+ssh -p 2222 localhost 'cat /remote/path' > local/path
+
+# Or push from VM to local:
+cat local/path | ssh -p 2222 localhost 'cat > /remote/path'
+```
+
+**When this applies:** Any file transfer from the VM to local WSL workers via the reverse tunnel. Direct VM→WSL paths via the tunnel are fine for commands, only broken for file data.
+
+**Source:** Discord bot media-transfer bug (2026-05-28) — Discord image attachments silently never arrived at local workers because `scp` hung indefinitely over the tunnel.
+
 ## Cron Cooldown Guard
 
 When a PM2-managed job runs on a schedule (cron trigger), external systems (fix-checker, manual restart, deploy scripts) can cause it to run outside its intended window. Add a **cooldown guard** to prevent duplicate runs:
