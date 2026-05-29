@@ -66,9 +66,17 @@ When PM2 restarts a process, the old Node instance may not release its port befo
 3. **Use a `start.sh` wrapper for Next.js standalone** — `next start` as the PM2 script loses process tracking. A wrapper lets PM2 signal the actual node process:
    ```bash
    #!/bin/bash
-   set -a; source "$(dirname "$0")/.env"; set +a
+   set -e
+   set -a
+   if [ -f "$(dirname "$0")/.env" ]; then source "$(dirname "$0")/.env"; fi
+   set +a
+   # Check for both server.js AND static assets — server.js can exist from a partial build
+   if [ ! -f "$(dirname "$0")/.next/standalone/server.js" ] || [ ! -d "$(dirname "$0")/.next/standalone/.next/static" ]; then
+     npm run build
+   fi
    exec node "$(dirname "$0")/.next/standalone/server.js"
    ```
+   - Build script must use `mkdir -p .next/standalone/.next` before `rm -rf .next/standalone/.next/static` — on a fresh clone the directory doesn't exist and `cp` will fail silently. Correct form: `next build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -r .next/static .next/standalone/.next/static`
 
 **Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
 
