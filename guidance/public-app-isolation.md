@@ -59,6 +59,20 @@ WORKDIR /home/appuser
 - `agentGuidance/` (reveals internal infra, profiles, scripts)
 - Any repo with credentials, env files, or internal tooling
 - The host filesystem
+- **Single-file host credential bind-mounts** (see gotcha below)
+
+**Critical gotcha: bind-mount overrides named volume.** If you mount both a named auth volume AND a single-file host credential bind-mount targeting the same path, Docker applies the named volume first, then the bind-mount on top — the bind-mount wins. This silently pins the container to the host's main account even though the named volume holds the alt account's credentials:
+
+```yaml
+# WRONG — the bind-mount overrides the named volume
+volumes:
+  - claude-auth:/home/node/.claude
+  - /home/npezarro/.claude/.credentials.json:/home/node/.claude/.credentials.json:ro  # ← kills isolation
+
+# CORRECT — named volume only; alt credentials live entirely in the volume
+volumes:
+  - claude-auth:/home/node/.claude
+```
 
 If the app needs reference context (e.g., a buying methodology doc), copy the specific file into the image at build time rather than mounting the repo.
 
