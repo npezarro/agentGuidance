@@ -364,7 +364,7 @@ Source: shopper, foodie, travel-assistant (commits 49da1e1, 78bbb74, d8b65c9 —
 
 **Do NOT rely on `claude -p` to refresh OAuth tokens.** It doesn't reliably trigger refresh — tokens can expire silently. Autonomous jobs that depend on a valid Claude token then fail with cryptic auth errors.
 
-**Correct approach:** Use the direct OAuth refresh_token grant via the platform API. Reference implementation: `~/repos/scripts/refresh-claude-token.sh` (cron every 3h, 4h-before-expiry threshold, temp files for token data to avoid shell interpolation).
+**Correct approach:** Use the direct OAuth refresh_token grant via the platform API. Reference implementation: `~/repos/scripts/refresh-claude-token.sh` (cron every 3h, 6h-before-expiry threshold, intra-cycle retry with backoff, consecutive-failure Discord alerting, temp files for token data to avoid shell interpolation). The threshold was raised from 4h to 6h after the 2026-05-28 incident where 4 consecutive rate-limited cycles caused token expiry — see `guidance/operational-safety.md` § "OAuth Refresh Rate-Limiting".
 
 **Why it matters:** The usage API and all autonomous agent token reads go through the credentials file. An expired token causes every quota-gating job to silently fail or report misleading usage data.
 
