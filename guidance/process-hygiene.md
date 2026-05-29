@@ -102,6 +102,24 @@ docker compose down && docker compose up -d
 
 **Source:** shopper auth refresh cron (commit b5c2338, 2026-05-24) — cron restart loop ran for days because `restart` never picked up refreshed credentials.
 
+## Docker `exec` Always Needs `--user`
+
+When running `docker exec` against a container that has a non-root application user (e.g. the bridge containers run the `node` user), **always pass `--user <username>`** on every exec call. Without it, `docker exec` runs as root — files written inside the container (credentials, config) land in `/root/` instead of `/home/<user>/`, and the application process (running as `node`) cannot read them.
+
+```bash
+# WRONG — exec runs as root, credentials written to /root/.claude/
+docker exec "$CONTAINER" sh -c 'echo data > /home/node/.claude/credentials.json'
+
+# CORRECT — exec runs as node, credentials land where the app reads them
+docker exec --user node "$CONTAINER" sh -c 'echo data > /home/node/.claude/credentials.json'
+```
+
+**Why silent:** The exec command succeeds (exit 0), the file is written, but the bridge process reads a different path. Auth stays broken with no obvious error.
+
+**When this applies:** Any `docker exec` that writes or reads user-owned files (credential rotation, config injection, Claude CLI auth refresh). The `CONTAINER_USER` env var pattern (default `"node"`) makes this portable across containers. Slim images often don't have `procps` — swap `pkill` for `ps | awk | kill`.
+
+**Source:** `scripts/claude-auto-relogin-container.sh` bugfix (commit 3f211e9, 2026-05-28) — OAuth token rotation silently failed because exec ran as root.
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
@@ -234,6 +252,24 @@ if [[ "${2:-}" == "--bg" ]]; then
 ```
 
 **Why:** browser-agent's CLI hit this (2cd17b7, 2026-05-15). The `open` command's `$2` was conditionally checked for `--bg` but failed when omitted. Applies to any script using `set -euo pipefail` with optional args.
+
+## Bash `${VAR:-default}` vs `${VAR-default}`: Empty Counts as Unset
+
+`${VAR:-default}` substitutes the default if `VAR` is **unset OR empty**. `${VAR-default}` substitutes only if `VAR` is **unset**. When a script intentionally sets a var to empty string to disable optional behavior, using `:-` silently ignores that intent.
+
+```bash
+export BRIDGES=""         # caller wants to skip the restart step
+
+# WRONG — empty string treated as unset, defaults to "foodie shopper travel"
+BRIDGES="${BRIDGES:-foodie shopper travel}"
+
+# CORRECT — only substitutes when BRIDGES is genuinely unset
+BRIDGES="${BRIDGES-foodie shopper travel}"
+```
+
+**When this matters:** Any script with optional feature flags passed as environment variables. If `FOO=""` should mean "disabled", use `${FOO-default}`. If `FOO=""` should mean "use default", use `${FOO:-default}`.
+
+**Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
 ## PM2 wait_ready Anti-Pattern
 
