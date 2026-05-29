@@ -114,11 +114,13 @@ count=$(grep -c 'pattern' file || true)
 
 ### Strip CLAUDE_CODE_* Env Vars From Subprocess Invocations
 
-**The scenario:** A PM2 daemon or long-running service that was started (or restarted) from inside a Claude Code session inherits `CLAUDECODE=1` and `CLAUDE_CODE_SESSION_ID` in its env. When that service later spawns `claude -p` as a subprocess, the CLI detects those vars and treats the call as a nested-session invocation — returning a **synthetic "401 Invalid authentication credentials"** response with `model: <synthetic>`. The subprocess call silently fails; the service may fall back to degraded mode without surfacing the real cause.
+> **Correction (2026-05-29):** This rule was originally written under the belief that inherited `CLAUDE_CODE_*` env vars caused the May 28 synthetic-401 incident in `fix-error-handler`. **That diagnosis was wrong.** Follow-up isolated testing (full polluted env including `CLAUDE_CODE_EXECPATH`, `CLAUDECODE=1`, and a dead `CLAUDE_CODE_SESSION_ID`) returned `is_error:false`. The true cause of those 401s was the OAuth refresh script being **rate-limited for 4 consecutive cron cycles**, leaving an expired access token. See "OAuth Refresh Rate-Limiting" below. The env-strip pattern is kept here as **defensive hygiene only** — it is not the fix for the observed incident.
 
-**Real incident (2026-05-28):** `autonomousDev-private/fix-checker/error_handler.py` PM2 daemon was restarted inside a Claude Code session. It captured `CLAUDECODE=1`. All subsequent `claude -p` triage calls returned synthetic 401, and the handler fell back to direct fix without triage.
+**Defensive scenario:** A PM2 daemon or long-running service that was started (or restarted) from inside a Claude Code session inherits `CLAUDECODE=1` and `CLAUDE_CODE_SESSION_ID` in its env. There is no reproducible failure from this alone, but stripping the vars when spawning a `claude -p` subprocess is cheap insurance against any future CLI behavior change that might treat a nested-session-marker env as special.
 
-**Rule:** When spawning `claude -p` as a subprocess from any long-running service (PM2 daemon, server route, cron, etc.), strip `CLAUDE_CODE_*` and `CLAUDECODE` from the subprocess environment:
+**When to apply:** Long-running services (PM2 daemons, server routes) where the inherited env is opaque or stale, and where you want subprocess `claude -p` invocations to look like fresh shell calls. Not required for cron jobs that already start with a clean env.
+
+**Pattern:** Strip `CLAUDE_CODE_*` and `CLAUDECODE` from the subprocess environment:
 
 ```python
 # Python
@@ -140,9 +142,25 @@ const clean_env = Object.fromEntries(
 const child = spawn(CLAUDE_BIN, ['-p', '--dangerously-skip-permissions', ...], { env: clean_env });
 ```
 
-**Why this happens:** PM2 captures the full env at daemon start (including any `CLAUDE_CODE_*` vars from the terminal session that ran `pm2 restart`). The vars persist in the PM2 process table for the lifetime of that process slot — even across subsequent restarts — until PM2 itself is restarted from a clean environment.
+**Why PM2 captures these vars:** PM2 captures the full env at daemon start (including any `CLAUDE_CODE_*` vars from the terminal session that ran `pm2 restart`). The vars persist in the PM2 process table for the lifetime of that process slot — even across subsequent restarts — until PM2 itself is restarted from a clean environment. Whether the CLI cares about them in subprocess context is a separate question; see the correction at the top of this section.
 
-**Detection signal:** Synthetic 401 response + `model: <synthetic>` in JSON output from `claude -p --output-format json`.
+### OAuth Refresh Rate-Limiting (the real cause of the 2026-05-28 synthetic 401s)
+
+**The scenario:** `~/repos/scripts/refresh-claude-token.sh` runs every 3h via cron and calls `https://platform.claude.com/v1/oauth/token` with a `refresh_token` grant. The endpoint is **rate-limited**, and under load can return `rate_limit_error: Rate limited. Please try again later.` for multiple consecutive cron cycles. The script has no intra-cycle retry, so a single failed cycle = no refresh for the next 3 hours.
+
+**Real incident (2026-05-28):** Four consecutive cycles (00:00, 03:00, 06:00, 09:00 PDT) failed with `rate_limit_error`. The access token expired ~7h into the failure window. Every daemon doing `claude -p` during that window got synthetic 401 with `model: <synthetic>` and `result: "Failed to authenticate. API Error: 401 Invalid authentication credentials"`. The CLI's `--output-format json` returns this as `is_error:false` `subtype:success` (confusingly), so the failure is not visible via standard subprocess exit codes — only by parsing the `result` field for the auth-error string. Eventually the 12:00 PDT cycle got through and the token recovered.
+
+**Detection signal:**
+- `result` field of `claude -p --output-format json` contains "Failed to authenticate" or "401 Invalid authentication credentials"
+- `~/.state/claude-token-refresh.log` shows `ERROR: OAuth refresh failed: rate_limit_error` on consecutive cycles
+- Daemons silently fall back to degraded mode (e.g. `fix-error-handler` falls back to direct Gemini fix without Haiku triage)
+
+**Mitigations** (all should be in `refresh-claude-token.sh`):
+1. **Lower the refresh threshold** so the first attempt happens further before expiry (e.g. `REFRESH_THRESHOLD_MS=21600000` for 6h, giving more cron cycles of buffer).
+2. **Intra-cycle retry with backoff** so a single `rate_limit_error` does not lose the whole 3-hour window.
+3. **Track consecutive-cycle failures** in a state file and alert via Discord webhook after ≥2 consecutive failures — so silent token expiry is surfaced before it impacts production daemons.
+
+**Why "strip the env vars" was misdiagnosed as the fix:** The original 401 investigation happened to ship the env-strip at ~10am PDT on 2026-05-28; the OAuth refresh independently recovered at 12:00 PDT; the next observation cycle was clean and the env-strip was assumed causal. Isolated repro (full polluted env in 2026-05-29) showed the env vars alone do not produce 401. The env-strip is preserved as defensive hygiene but is not the actual fix.
 
 ### Claude CLI Binary Path on VM
 
