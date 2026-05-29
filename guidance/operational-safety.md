@@ -112,6 +112,38 @@ count=$(grep -c 'pattern' file || true)
 
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
 
+### Strip CLAUDE_CODE_* Env Vars From Subprocess Invocations
+
+**The scenario:** A PM2 daemon or long-running service that was started (or restarted) from inside a Claude Code session inherits `CLAUDECODE=1` and `CLAUDE_CODE_SESSION_ID` in its env. When that service later spawns `claude -p` as a subprocess, the CLI detects those vars and treats the call as a nested-session invocation — returning a **synthetic "401 Invalid authentication credentials"** response with `model: <synthetic>`. The subprocess call silently fails; the service may fall back to degraded mode without surfacing the real cause.
+
+**Real incident (2026-05-28):** `autonomousDev-private/fix-checker/error_handler.py` PM2 daemon was restarted inside a Claude Code session. It captured `CLAUDECODE=1`. All subsequent `claude -p` triage calls returned synthetic 401, and the handler fell back to direct fix without triage.
+
+**Rule:** When spawning `claude -p` as a subprocess from any long-running service (PM2 daemon, server route, cron, etc.), strip `CLAUDE_CODE_*` and `CLAUDECODE` from the subprocess environment:
+
+```python
+# Python
+clean_env = {k: v for k, v in os.environ.items()
+             if not k.startswith("CLAUDE_CODE") and k != "CLAUDECODE"}
+
+result = subprocess.run(
+    [CLAUDE_BIN, "-p", "--dangerously-skip-permissions", ...],
+    env=clean_env,
+    ...
+)
+```
+
+```javascript
+// Node
+const clean_env = Object.fromEntries(
+  Object.entries(process.env).filter(([k]) => !k.startsWith('CLAUDE_CODE') && k !== 'CLAUDECODE')
+);
+const child = spawn(CLAUDE_BIN, ['-p', '--dangerously-skip-permissions', ...], { env: clean_env });
+```
+
+**Why this happens:** PM2 captures the full env at daemon start (including any `CLAUDE_CODE_*` vars from the terminal session that ran `pm2 restart`). The vars persist in the PM2 process table for the lifetime of that process slot — even across subsequent restarts — until PM2 itself is restarted from a clean environment.
+
+**Detection signal:** Synthetic 401 response + `model: <synthetic>` in JSON output from `claude -p --output-format json`.
+
 ### Claude CLI Binary Path on VM
 
 The Claude CLI binary is at `/usr/bin/claude` on the VM — **not** `/usr/local/bin/claude`. Using the wrong fallback path causes silent `[Errno 2] No such file or directory` failures that drop all AI processing without any obvious error in service logs.
