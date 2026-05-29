@@ -59,10 +59,22 @@ When PM2 restarts a process, the old Node instance may not release its port befo
    ```js
    { kill_timeout: 3000, listen_timeout: 3000 }
    ```
-2. **Graceful shutdown handler in server code:**
+2. **Graceful shutdown handler in server code** — handle both SIGINT and SIGTERM, add a force-exit fallback, and register global error handlers:
    ```js
-   process.on('SIGTERM', () => server.close(() => process.exit(0)));
+   function gracefulShutdown(signal) {
+     server.close(() => process.exit(0));
+     // Force exit if connections don't drain within 10 seconds
+     setTimeout(() => process.exit(1), 10000);
+   }
+   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+   process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason));
+   process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); setTimeout(() => process.exit(1), 100); });
    ```
+   - SIGINT handles Ctrl-C in dev, SIGTERM handles PM2 restart. Both are needed.
+   - The 10-second force-exit prevents PM2 from hanging on keep-alive connections that never drain.
+   - `unhandledRejection`/`uncaughtException` log before exiting; without these, PM2 sees a silent crash with no diagnostic output.
+   - Source: pezantTools server.js (2026-05-28).
 3. **Use a `start.sh` wrapper for Next.js standalone** — `next start` as the PM2 script loses process tracking. A wrapper lets PM2 signal the actual node process:
    ```bash
    #!/bin/bash
