@@ -257,7 +257,20 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 4. **If adding more subpath-deployed Next.js apps with OAuth**: use the Apache proxy/rewrite pattern. `basePath: "/api/auth"` for action parsing + Apache rule to route bare `/api/auth/` callbacks to the correct app. Register the bare callback URL (without the app basePath) in the OAuth provider's console.
 
-5. **`getToken` secureCookie mismatch**: When using `getToken` from `next-auth/jwt` in middleware behind a reverse proxy, pass `secureCookie: true`. The internal request URL is HTTP, so `getToken` defaults to looking for `authjs.session-token` (non-secure name). But NextAuth sets `__Secure-authjs.session-token` based on HTTPS `NEXTAUTH_URL`. Without this, the middleware will never find the session token and every page redirects to login.
+5. **`getToken` must mirror both `secureCookie` and custom `cookieName`**: When using `getToken` from `next-auth/jwt` in middleware, pass both `secureCookie: true` and—when you've set a custom sessionToken cookie name—the matching `cookieName`.
+   - **`secureCookie: true`**: required behind a reverse proxy. The internal request URL is HTTP, so `getToken` defaults to looking for `authjs.session-token` (no `__Secure-` prefix). But NextAuth sets `__Secure-authjs.session-token` based on HTTPS `NEXTAUTH_URL`. Without this, middleware never finds the token.
+   - **`cookieName`**: required when you've set a per-app custom cookie name in auth.ts (which you should—see Session Cookie Isolation above). `getToken` defaults to `__Secure-authjs.session-token` even if your auth.ts configured `__Secure-finance.session-token`. Mismatch = token never found = post-login redirect loop.
+   - **Rule**: if you change the cookie name in auth.ts, change it in the `getToken` call in middleware.ts too.
+   ```typescript
+   // middleware.ts — correct for custom-named cookie behind a proxy
+   const token = await getToken({
+     req,
+     secret: process.env.AUTH_SECRET!,
+     secureCookie: true,
+     cookieName: "__Secure-<appname>.session-token",
+   });
+   ```
+   Real incident: finance-tracker 2026-05-29 — post-login redirect loop caused by missing `cookieName` in `getToken` after `__Secure-finance.session-token` was configured in auth.ts.
 
 6. **Token exchange redirect_uri**: `@auth/core` hardcodes `provider.callbackUrl` for the token exchange (callback.js:107). `authorization.params.redirect_uri` only fixes the auth request. `token.params` has no effect. `redirectProxyUrl` is skipped for same-origin. Fix: use `customFetch` from `@auth/core` on the provider to intercept the token exchange POST and rewrite `redirect_uri` in the body.
 
