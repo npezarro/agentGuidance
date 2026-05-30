@@ -444,6 +444,42 @@ grep -rn 'python.*-c\|-c "' *.sh
 ```
 Real incident: fix was applied to `run.sh` but missed `run-daytrade.sh`, requiring a follow-up commit (a0426cc, 2026-05-25).
 
+## WSL Headless Rendering: DRI3 / LIBGL Errors
+
+**The scenario:** A PM2 service on WSL2 that uses GPU/OpenGL-backed libraries (Chromium, Puppeteer, MediaPipe, OpenCV, PyTorch) logs DRI3 errors and may crash or degrade silently. WSL2 does not provide a DRI3-compatible GPU context for headless processes, so any library that tries to initialize GPU rendering fails at the driver layer.
+
+**Typical error signatures:**
+```
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+libEGL warning: MESA-LOADER: failed to open zink
+dri3_open: Authentication failed
+```
+
+**Fix:** Set `LIBGL_ALWAYS_SOFTWARE=1` in the PM2 ecosystem config env block. This forces Mesa to use software (CPU) rendering via LLVMpipe, bypassing the missing GPU driver entirely:
+
+```js
+// ecosystem.config.js / ecosystem.config.cjs
+env: {
+  LIBGL_ALWAYS_SOFTWARE: '1',
+}
+```
+
+**For MediaPipe specifically**, also force the CPU delegate in model options — MediaPipe may still attempt GPU delegate even with software rendering:
+
+```python
+from mediapipe.tasks.python import BaseOptions
+base_options = BaseOptions(
+    model_asset_path=str(model_path),
+    delegate=BaseOptions.Delegate.CPU,  # force CPU — GPU delegate fails on WSL2
+)
+```
+
+**Affected tools (non-exhaustive):** Chromium/Puppeteer, MediaPipe, OpenCV (via OpenGL backend), PyOpenGL, any MESA-dependent library.
+
+**When to apply:** Any new PM2 service on WSL2 that imports OpenGL-dependent libraries. Add `LIBGL_ALWAYS_SOFTWARE: '1'` to the ecosystem env block by default — it has no downside on GPU-less hosts and prevents hard-to-debug silent failures.
+
+**Source:** auto-shorts-worker commits 4828bfe/03e17e2 (MediaPipe face detector, yt-dlp rendering), browser-agent commit 35adba7 (Puppeteer screenshot failures) — 2026-05-15/29.
+
 ## Node.js 22 HTTP Gotchas
 
 ### Built-in `fetch` headersTimeout
