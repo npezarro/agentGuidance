@@ -157,7 +157,7 @@ kwargs["env"] = env
 
 ### OAuth Refresh Rate-Limiting (the real cause of the 2026-05-28 synthetic 401s)
 
-**The scenario:** `~/repos/scripts/refresh-claude-token.sh` runs every 3h via cron and calls `https://platform.claude.com/v1/oauth/token` with a `refresh_token` grant. The endpoint is **rate-limited**, and under load can return `rate_limit_error: Rate limited. Please try again later.` for multiple consecutive cron cycles. The script has no intra-cycle retry, so a single failed cycle = no refresh for the next 3 hours.
+**The scenario:** `~/repos/scripts/refresh-claude-token.sh` runs every 3h via cron and calls `https://platform.claude.com/v1/oauth/token` with a `refresh_token` grant. The endpoint is **rate-limited**, and under load can return `rate_limit_error: Rate limited. Please try again later.` for multiple consecutive cron cycles.
 
 **Real incident (2026-05-28):** Four consecutive cycles (00:00, 03:00, 06:00, 09:00 PDT) failed with `rate_limit_error`. The access token expired ~7h into the failure window. Every daemon doing `claude -p` during that window got synthetic 401 with `model: <synthetic>` and `result: "Failed to authenticate. API Error: 401 Invalid authentication credentials"`. The CLI's `--output-format json` returns this as `is_error:false` `subtype:success` (confusingly), so the failure is not visible via standard subprocess exit codes — only by parsing the `result` field for the auth-error string. Eventually the 12:00 PDT cycle got through and the token recovered.
 
@@ -166,10 +166,12 @@ kwargs["env"] = env
 - `~/.state/claude-token-refresh.log` shows `ERROR: OAuth refresh failed: rate_limit_error` on consecutive cycles
 - Daemons silently fall back to degraded mode (e.g. `fix-error-handler` falls back to direct Gemini fix without Haiku triage)
 
-**Mitigations** (all should be in `refresh-claude-token.sh`):
-1. **Lower the refresh threshold** so the first attempt happens further before expiry (e.g. `REFRESH_THRESHOLD_MS=21600000` for 6h, giving more cron cycles of buffer).
-2. **Intra-cycle retry with backoff** so a single `rate_limit_error` does not lose the whole 3-hour window.
-3. **Track consecutive-cycle failures** in a state file and alert via Discord webhook after ≥2 consecutive failures — so silent token expiry is surfaced before it impacts production daemons.
+**Mitigations** (all implemented in `refresh-claude-token.sh` as of commit `ace2e0f`, 2026-05-29):
+1. **6h refresh threshold** (`REFRESH_THRESHOLD_MS=21600000`) — refreshes ~3 cron cycles before expiry instead of 1.
+2. **Intra-cycle retry with backoff** — up to 3 attempts per run; `rate_limit_error` backs off 60s/240s, other failures 30s.
+3. **Consecutive-cycle failure counter** — stored in `~/.cache/claude-token-refresh/`. After ≥2 consecutive failures, posts a Discord alert with hours-remaining context. Counter resets on any successful or healthy cycle.
+
+**When the consecutive-failure Discord alert fires:** The alert means the API refresh path is stuck. Do NOT wait for the next cron cycle — trigger `claude-auto-relogin.sh` (or the `/refresh-main-auth` skill). The browser OAuth path is not subject to the API rate limit and will recover the token immediately.
 
 **Why "strip the env vars" was misdiagnosed as the fix:** The original 401 investigation happened to ship the env-strip at ~10am PDT on 2026-05-28; the OAuth refresh independently recovered at 12:00 PDT; the next observation cycle was clean and the env-strip was assumed causal. Isolated repro (full polluted env in 2026-05-29) showed the env vars alone do not produce 401. The env-strip is preserved as defensive hygiene but is not the actual fix.
 
