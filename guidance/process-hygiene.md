@@ -316,6 +316,34 @@ exec node .next/standalone/server.js
 
 Source: VM memory tuning session 2026-05-25 — applying `--node-args` caused immediate crashes on all bash-wrapped Next.js services (shopper, foodie, travel-assistant, finance-tracker).
 
+## PM2 `cron_restart` Causes False Positive Crash Loop Alerts
+
+Do **not** use `cron_restart` in a PM2 ecosystem config if you have crash-loop alerting. PM2 counts a `cron_restart`-triggered restart as an unexpected restart — incrementing the `restarts` counter and potentially triggering "restart loop" Discord alerts or monitoring dashboards.
+
+```js
+// BAD — the 5 AM restart increments the restarts counter, firing false crash alerts
+module.exports = {
+  apps: [{
+    name: "my-service",
+    max_restarts: 100,
+    cron_restart: "0 5 * * *",  // triggers false positive alerts
+  }]
+};
+
+// GOOD — use max_memory_restart to restart only when memory leaks accumulate
+module.exports = {
+  apps: [{
+    name: "my-service",
+    max_restarts: 10,
+    max_memory_restart: "500M",  // restarts on actual leak, not on schedule
+  }]
+};
+```
+
+**Rule:** Use `max_memory_restart` (e.g. `500M`) instead of `cron_restart` to handle memory leaks. If scheduled daily restarts are genuinely needed, adjust the alerting threshold to account for the planned restart count.
+
+Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
+
 ## Next.js `experimental.mcpServer` Causes Extra Port Binding
 
 If `experimental: { mcpServer: true }` (or any truthy value) is set in `next.config.ts`, Next.js binds an additional port for its built-in MCP server. This causes `EADDRINUSE` when PM2 restarts overlap with that port still being held.
