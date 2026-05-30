@@ -163,6 +163,22 @@ rsync -az --delete ./dist/ "$DEPLOY_TARGET"
 
 **Why this matters:** A real deploy overwrote a production database port with a local dev port, causing all connections to fail silently. The root cause was `rsync --delete` without `--exclude .env`.
 
+## Concurrent rsyncs Silently Drop Subdirectories
+
+**Never run parallel rsyncs from the same dev host to multiple production directories.** Concurrent rsync operations (e.g., deploying shopper, foodie, and travel in the same shell session with `&`) can silently drop subdirectories in the destination.
+
+**Observed failure (2026-05-29):** Three apps deployed in parallel via rsync. One app's `.next/standalone/.next/server/chunks/ssr/` directory was silently missing. PM2 showed the process as `online` and `/api/health` returned 200 (health checks don't render SSR routes). The failure only surfaced when a user navigated to an app-router page: `InvariantError: client reference manifest for route "/search" does not exist`.
+
+**Rule:** When batch-deploying multiple apps with rsync artifacts, **run rsyncs sequentially**. After each rsync, verify the artifact tree is complete before restarting PM2:
+
+```bash
+# Verify SSR chunks before PM2 restart (Next.js standalone builds)
+ls <prod_dir>/.next/standalone/.next/server/chunks/ssr/ \
+  || { echo "SSR chunks missing — re-run rsync before restarting PM2"; exit 1; }
+```
+
+**Why it's hard to catch:** The process appears healthy at the PM2 and health-endpoint level. The root cause (missing ssr/ chunks) is only observable by listing the artifact tree or by exercising an app-router route end-to-end.
+
 ## PM2 + ESM Module Incompatibility
 
 **PM2 cluster mode is incompatible with ESM modules.** When a Node.js service uses `"type": "module"` in `package.json` or imports `.mjs` files, setting `exec_mode: "cluster"` in the PM2 ecosystem config will crash the process on start.
