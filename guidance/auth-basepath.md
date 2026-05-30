@@ -72,7 +72,7 @@ Each app needs:
 - **basePath in pathname**: Next.js 14 with `auth()` middleware wrapper includes the basePath in `req.nextUrl.pathname`. Check for both `/api/auth/signin/` and `/<basePath>/api/auth/signin/`.
 - **Next.js 16 proxy.ts**: Next.js 16 renamed `middleware.ts` to `proxy.ts` and exports `proxy()` instead of `middleware()`. Having both files causes a build error.
 - **Matcher excludes auth paths**: If the middleware matcher excludes `api/auth` (common for auth-protected apps), add `/api/auth/signin/:path*` as a separate matcher entry so the cookie-setting code runs.
-- **NextAuth `basePath` must always be `"/api/auth"`, never `"/<app>/api/auth"`**: In Next.js standalone output (`output: 'standalone'`), the basePath is stripped from `req.url` before reaching server code. NextAuth always receives `/api/auth/...` regardless of the Next.js basePath. Setting `basePath: "/<app>/api/auth"` in `auth.ts` prevents NextAuth from matching action routes and silently breaks auth. Source: shopper debugging loop (2026-05-18, commit 832c47b).
+- **NextAuth `basePath` depends on whether Apache URL-rewrites the request**: This depends on how Apache is configured for the app. (a) If Apache rewrites the URL — stripping the app prefix before proxying (e.g., `RewriteRule ^/shopper/(.*)$ http://localhost:3090/$1` or `ProxyPassMatch` with path rewriting) — standalone Next.js sees only `/api/auth/...`, so `basePath: "/api/auth"`. (b) If Apache proxies WITHOUT stripping the prefix (e.g., `ProxyPass /health-hub http://localhost:3002/health-hub`), standalone Next.js sees the full URL including the prefix, so `basePath: "/<app>/api/auth"` is required. See gotcha #8 below for the dynamic pattern. Source: shopper (Apache rewrite, basePath="/api/auth", 2026-05-18 commit 832c47b); health-hub (no Apache rewrite, basePath="/health-hub/api/auth", 2026-05-30 commit e24449a).
 - **Middleware matcher must include basePath prefix**: In Next.js 16 basePath apps, the `config.matcher` in `middleware.ts` must use the full path including the basePath prefix — e.g., `["/<app>/api/auth/signin/:path*"]`, NOT just `["/api/auth/signin/:path*"]`. Without the prefix, Next.js never fires the middleware for those routes (it routes using the full path), so the `__auth_target` cookie is never set and the auth-proxy cannot route the callback. Caused a 4-commit debugging loop on shopper (2026-05-17) before the root cause was identified. Same fix required for `req.nextUrl.pathname.startsWith()` check in the middleware body.
 - **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
@@ -300,6 +300,14 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    Also exclude static assets from the middleware matcher (`.*\\.png$|.*\\.svg$`) — auth middleware blocking images causes broken layouts.
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
+
+12. **When AUTH_URL includes the app basePath AND `basePath: "/<app>/api/auth"` is required, append `/api/auth` to AUTH_URL.** `setEnvDefaults()` extracts the pathname from `AUTH_URL` and uses it as the NextAuth `basePath`. If `AUTH_URL=https://example.com/health-hub`, `setEnvDefaults()` extracts `/health-hub` and silently overrides the explicit `basePath: "/health-hub/api/auth"`, breaking auth. Fix: at the top of `auth.ts`, programmatically extend AUTH_URL:
+   ```typescript
+   if (process.env.AUTH_URL === "https://example.com/health-hub") {
+     process.env.AUTH_URL = "https://example.com/health-hub/api/auth";
+   }
+   ```
+   With the full path set, `setEnvDefaults()` extracts `/health-hub/api/auth`, which matches the explicit basePath. Source: health-hub `1b7f4a8` (2026-05-30). **Note:** This applies only to apps using `basePath: "/<app>/api/auth"` (no Apache URL rewriting). Apps with Apache URL rewriting use `AUTH_URL=https://example.com` (bare origin) and don't hit this issue.
 
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 

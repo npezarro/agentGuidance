@@ -190,6 +190,40 @@ Benefits: `start.sh` also loads `.env` before the process starts, ensuring env v
 
 Repos using this pattern: `claude-auto-merger`, `shopper`.
 
+## Next.js start.sh Robustness Checks
+
+When `start.sh` handles auto-build on startup (common for staged deployments), three checks prevent silent failures:
+
+**1. node_modules check before build:** After a fresh git clone or pull, `node_modules` may not exist. Attempting to build without them produces confusing errors.
+```bash
+if [ ! -d "node_modules" ]; then
+  echo "node_modules missing, running npm install..."
+  npm install || { echo "ERROR: npm install failed"; exit 1; }
+fi
+```
+
+**2. Build manifest path check (appDir mismatch):** Next.js standalone builds embed the build directory path in `.next/required-server-files.json` as `appDir`. If the same build artifact is deployed to a different directory, the app crashes at runtime. Detect and rebuild on mismatch:
+```bash
+MANIFEST=".next/required-server-files.json"
+CURRENT_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$MANIFEST" ]; then
+  MANIFEST_DIR=$(grep '"appDir":' "$MANIFEST" | sed 's/.*"appDir": "\([^"]*\)".*/\1/')
+  if [ "$MANIFEST_DIR" != "$CURRENT_DIR" ]; then
+    echo "Manifest path mismatch ($MANIFEST_DIR vs $CURRENT_DIR), rebuilding..."
+    NEEDS_BUILD=1
+  fi
+fi
+```
+
+**3. `exec bash` in start-stg.sh:** When a staging wrapper calls `start.sh`, use `exec bash start.sh` instead of calling the script directly. A direct call fails with `permission denied` if `start.sh` doesn't have the execute bit set (common after fresh git clone). `exec bash` bypasses the permission check since bash is the interpreter.
+```bash
+# start-stg.sh
+exec bash "$(dirname "$0")/start.sh"
+# NOT: exec "$(dirname "$0")/start.sh"  ← fails if +x not set
+```
+
+Source: foodie `7f66d00` + `a2f84a9`, travel-assistant `f8b3db0` (2026-05-30).
+
 ## VM SSH Access
 
 The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
