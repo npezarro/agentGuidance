@@ -173,6 +173,41 @@ kwargs["env"] = env
 
 **Why "strip the env vars" was misdiagnosed as the fix:** The original 401 investigation happened to ship the env-strip at ~10am PDT on 2026-05-28; the OAuth refresh independently recovered at 12:00 PDT; the next observation cycle was clean and the env-strip was assumed causal. Isolated repro (full polluted env in 2026-05-29) showed the env vars alone do not produce 401. The env-strip is preserved as defensive hygiene but is not the actual fix.
 
+**Layered defense — browser path as safety net (production validated 2026-05-29):** The cron `refresh-claude-token.sh` path and the browser-based `claude-auto-relogin.sh` / `claude-auth-probe.sh` path are independent recovery mechanisms. When the OAuth API endpoint is rate-limiting (the cron path fails), the browser-based path completes `claude auth login --claudeai` via the web OAuth flow — bypassing the API endpoint entirely. The two paths ran in sequence on 2026-05-29: the 13:55 PDT manual run and the 15:00 PDT cron both exhausted all retries with `rate_limit_error`; the browser `claude-auto-relogin.sh` chain at ~16:17 PDT ran `claude auth login` through browser-agent, sidestepping the rate-limited endpoint; the 18:00 PDT cron cycle ran clean with the counter reset to 0.
+
+**Implication:** When debugging a prolonged OAuth failure, check both paths. If the cron log shows persistent `rate_limit_error` and the access token is expired, the recovery path is NOT to wait — it is to trigger `claude-auto-relogin.sh` (or the `/refresh-main-auth` skill) which uses the browser and is not subject to the API rate limit.
+
+### React SPA Hydration Race in Browser-Agent OAuth Scripts
+
+**Symptom:** A browser-agent script clicks the OAuth Authorize button on `claude.ai`. The click reports success but nothing happens — no navigation, no callback. The same script works fine minutes later.
+
+**Why:** React SPAs render the DOM before hydrating (wiring up event listeners). The Authorize button can be visible and selectable during this gap but fires no event when clicked. The window is typically under 2s but is reproducible on freshly-woken browser sessions.
+
+**Real incident (2026-05-29):** `claude-auto-relogin-container.sh` failed for foodie at 00:10 PT with "callback tab not found". Shopper and travel at 00:20/00:30 PT succeeded with the same script. The fix: add `sleep 4` after locating the consent tab, then retry the click once if no callback appears within 25s.
+
+**Pattern for OAuth automation scripts:**
+```bash
+# After opening the consent/authorize URL and confirming the tab exists:
+sleep 4  # Let React hydrate before clicking
+
+# Click Authorize
+browser-cli click "#authorize-button" ...
+
+# Poll for callback (up to ~25s)
+for i in $(seq 1 5); do
+  sleep 5
+  # check if callback tab appeared ...
+done
+
+# If no callback after 25s, retry once
+if [ "$callback_found" != "1" ]; then
+  sleep 4
+  browser-cli click "#authorize-button" ...
+fi
+```
+
+**Rule:** Never do unbounded retries on a consent button. If two attempts both produce no callback, escalate via Discord alert — the problem is something other than a hydration race (rate limit, broken page, wrong selector).
+
 ### Claude CLI Binary Path on VM
 
 The Claude CLI binary is at `/usr/bin/claude` on the VM — **not** `/usr/local/bin/claude`. Using the wrong fallback path causes silent `[Errno 2] No such file or directory` failures that drop all AI processing without any obvious error in service logs.
