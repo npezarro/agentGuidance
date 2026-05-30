@@ -144,6 +144,17 @@ const child = spawn(CLAUDE_BIN, ['-p', '--dangerously-skip-permissions', ...], {
 
 **Why PM2 captures these vars:** PM2 captures the full env at daemon start (including any `CLAUDE_CODE_*` vars from the terminal session that ran `pm2 restart`). The vars persist in the PM2 process table for the lifetime of that process slot — even across subsequent restarts — until PM2 itself is restarted from a clean environment. Whether the CLI cares about them in subprocess context is a separate question; see the correction at the top of this section.
 
+**Also strip `NODE_CHANNEL_FD`** when launching non-Node subprocesses from a Node.js parent (e.g., a Python worker called from an Express PM2 service). Node.js IPC sets `NODE_CHANNEL_FD` in its own env; child processes that themselves use Node runtimes (such as yt-dlp's JS challenge solver) inherit this FD reference and can fail with IPC errors because the FD is already closed or invalid in the new process.
+
+Real incident (2026-05-29): `auto-shorts-worker/pipeline.py` ran inside a Node.js PM2 parent. yt-dlp's deno/node challenge solver inherited `NODE_CHANNEL_FD` and errored with IPC channel failures. Fix: strip it in `_run()`:
+
+```python
+env = kwargs.get("env") or os.environ.copy()
+if "NODE_CHANNEL_FD" in env:
+    del env["NODE_CHANNEL_FD"]
+kwargs["env"] = env
+```
+
 ### OAuth Refresh Rate-Limiting (the real cause of the 2026-05-28 synthetic 401s)
 
 **The scenario:** `~/repos/scripts/refresh-claude-token.sh` runs every 3h via cron and calls `https://platform.claude.com/v1/oauth/token` with a `refresh_token` grant. The endpoint is **rate-limited**, and under load can return `rate_limit_error: Rate limited. Please try again later.` for multiple consecutive cron cycles. The script has no intra-cycle retry, so a single failed cycle = no refresh for the next 3 hours.
