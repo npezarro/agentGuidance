@@ -227,3 +227,13 @@
 **What worked:** Reading every source file systematically, then tracing data flow from user input through API routes to bridge server to Claude CLI and back through markdown rendering. Checking git history for committed secrets (verified .env was never tracked). Identifying the TOCTOU race condition in rate limiting by tracing the check-then-insert pattern across files. Verifying the GitHub repo visibility (private) to correctly calibrate the severity of committed paths/IDs.
 **What didn't:** N/A -- clean systematic pass
 **Learned:** The most critical finding pattern in localhost-bridge architectures is the unauthenticated internal service. The Docker bridge at localhost:3091 has zero auth, zero concurrency limits, and spawns expensive 15-minute Claude CLI processes per request. Combined with the rate-limit TOCTOU race, an attacker can bypass the 3/day free tier limit. The bridge being localhost-only is necessary but insufficient -- any SSRF or compromised co-tenant process can reach it. For AI-powered apps rendering LLM output as markdown, the defense chain is: tool allowlisting (--allowedTools) > prompt injection guardrails > output sanitization (rehype-sanitize) > CSP headers. This app has the first link but is missing the rest. react-markdown v10 strips raw HTML by default which is good implicit protection, but explicit sanitization should always be added for defense in depth.
+
+---
+## 2026-05-31 | page-reader SSRF guard correction (autonomousDev run #299)
+**Task:** autonomousDev identified and fixed two SSRF guard bugs in page-reader's HTTP proxy (`src/server.js`)
+**What worked:** Extracting the guard into `src/host-guard.js` with 55 dedicated unit tests (host-guard.test.js). PR #12 open for review.
+**What didn't:** N/A — systematic fix
+**Learned:** Two concrete SSRF guard bugs to watch for in any HTTP proxy:
+1. `host.startsWith('172.')` overblocks: only `172.16.0.0/12` (172.16.x.x – 172.31.x.x) is RFC1918 private. `172.0.0.0/12` through `172.15.x.x` and `172.32.x.x` onward are public (Google CDN lives at 172.217.x.x). Never block on the `172.` prefix alone.
+2. `169.254.0.0/16` link-local (AWS/GCP instance metadata at `169.254.169.254`) was missing entirely. This is a real SSRF attack vector on cloud VMs — always include it.
+DNS rebinding remains unaddressed: `isInternalHost()` inspects the hostname string, not the resolved IP. A public hostname resolving to a private IP bypasses the check. Document this limitation in the module header so future maintainers don't assume full protection.
