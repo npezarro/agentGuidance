@@ -110,6 +110,8 @@ count=$(grep -c 'pattern' file || true)
 - `claude --print --no-chrome -p "..."`
 - `$CLAUDE_BIN -p --dangerously-skip-permissions --no-chrome`
 
+**`-p` consumes the next argument as a prompt string.** When piping input via stdin with additional flags, use `claude --print` (not `claude -p`). The `-p` flag takes the NEXT argument as a positional prompt — so `claude -p --model X` feeds the literal string `"--model X"` as the prompt and ignores stdin entirely. Use `claude --print --model X` to enable stdin mode with a separate model flag. This caused a silent failure in `deal-scout/scout.js` (commit `909f481`, 2026-06-01).
+
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
 
 ### Strip CLAUDE_CODE_* Env Vars From Subprocess Invocations
