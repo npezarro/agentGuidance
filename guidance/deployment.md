@@ -231,3 +231,25 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Next.js Build OOM on 4GB-RAM VM
+
+On the GCP VM (4GB RAM), `next build` can exhaust the Node.js heap and crash silently, producing no build output and no error message. Always set `NODE_OPTIONS` for the build step:
+
+```bash
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
+```
+
+This applies to any `npm run build` call on the VM for Next.js apps (runeval, shopper, foodie, travel-assistant, finance-tracker). The runtime heap cap is separate — set via `node_args: '--max-old-space-size=1024'` in `ecosystem.config.cjs` so the running server doesn't eat swap.
+
+**Why separate caps:** Build-time peak usage (asset compilation, type checking, tree shaking) is much higher than runtime usage. 2048MB for builds, 1024MB for runtime is the tested stable configuration.
+
+## `pm2 restart --update-env`
+
+After changing env vars in `.env` (e.g., during a deploy that patches `AUTH_URL` or `APP_URL`), always restart with:
+
+```bash
+pm2 restart <service> --update-env
+```
+
+Without `--update-env`, the running process keeps the old env from when PM2 started it. A bare `pm2 restart` reuses the cached env; `--update-env` re-reads the current process env and `.env` (if the start script sources it). Without this, updated vars like `AUTH_URL` or `APP_URL` are silently ignored until a full `pm2 delete && pm2 start` cycle. Source: runeval auth debugging (commit `4074a33`, 2026-06-01).
