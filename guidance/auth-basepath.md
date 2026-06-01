@@ -235,7 +235,7 @@ cookies: {
 session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal apps
 ```
 
-**Current cookie names:** finance, health-hub, student, runeval, shopper, travel.
+**Current cookie names:** finance, foodie, health-hub, student, runeval, shopper, travel.
 
 **Add to the new-app checklist:** When adding a new app, assign a unique cookie name following this pattern.
 
