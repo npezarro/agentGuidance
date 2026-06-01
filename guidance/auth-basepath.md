@@ -286,15 +286,9 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **Standalone mode changes basePath behavior.** In `next dev`, Next.js strips the basePath from `req.url` before the route handler sees it. In standalone mode (`node server.js`), it does NOT strip it — `@auth/core` sees the full URL including the basePath prefix. So the NextAuth `basePath` must include the Next.js basePath:
-   ```typescript
-   // next dev: handler sees /api/auth/signin/google → basePath: "/api/auth"
-   // standalone: handler sees /finance/api/auth/signin/google → basePath: "/finance/api/auth"
+8. **Standalone mode DOES strip the Next.js basePath — always use `basePath: "/api/auth"`.** In both `next dev` and standalone mode (`node server.js`), Next.js strips the app's basePath (set in `next.config.ts`) from `req.url` before route handlers see it. So `@auth/core` always receives `/api/auth/signin/google`, regardless of whether the incoming URL was `/finance/api/auth/signin/google`. Always use `basePath: "/api/auth"` in the NextAuth config, not `"/<app>/api/auth"`.
 
-   // Dynamic config that works in both modes:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,
-   ```
-   **Why this trips people up:** The runeval fix (above) uses a hardcoded `"/api/auth"` because runeval's Apache proxy rewrites the URL. Apps without that rewrite need the dynamic basePath.
+   **Correction history (2026-05-31):** An earlier version of this gotcha stated standalone does NOT strip the basePath and recommended `basePath: "/health-hub/api/auth"` for apps without Apache URL rewriting. This was incorrect — health-hub commit `ea03b63` reverted to `"/api/auth"` specifically to resolve "auth mismatch warnings" caused by the wrong basePath. The exception documented in `knowledgeBase/integrations/google-oauth-patterns.md` was also removed as part of the same correction.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
