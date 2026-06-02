@@ -220,14 +220,32 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 {
   name: 'my-service',
   script: 'server.js',
-  kill_timeout: 3000,    // ms to wait for graceful shutdown before SIGKILL (default: 1600)
-  listen_timeout: 3000,  // ms to wait for app to bind its port before marking crashed (default: 3000)
-  max_memory_restart: '1G',
+  kill_timeout: 10000,    // ms to wait for graceful shutdown before SIGKILL (default: 1600)
+  listen_timeout: 10000,  // ms to wait for app to bind its port before marking crashed (default: 3000)
 }
 ```
 
-**`kill_timeout`:** PM2 sends SIGTERM, then force-kills with SIGKILL after `kill_timeout` ms. Default 1600ms is too short for Next.js apps closing DB connections or finishing in-flight requests. Use 3000ms minimum. **Finance-tracker crash loop (2026-05-15):** default kill_timeout caused partial shutdown, leaving DB connections open, causing the next start to hit connection limit immediately.
+**`kill_timeout`:** PM2 sends SIGTERM, then force-kills with SIGKILL after `kill_timeout` ms. Default 1600ms is too short for Next.js apps closing DB connections or finishing in-flight requests. Use 10000ms (10s) for Next.js standalone apps — experience shows that 3000ms can still cause partial shutdown under load, leaving DB connections open and causing the next start to hit connection limit immediately. **Finance-tracker crash loop (2026-05-15):** default kill_timeout caused this. **runeval crash loop (2026-06-02, commit `0ac95bc`):** even 3000ms was insufficient; raised to 10000ms to fully resolve.
 
-**`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
+**`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, use 10000ms to match `kill_timeout` and give heavy initializers (Prisma, migrations, PRAGMA setup) enough runway.
+
+**`max_memory_restart`:** Remove this from production PM2 configs for Next.js apps. It can trigger unexpected restarts during traffic spikes and is harder to tune than a VM-level OOM guard. Set a Node.js heap cap via `node_args: '--max-old-space-size=1024'` instead and let the OS OOM killer be the last resort.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Prisma + SQLite: WAL Mode Must Be Applied via PRAGMA, Not URL
+
+When using Prisma with SQLite, WAL mode (`journal_mode=WAL`) cannot be set as a query parameter in the `DATABASE_URL`. Prisma's engine does not support it as a URL param and will silently ignore or error on it.
+
+**Correct approach:** Apply WAL mode via `$queryRawUnsafe` after connecting:
+
+```ts
+await prisma.$queryRawUnsafe(`PRAGMA journal_mode=WAL;`);
+await prisma.$queryRawUnsafe(`PRAGMA busy_timeout=30000;`);
+```
+
+If `journal_mode=WAL` appears in `DATABASE_URL` (e.g., from an old deploy.sh), **strip it before passing to Prisma** — do not let it through as a connection parameter.
+
+**URL params that ARE supported:** `connection_limit=1`, `pool_timeout=10`, `busy_timeout=30000`. These prevent "database is locked" errors under concurrent Prisma access.
+
+**Pattern used in:** runeval `lib/prisma.ts` (commit `0ac95bc`, 2026-06-02) — strips `journal_mode` from URL with `url.searchParams.delete("journal_mode")` before constructing the Prisma datasource URL, then applies WAL via PRAGMA at connection time.
