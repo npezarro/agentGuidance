@@ -1,10 +1,26 @@
 # Agent Guidance
 
-Centralized behavioral governance for autonomous Claude Code agents.
+The publicly released instruction-and-governance layer of a Claude Code harness operating across 30+ production repositories.
+
+## What This Is
+
+agentGuidance is the harness I run my Claude Code ecosystem on. It defines, in one place, the behavioral rules, steerability constraints, persistent memory schema, agent profiles, and operational safety guardrails that every autonomous Claude Code session in my 30+ repositories inherits at startup.
+
+The autonomous dev agent, cross-instance messaging, browser-control extension, instruction-environment A/B harness, session closeout, usage gating, and OAuth refresh skills all hang off this layer. See the [Ecosystem](#ecosystem) section for the full list.
+
+## Operating in Production
+
+- 30+ repositories governed
+- 50+ Claude CLI invocations per day
+- Hundreds of autonomous commits since January 2026
+- 14,500+ lines of orchestration code across the ecosystem
+- 108+ logged autonomous sessions
+- 30+ page synthesized knowledge base wiki, cross-referenced
+- Continuously operating; harness rules are fetched at every session start
 
 ## Why This Exists
 
-Running dozens of Claude Code sessions per week across 27+ repositories revealed a core problem: without centralized behavioral rules, agents drift in quality, forget conventions, make inconsistent decisions, and repeat mistakes that were already corrected in other sessions. A fix applied in one project never reaches the others. An instruction that works for a code review task produces poor results on a security audit.
+Running dozens of Claude Code sessions per week across 30+ repositories revealed a core problem: without centralized behavioral rules, agents drift in quality, forget conventions, make inconsistent decisions, and repeat mistakes that were already corrected in other sessions. A fix applied in one project never reaches the others. An instruction that works for a code review task produces poor results on a security audit.
 
 This repo solves that by providing a single source of truth for agent behavioral defaults, steerability constraints, and operational safety rules that propagate to every session across every project.
 
@@ -73,7 +89,7 @@ cp -r .claude/ /path/to/your/project/.claude/
 
 ```
 agentGuidance/
-├── CLAUDE.md                          # Bootstrap — entry point for Claude Code
+├── CLAUDE.md                          # Bootstrap: entry point for Claude Code
 ├── agent.md                           # Core behavioral defaults
 ├── guidance/
 │   ├── testing.md                     # When and how to write tests
@@ -106,10 +122,19 @@ agentGuidance/
 └── README.md                          # This file
 ```
 
-## Related Projects
+## Ecosystem
 
-- **[claude-bakeoff](https://github.com/npezarro/claude-bakeoff)**: A/B testing framework for comparing instruction environments. Used to validate changes to agentGuidance rules before deploying them.
-- **[auto-dev](https://github.com/npezarro/auto-dev)**: Autonomous development agent governed by agentGuidance rules. Runs every 30 minutes across all repos.
+The following public repositories make up the rest of the Claude Code harness that hangs off agentGuidance:
+
+- **[autonomousDev](https://github.com/npezarro/autonomousDev)**: Autonomous development agent on a 30-minute cron. Surveys 30+ repos, branches, implements, stages PRs for human review. Governed by agentGuidance rules, usage-gated, Discord reporting.
+- **[claudeNet](https://github.com/npezarro/claudeNet)**: Async messaging layer between Claude Code CLI instances. Sensitivity scanner flags candidate secret leaks before send. Express.js / SQLite, CLI client, web dashboard. Design rationale published on Medium.
+- **[claude-browser-agent](https://github.com/npezarro/claude-browser-agent)**: MV3 extension + relay server + CLI for Claude to drive a live Chrome browser (clicks, scrolls, screenshots, DOM inspection). Consumed downstream by 6+ projects.
+- **[claude-bakeoff](https://github.com/npezarro/claude-bakeoff)**: A/B testing framework for comparing instruction environments. LLM-as-judge scoring with structured rubrics (correctness, completeness, code quality, adherence). Used to validate changes to agentGuidance rules before deploying them.
+- **[agent-skills](https://github.com/npezarro/agent-skills)**: Closeout (session lifecycle) and bakeoff packaged as agent skills following the [agentskills.io](https://agentskills.io) open standard.
+- **[claude-session-namer](https://github.com/npezarro/claude-session-namer)**: Stop hook that writes AI-generated custom titles to the Claude Code session JSONL via `claude -p sonnet`, so the session list shows what each session actually did.
+- **[claude-usage-monitor](https://github.com/npezarro/claude-usage-monitor)**: Token-usage-aware execution gate. Autonomous agents enter proposal-only mode above 50% usage and halt above 75%. Fail-closed by design.
+- **[claude-token-tracker](https://github.com/npezarro/claude-token-tracker)**: Per-component token usage tracking for Claude Code ecosystems.
+- **[claude-tray-notifier](https://github.com/npezarro/claude-tray-notifier)**: macOS menu bar notifier for Claude Code.
 
 ## Customizing
 
