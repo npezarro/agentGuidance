@@ -112,6 +112,22 @@ count=$(grep -c 'pattern' file || true)
 
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
 
+### Gotcha: `claude -p` Eats the Next Argument as a Prompt String
+
+When calling the Claude CLI with piped stdin **and** additional flags like `--model`, use `claude --print`, **not** `claude -p`. The `-p` flag is positional — it treats the **next CLI argument** as a literal prompt string, so `claude -p --model claude-sonnet-4-6` passes `"--model claude-sonnet-4-6"` as the prompt and ignores stdin entirely.
+
+```bash
+# WRONG — -p eats --model as the prompt; stdin is ignored
+echo "$prompt" | claude -p --model claude-sonnet-4-6
+
+# CORRECT — --print enables stdin pass-through; --model is parsed as a flag
+echo "$prompt" | claude --print --model claude-sonnet-4-6
+```
+
+**Real incident (2026-06-01):** `deal-scout/scout.js` used `execSync('claude -p --model claude-sonnet-4-6', { input: prompt })`. Every eval call passed the model flag string as the prompt instead of the deal data. Fixed in commit `909f481` by switching to `claude --print`.
+
+**Rule:** When combining piped stdin with any extra flags (`--model`, `--output-format`, etc.), always use `claude --print` as the mode flag, not `claude -p`.
+
 ### Strip CLAUDE_CODE_* Env Vars From Subprocess Invocations
 
 > **Correction (2026-05-29):** This rule was originally written under the belief that inherited `CLAUDE_CODE_*` env vars caused the May 28 synthetic-401 incident in `fix-error-handler`. **That diagnosis was wrong.** Follow-up isolated testing (full polluted env including `CLAUDE_CODE_EXECPATH`, `CLAUDECODE=1`, and a dead `CLAUDE_CODE_SESSION_ID`) returned `is_error:false`. The true cause of those 401s was the OAuth refresh script being **rate-limited for 4 consecutive cron cycles**, leaving an expired access token. See "OAuth Refresh Rate-Limiting" below. The env-strip pattern is kept here as **defensive hygiene only** — it is not the fix for the observed incident.
