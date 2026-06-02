@@ -231,3 +231,19 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## `sed -i` in Deploy Scripts — `^` Anchors Required
+
+When using `sed -i` to patch `.env` files in deploy scripts, always anchor patterns to the start of the line with `^`:
+
+```bash
+# WRONG — matches any line containing AUTH_URL=, including GARMIN_AUTH_URL=, NEXTAUTH_URL=
+sed -i "s|AUTH_URL=.*|AUTH_URL=\"https://example.com\"|" .env
+
+# CORRECT — only matches lines starting with AUTH_URL=
+sed -i "s|^AUTH_URL=.*|AUTH_URL=\"https://example.com\"|" .env
+```
+
+**Why:** Without `^`, a pattern like `AUTH_URL=.*` also matches `GARMIN_AUTH_URL=...`, `NEXTAUTH_URL=...`, or any other variable that contains the substring. The matching line gets silently overwritten with the wrong value. Confirmed incident: runeval `deploy.sh` (commit `50c51b0`, 2026-06-01) — unanchored `AUTH_URL=.*` overwrote `GARMIN_AUTH_URL` and `STRAVA_AUTH_URL` with the bare origin, corrupting Garmin/Strava OAuth flows on the next deploy.
+
+**Additional rule:** When the replacement value contains `&` (e.g., SQLite connection strings with `?a=1&b=2`), use single-quotes — double-quoted replacements cause the shell to expand `&` before sed sees it, and sed then replaces `&` with the full match string. Use single-quotes for any value with `&`; double-quotes are fine for plain URL values that don't contain `&`.
