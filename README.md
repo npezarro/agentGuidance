@@ -132,7 +132,7 @@ The following public repositories make up the rest of the Claude Code harness th
 - **[claude-bakeoff](https://github.com/npezarro/claude-bakeoff)**: A/B testing framework for comparing instruction environments. LLM-as-judge scoring with structured rubrics (correctness, completeness, code quality, adherence). Used to validate changes to agentGuidance rules before deploying them.
 - **[agent-skills](https://github.com/npezarro/agent-skills)**: Closeout (session lifecycle) and bakeoff packaged as agent skills following the [agentskills.io](https://agentskills.io) open standard.
 - **[claude-session-namer](https://github.com/npezarro/claude-session-namer)**: Stop hook that writes AI-generated custom titles to the Claude Code session JSONL via `claude -p sonnet`, so the session list shows what each session actually did.
-- **[claude-usage-monitor](https://github.com/npezarro/claude-usage-monitor)**: Token-usage-aware execution gate. Autonomous agents enter proposal-only mode above 50% usage and halt above 75%. Fail-closed by design.
+- **[claude-usage-monitor](https://github.com/npezarro/claude-usage-monitor)**: Token-usage-aware execution gate with configurable proposal-mode and halt thresholds. Fail-closed by design.
 - **[claude-token-tracker](https://github.com/npezarro/claude-token-tracker)**: Per-component token usage tracking for Claude Code ecosystems.
 - **[claude-tray-notifier](https://github.com/npezarro/claude-tray-notifier)**: macOS menu bar notifier for Claude Code.
 
