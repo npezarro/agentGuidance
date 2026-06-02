@@ -314,6 +314,28 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
 
+12. **Never concatenate `NEXTAUTH_URL` directly with `BASE_PATH` to build app URLs.** `NEXTAUTH_URL` may include a pathname on the VM (e.g., `https://example.com/finance`) even when the "origin-only" rule above is followed in older deployments. Concatenating it with `BASE_PATH` (also `/finance`) produces double-path URLs like `/finance/finance/cards` that are silently wrong — no build error, no 404 from the server, just broken links in emails or redirect callbacks.
+
+   **Fix:** Always strip the pathname from `NEXTAUTH_URL` before appending `BASE_PATH`:
+   ```typescript
+   // src/lib/origin.ts — helper used in benefit-reminder emails and SnapTrade redirects
+   export function getAppOrigin(): string {
+     const raw = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "";
+     try {
+       return new URL(raw).origin;  // strips pathname, search, hash
+     } catch {
+       return raw;  // fallback: return as-is
+     }
+   }
+
+   // Usage
+   const url = `${getAppOrigin()}${process.env.NEXT_PUBLIC_BASE_PATH}/cards`;
+   ```
+
+   **Why it happens:** `NEXTAUTH_URL` must include the pathname for the NextAuth `setEnvDefaults()` basePath derivation to work (per rule #1), but server-side code constructing non-auth URLs must use only the origin. Storing them in the same var creates the double-path risk for any code that hasn't read this rule.
+
+   Source: finance-tracker commit `95b3477` (2026-06-02).
+
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
