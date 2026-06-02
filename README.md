@@ -12,10 +12,10 @@ The autonomous dev agent, cross-instance messaging, browser-control extension, i
 
 - 30+ repositories governed
 - 50+ Claude CLI invocations per day
-- Hundreds of autonomous commits since January 2026
-- 14,500+ lines of orchestration code across the ecosystem
-- 108+ logged autonomous sessions
-- 30+ page synthesized knowledge base wiki, cross-referenced
+- 175+ autonomous git commits since January 2026
+- 655+ learning-agent runs (hourly review system that detects uncaptured corrections and stages PRs to this repo)
+- About 24,000 lines of orchestration code across the ecosystem
+- 45+ page synthesized knowledge base wiki, cross-referenced
 - Continuously operating; harness rules are fetched at every session start
 
 ## Why This Exists
