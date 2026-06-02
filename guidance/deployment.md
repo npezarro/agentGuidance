@@ -66,6 +66,23 @@ npm runs `postbuild` automatically after `build`. This pattern is used in financ
 
 **Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
 
+### Next.js 16: Also Copy `.next/server` to Standalone
+
+**Next.js 16 bug:** Standalone builds omit `.next/server/` (app-router server files). Copying only `.next/static` and `public/` is not enough — omitting `.next/server` causes `InvariantError: client reference manifest does not exist` on any route with `use client` components or app-router pages.
+
+**Fix:** In your build script, copy both `.next/static` **and** `.next/server` into the standalone output:
+
+```bash
+STANDALONE=.next/standalone
+cp -r .next/static  $STANDALONE/.next/static
+cp -r .next/server  $STANDALONE/.next/server
+cp -r public        $STANDALONE/public
+```
+
+**Detection:** The error manifests at runtime, not at build time — the app starts fine (`pm2` shows `online`, `/api/health` returns 200) but any app-router page with client components throws `InvariantError: client reference manifest for route "/X" does not exist`.
+
+Source: runEvaluator commit `6f78038` (2026-06-01), run #647.
+
 ## GitHub Pages Static Export (No-Server Alternative)
 
 For apps that don't require SSR, auth, or server-side API routes, `output: 'export'` produces a static site that can be hosted on GitHub Pages for free — no VM, no PM2, no Apache config needed.
