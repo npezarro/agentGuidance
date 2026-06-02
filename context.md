@@ -1,9 +1,11 @@
 # context.md
 
 ## Last Updated
-2026-05-26 | Added LinkedIn milestone/story-time register to guidance/written-voice.md (full closeout: privateContext/deliverables/closeouts/2026-05-26-patent-linkedin-post-voice-guidance.md). Reminder: the secret scanner flags the private voice repo's name as a sensitive identifier — never name that repo in this public repo; reference it as "the dedicated voice repository."
+2026-06-02 | README polished to lead with the Claude Code harness framing as the public conversion surface for an Anthropic PM Claude Code referral submission; added "Operating in Production" section with current metrics (30+ repos, 50+ daily CLI invocations, 175+ autonomous commits, 655+ learning-agent runs, ~24,000 LOC, 45+ wiki pages); expanded "Related Projects" to a 9-entry "Ecosystem" section linking all public Claude Code repos; fixed broken auto-dev link → autonomousDev. Threshold disclosure ("above 50% / halt above 75%") redacted to "configurable thresholds" after noting the 50% wasn't previously public. Commits 8829fc5, fc60a65, 70997f3. Full closeout: privateContext/deliverables/closeouts/2026-06-02-anthropic-v11-submission-package.md
 
 ### Previous
+2026-05-26 | Added LinkedIn milestone/story-time register to guidance/written-voice.md (full closeout: privateContext/deliverables/closeouts/2026-05-26-patent-linkedin-post-voice-guidance.md). Reminder: the secret scanner flags the private voice repo's name as a sensitive identifier — never name that repo in this public repo; reference it as "the dedicated voice repository."
+
 2026-05-20 | WordPress auto-posting fix: removed direct WP publishing from VM, trashed 139 auto-posts
 
 ## Current State
