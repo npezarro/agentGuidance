@@ -231,3 +231,27 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Deploy Scripts Must Hard-Lock to origin/main
+
+**Problem:** Autonomous fix-checker bots (Gemini, Claude learning-agent) create PR branches and can leave the VM's working copy checked out on a bot branch. A naive `git pull origin $(git branch --show-current)` in a deploy script will then silently ship an unreviewed bot branch to production.
+
+**Observed (runeval, 2026-06-03):** `deploy.sh` was pulling the current branch. A Gemini fix-checker left the VM checked out on `gemini/fix-runeval-0603-2053`. The next `./deploy.sh` shipped that in-progress branch to prod, reverting the Plan nav link and losing `TrainingPlan` rows (the bot's schema migration hadn't merged yet).
+
+**Fix pattern** for any deploy script on a repo with autonomous bot activity:
+
+```bash
+git fetch origin main
+git checkout main
+git reset --hard origin/main
+# Abort if working tree is dirty rather than silently wiping it
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Working tree dirty — aborting to avoid losing changes."
+    git status -sb
+    exit 1
+fi
+```
+
+**Why `reset --hard` over `pull`:** `git pull` with a dirty tree merges or errors. A detached/stale branch silently pulls the wrong history. `reset --hard origin/main` is unambiguous: always lands on exactly what's on the remote main branch.
+
+**Safety:** Abort if the tree is dirty so you don't silently wipe in-progress changes. A dirty tree on a deploy server is a signal something is wrong — investigate, don't bulldoze.
