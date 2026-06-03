@@ -241,7 +241,15 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 ## Rules for Future Work
 
-1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.
+1. **AUTH_URL options for Auth.js v5 subpath apps (updated 2026-06-03):** There are two working patterns; both require explicit `basePath: "/api/auth"` in the NextAuth config:
+
+   - **Bare origin** (canonical, simpler): `AUTH_URL=https://example.com` — `setEnvDefaults()` extracts `"/"` as the pathname, which doesn't conflict with the explicit basePath. Works for most apps and is the default recommendation.
+
+   - **Full path** (required in some Auth.js v5 configurations): `AUTH_URL=https://example.com/runeval/api/auth` — includes both the app subpath AND the NextAuth basePath. The `setEnvDefaults()` extraction of `/runeval/api/auth` is overridden by the explicit `basePath: "/api/auth"`. This pattern fixed CSRF token mismatches in runeval under Auth.js v5 (Gemini fix `3f50b89`, 2026-06-03), where the bare-origin pattern caused auth failures.
+
+   **The danger zone** is the middle ground: `AUTH_URL=https://example.com/runeval` (app subpath only, no `/api/auth`). `setEnvDefaults()` extracts `/runeval` as basePath, overriding the explicit `basePath: "/api/auth"`, which breaks action parsing.
+
+   **Rule of thumb:** if CSRF failures appear and the bare-origin pattern is already set, try the full-path pattern next. If starting fresh, use bare origin first.
 
 2. **When upgrading next-auth or Next.js**: test the full OAuth flow on staging before deploying to production. `curl https://staging.example.com/runeval/api/auth/providers` must return provider JSON, not "Bad request."
 
