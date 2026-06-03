@@ -231,3 +231,47 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Apache 60s Proxy Timeout — 202 Async Split Pattern
+
+Apache's default `ProxyTimeout` is 60 seconds. Any Next.js API route that calls a slow backend (LLM, external API, heavy compute) and blocks until completion will hit this limit and return a 502 to the browser.
+
+**Pattern:** Split the long-running request into two parts:
+1. **POST → 202 Accepted:** Kick off the work in a detached background task (fire-and-forget promise, PM2 cron, etc.). Return `{ status: "accepted" }` immediately.
+2. **GET → status + result:** The client polls this endpoint until the result appears (e.g., a new `generatedAt` timestamp or `generating: false`).
+
+```typescript
+// In the API route
+const inFlight = new Set<string>();  // module-scoped dedup
+
+export async function POST(req: NextRequest) {
+  if (inFlight.has(userId)) return NextResponse.json({ status: "already_running" }, { status: 202 });
+  inFlight.add(userId);
+  // Fire and forget — don't await
+  doSlowWork(userId).finally(() => inFlight.delete(userId));
+  return NextResponse.json({ status: "accepted" }, { status: 202 });
+}
+
+export async function GET(req: NextRequest) {
+  const result = await db.getResult(userId);
+  return NextResponse.json({ ...result, generating: inFlight.has(userId) });
+}
+```
+
+**Client polling (React):**
+```typescript
+// Poll GET every 4s for up to 4 minutes after triggering POST
+useEffect(() => {
+  if (!generating) return;
+  const id = setInterval(async () => {
+    const data = await fetchPlan();
+    if (data.generatedAt > lastGenerated) { clearInterval(id); refresh(); }
+  }, 4000);
+  const timeout = setTimeout(() => clearInterval(id), 240_000);
+  return () => { clearInterval(id); clearTimeout(timeout); };
+}, [generating]);
+```
+
+**Where this matters:** Any Apache-proxied route doing LLM calls (Claude Opus ~30-60s), batch processing, or external API calls >30s. First observed in runeval's training plan generation (commit `21d69a5`, 2026-06-03).
+
+**Alternative for internal cron endpoints:** Curl directly to `http://127.0.0.1:<port>/api/...` (bypasses Apache entirely). Used by PM2 cron processes that don't need timeout workarounds.
