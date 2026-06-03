@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-06-03 | docs | ESSENTIAL rule 16: suggest `/onboard` for compound-task signals (3+ files, multiple verbs, unfamiliar repos, multi-phase); skip for single-file edits, known-cause fixes, lookups, tasks inside documented projects. Pairs with `onboard` skill in claude-skills. Commit dd8d6f9. |
 | 2026-06-02 | docs | README polish: lead with Claude Code harness framing, add Operating in Production metrics, expand Related Projects → 9-entry Ecosystem section, fix broken auto-dev link. Threshold redaction (50%/75% → "configurable") in claude-usage-monitor description. Metrics refresh: ~24K LOC, 175+ autonomous commits, 655+ learning-agent runs, 45+ wiki pages. Commits 8829fc5, fc60a65, 70997f3. |
 | 2026-05-26 | docs | Add "LinkedIn posts: milestone / story-time" register to guidance/written-voice.md synopsis (longer story posts, full-name collaborator credits, celebrate others, no private repo names) |
 | 2026-04-23 | feat | Add git-push-reminder.sh PostToolUse hook: fires on Edit/Write, reminds agent to commit+push when file has uncommitted changes in a git repo. Added to ~/.claude/settings.json |
