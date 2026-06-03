@@ -66,6 +66,8 @@ fi
 
 **Never fall back to a "create manually" URL.** If `gh pr create` fails after 3 retries, diagnose the error (auth, branch not found, network) and fix it. Do not tell the user to create the PR manually.
 
+**Auto-merger race:** Repos using the `pezant-auto-merger` GitHub App may have the PR created AND merged within seconds of the branch push, before your `gh pr create` runs. Symptoms: "branch not found" error during PR creation, or the existing-PR check shows a **merged** PR. This is success, not failure — the auto-merger handled it. Check `gh pr list --state merged --head <branch>` to confirm, then skip PR creation entirely. Do not retry or escalate.
+
 - Do **not** enable auto-merge unless explicitly asked.
 
 ## GitHub API PR Creation: Qualify the Head Parameter
