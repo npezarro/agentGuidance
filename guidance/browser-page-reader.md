@@ -1,4 +1,4 @@
-<!-- browser-page-reader.md | Last updated: 2026-05-10 -->
+<!-- browser-page-reader.md | Last updated: 2026-06-01 -->
 # Browser Page Reader (page-reader)
 
 ## What It Is
@@ -101,6 +101,18 @@ The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible ins
 **Pattern:** Use as a WebFetch fallback in Docker-bridged Claude CLI system prompts. If `WebFetch` returns a 500, 403, empty body, or bot-block page, retry via the proxy. Only fall back to this after direct WebFetch fails — the proxy uses a full headless browser and is slower.
 
 Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
+
+### SSRF Guard (`src/host-guard.js`)
+
+All proxy requests pass through `isInternalHost()` before fetching. Critical ranges to know:
+
+**172.x gotcha (historical bug, fixed 2026-05-31):** The old guard blocked all `172.*` addresses. Only `172.16.0.0/12` (172.16–172.31.x.x) is RFC1918 private. Public addresses like `172.217.x.x` (Google) are legitimate external hosts and must NOT be blocked. If page-reader ever fails to fetch a public `172.x` URL, check `host-guard.js` first.
+
+**Cloud metadata range (`169.254.0.0/16`):** Always blocked. `169.254.169.254` is the AWS/GCP instance metadata endpoint — a missing block here is a cloud SSRF vulnerability. If the proxy is cloud-hosted (VM, container), verify this range is in the guard.
+
+**DNS rebinding is NOT protected:** `isInternalHost()` inspects hostname strings only, not resolved IPs. A public hostname resolving to a private IP bypasses the check. Documented in the module header — not a bug, a known limitation.
+
+Test coverage: `test/host-guard.test.js` (55 tests covering RFC1918, 172.x ranges, 169.254, IPv6, suffix attacks). Run `npm test` in `~/repos/page-reader` after any guard change.
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
