@@ -85,6 +85,7 @@ Each app needs:
 - finance-tracker (`/finance`, port 3008)
 - student-transcript (`/student`, port 3009)
 - shopper (`/shopper`, port 3090, tunneled from WSL)
+- foodie (`/foodie`, port 3094)
 
 ### AUTH_URL origin-only pattern for tunneled apps
 
