@@ -52,6 +52,19 @@ Two hooks mechanically enforce post-deploy verification, even if the agent skips
 
 **Why this exists:** The #1 failure mode was agents deploying, declaring "done," and leaving without testing. The Stop hook makes this structurally impossible for registered services.
 
+## Stop PM2 Before Next.js Standalone Builds
+
+`next build` deletes `.next/standalone/server.js` before recreating it. If PM2 is running and the process restarts (for any reason) during this window, PM2 crash-loops on `MODULE_NOT_FOUND` until the build finishes. With `max_restarts: 10` or higher, this can burn through all restart attempts before the build completes, leaving the process errored.
+
+**Fix:** Always stop PM2 before building a standalone Next.js app:
+```bash
+pm2 stop <process>; npm run build && pm2 restart <process> --update-env
+```
+
+Use `;` (not `&&`) after `pm2 stop` so the build proceeds even if the process was already stopped or doesn't exist yet (first deploy).
+
+**Why:** runeval observed 27+ PM2 restart attempts during a single build window (2026-06-03). The build completed successfully but PM2 had already entered "errored" state.
+
 ## Next.js Standalone Symlink Fix
 
 When using `output: 'standalone'` in `next.config`, Next.js produces a minimal server in `.next/standalone/` but does NOT include the `static/` or `public/` directories. Without symlinks, all CSS, JS, and static assets return 404.
