@@ -283,6 +283,48 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Bash Built-In Variables Cannot Be Overridden with `${VAR:-default}`
+
+Several Bash variables are **automatically populated by the shell** at startup and cannot be overridden by `:-` fallback syntax — because the shell sets them before any assignment, the `:-` default never triggers:
+
+`$HOSTNAME`, `$BASH_VERSION`, `$EUID`, `$UID`, `$PPID`, `$PATH`, `$SHELL`, `$PWD`, `$OLDPWD`
+
+```bash
+# WRONG — does NOT produce HOSTNAME=127.0.0.1 on a host where the machine hostname is "wordpress-7-vm"
+export HOSTNAME=${HOSTNAME:-"127.0.0.1"}
+# Result: HOSTNAME=wordpress-7-vm  (bash auto-set wins; :-default never fires)
+
+# RIGHT — force-set unconditionally
+export HOSTNAME="127.0.0.1"
+```
+
+**Why it matters for Node services:** Next.js standalone, Vite preview, and many other Node servers read `process.env.HOSTNAME` to decide their bind address. When `HOSTNAME` is the machine's external/internal IP instead of loopback, `localhost`-based Apache proxies get connection-refused while the app log shows "Ready" — with no useful error. The VM process `ss -ltnp | grep <port>` will show the real bind address.
+
+**Diagnostic:** If a service says it's listening but Apache/curl-from-localhost get connection-refused, run `ss -ltnp | grep <port>` and inspect the bind address column before assuming the proxy config is wrong.
+
+Source: foodie `start.sh` debugging (2026-06-06) — 409 PM2 restarts before the diagnosis. Compare against `humans/start.sh` which force-sets `HOSTNAME` correctly.
+
+## Bash `date +%H` Produces Octal-Invalid Strings in Arithmetic
+
+`date +%H` emits zero-padded hours (`08`, `09`). Bash `(( ))` arithmetic interprets numbers starting with `0` as octal — `08` and `09` are invalid octal, causing arithmetic to fail with `value too great for base` at those hours only.
+
+```bash
+# BAD — fails silently (or aborts with set -e) at hours 08 and 09
+current_hour=$(date +%H)          # "08"
+(( current_hour >= 8 )) && ...    # bash: 08: value too great for base
+
+# GOOD — no zero-pad (Linux only, GNU date)
+current_hour=$(date +%-H)         # "8"
+(( current_hour >= 8 )) && ...    # works
+
+# macOS alternative — printf forces decimal interpretation
+current_hour=$(printf '%d' $(date +%H))
+```
+
+This is especially insidious because it only fails at hours `08` and `09` — cron scripts appear to work on all other hours, making the bug hard to reproduce.
+
+Source: scripts/cron-freshness.sh commit `ec4d8f9` (2026-05-31) — schedule-aware cron check silently skipped at 8–9am because `08` failed octal validation.
+
 ## PM2 wait_ready Anti-Pattern
 
 Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
@@ -343,6 +385,48 @@ module.exports = {
 **Rule:** Use `max_memory_restart` (e.g. `500M`) instead of `cron_restart` to handle memory leaks. If scheduled daily restarts are genuinely needed, adjust the alerting threshold to account for the planned restart count.
 
 Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
+
+## `pm2 restart <name>` Does NOT Pick Up Ecosystem Config Changes
+
+`pm2 restart <name>` restarts the process using its **in-memory config**, ignoring any changes you've made to `ecosystem.config.js`. Changes to `node_args`, `max_memory_restart`, env vars, and other config fields are silently ignored.
+
+To apply config changes:
+
+```bash
+# BAD — restarts the process but ignores ecosystem.config.js changes
+pm2 restart finance-tracker
+
+# GOOD — re-reads ecosystem.config.js and applies all config changes
+pm2 startOrRestart ecosystem.config.js
+```
+
+**When this matters:**
+- You changed `node_args` to add `--max-old-space-size` (or any V8 flag)
+- You raised/lowered `max_memory_restart`
+- You added/changed env vars in the ecosystem config
+- You changed `watch` paths, `listen_timeout`, or `kill_timeout`
+
+Always run `pm2 save` after `pm2 startOrRestart` to persist the updated config for `systemd resurrect`.
+
+Source: finance-tracker commit `27184f8` (2026-06-07) — deploy.sh was using `pm2 restart finance-tracker`, so the node_args `--max-old-space-size=512` added to ecosystem.config.js was never picked up. Fixed by switching to `pm2 startOrRestart $VM_DIR/ecosystem.config.js`.
+
+## PM2 Cron-Job `waiting restart` Status is Normal — Don't Alert on It
+
+PM2 scheduled jobs (processes whose config includes `cron_restart` or are of type `cron`) cycle between `online` (while the job runs) and `waiting restart` (idle between scheduled runs). The `waiting restart` status is **normal behavior** for a cron-type job — it means the job completed its run and is waiting for the next scheduled time.
+
+**If your monitoring script checks PM2 status and alerts on `waiting restart`:** It will false-positive every cycle for every cron job. Guard the check by detecting whether the process is cron-type first:
+
+```bash
+# From pm2 jlist JSON:
+is_cron=$(echo "$process" | jq -r '.pm2_env.cron_restart // "false"')
+
+# Only alert on "waiting restart" for non-cron processes
+if [[ "$is_cron" == "false" ]] && [[ "$status" == "waiting restart" || "$status" == "launching" ]]; then
+    # Alert — this is not a cron job idling between runs
+fi
+```
+
+Source: scripts/wsl-watchdog.sh commit `26875f1` (2026-06-07) — `dashboard-push` cron job (runs every 5 min) was triggering false positive `waiting restart` alerts on every other cycle.
 
 ## Next.js `experimental.mcpServer` Causes Extra Port Binding
 
@@ -531,6 +615,22 @@ function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
 ```
 
 Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
+
+## `WebFetch` Tool Routes Through Anthropic's Edge, Not the Agent's Local Network
+
+Claude Code's `WebFetch` tool sends requests through Anthropic's server-side edge fetcher — it does **NOT** use the agent's local network namespace. Fetches to `localhost`, `host.docker.internal`, RFC 1918 addresses, or SSH-tunneled services fail silently: Anthropic's fetcher resolves the hostname against the public internet, gets nothing, and returns empty or wrong output. The agent has no signal that the fetch went to the wrong place.
+
+**Affected URLs:**
+- `http://localhost:N/...`
+- `http://host.docker.internal:N/...`
+- `http://192.168.x.x:N/...`, `http://10.x.x.x:N/...`
+- Any URL that only resolves on the agent's local network
+
+**Fix:** Use `Bash: curl ...` instead for private/local URLs. Add `curl:*` to `--allowedTools` (or project `settings.json` permissions). Ensure `curl` is installed in any Docker image that needs it (node slim images exclude it).
+
+**Never design system-prompt fallbacks that call `WebFetch http://host.docker.internal:...`** — the fallback silently does nothing, and there's no error to surface the failure.
+
+Source: shopper Docker container system-prompt fallback bug (2026-06-03) — `WebFetch http://host.docker.internal:3092/fetch?url=...` silently failed for weeks because the page-reader proxy was only reachable via the container's local network namespace, not Anthropic's edge.
 
 ## Cleanup Checklist (Before Session End)
 
