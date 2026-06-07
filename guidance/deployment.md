@@ -108,6 +108,26 @@ Also wrap non-critical side effects (e.g., `sendEmail()`) in `try/catch` so they
 
 **Packages commonly missing:** `nodemailer`, packages using native bindings, packages only imported in server action callbacks. Source: shopper standalone build (2026-05-15).
 
+## Next.js Standalone: Relative SQLite Paths Break
+
+When using `output: 'standalone'`, `process.cwd()` inside `.next/standalone/server.js` resolves to the `.next/standalone/` directory, not the project root. Any `DATABASE_URL` using a relative path (e.g. `file:./prisma/dev.db` or `file:./data/production.db`) will open or create the DB inside `.next/standalone/` instead of the intended location.
+
+**Fix:** Add an absolute-path resolver in your Prisma/DB client:
+```ts
+import path from "path";
+let url = process.env.DATABASE_URL || "file:./prisma/dev.db";
+if (url.startsWith("file:")) {
+  const filePath = url.slice(5);
+  if (!path.isAbsolute(filePath)) {
+    const isStandalone = process.cwd().includes(path.join(".next", "standalone"));
+    const root = isStandalone ? path.join(process.cwd(), "..", "..") : process.cwd();
+    url = `file:${path.resolve(root, filePath)}`;
+  }
+}
+```
+
+This pattern is used in `runEvaluator/lib/prisma.ts` and `health-hub/src/lib/db.ts`. The `isStandalone` check ensures dev mode (where `process.cwd()` is the project root) keeps working.
+
 ## Python Version Compatibility
 
 The GCP VM runs **Python 3.9**. Modern type annotation syntax (`X | None`, `list[str]`, `dict[str, Any]`) requires Python 3.10+. Code using these features will raise `TypeError` at runtime on the VM.
