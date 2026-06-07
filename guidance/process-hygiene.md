@@ -386,6 +386,30 @@ module.exports = {
 
 Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
 
+## `pm2 restart <name>` Does NOT Pick Up Ecosystem Config Changes
+
+`pm2 restart <name>` restarts the process using its **in-memory config**, ignoring any changes you've made to `ecosystem.config.js`. Changes to `node_args`, `max_memory_restart`, env vars, and other config fields are silently ignored.
+
+To apply config changes:
+
+```bash
+# BAD — restarts the process but ignores ecosystem.config.js changes
+pm2 restart finance-tracker
+
+# GOOD — re-reads ecosystem.config.js and applies all config changes
+pm2 startOrRestart ecosystem.config.js
+```
+
+**When this matters:**
+- You changed `node_args` to add `--max-old-space-size` (or any V8 flag)
+- You raised/lowered `max_memory_restart`
+- You added/changed env vars in the ecosystem config
+- You changed `watch` paths, `listen_timeout`, or `kill_timeout`
+
+Always run `pm2 save` after `pm2 startOrRestart` to persist the updated config for `systemd resurrect`.
+
+Source: finance-tracker commit `27184f8` (2026-06-07) — deploy.sh was using `pm2 restart finance-tracker`, so the node_args `--max-old-space-size=512` added to ecosystem.config.js was never picked up. Fixed by switching to `pm2 startOrRestart $VM_DIR/ecosystem.config.js`.
+
 ## PM2 Cron-Job `waiting restart` Status is Normal — Don't Alert on It
 
 PM2 scheduled jobs (processes whose config includes `cron_restart` or are of type `cron`) cycle between `online` (while the job runs) and `waiting restart` (idle between scheduled runs). The `waiting restart` status is **normal behavior** for a cron-type job — it means the job completed its run and is waiting for the next scheduled time.
