@@ -577,3 +577,10 @@ Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 3. **Ports:** Verify you haven't left a rogue server bound to a port
 4. **Git state:** No uncommitted changes related to your task
 5. **Context:** `context.md` reflects what's running and what's not
+
+### paste-link skill: host snippet at pezant.ca, return curl one-liner (2026-06-08)
+When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes/backticks/escapes) is being pasted into a remote shell and gets mangled (smart-quotes, lost newlines, "syntax error near unexpected token `newline`", "Permission denied" on >>), invoke the paste-link skill instead of re-trying paste.
+
+Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
+
+How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
