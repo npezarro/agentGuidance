@@ -532,6 +532,27 @@ function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
 
 Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 
+## Google Sheets / Shared-State Bulk Updates — Re-Read Before Writing
+
+When doing a bulk write to a Google Sheet range (or any multi-row mutation against shared state), **re-read the target range immediately before writing**. Do NOT rely on row indices captured earlier in the session.
+
+**Why:** Other processes (other Claude instances, automated jobs, the user) can insert or shift rows between your read and your write. Relying on stale row indices silently overwrites the wrong rows with no error. Discovered 2026-06-01 during the Mary Xu Google referral session: a new row inserted at sheet row 57 shifted the jobright batch down by one; the stale bulk-write stomped the new row's URL and shifted every subsequent URL onto the wrong company.
+
+**Pattern:**
+```
+# WRONG — row indices captured earlier in the session may be stale
+updateGoogleSheet(range="Sheet1!B57:B64", values=cachedData)
+
+# CORRECT — re-read and verify identifiers before writing
+rows = getGoogleSheetContent(range="Sheet1!A57:B64")
+assert rows[0][0] == "Expected Company"  # verify column A matches expectation
+updateGoogleSheet(range="Sheet1!B57:B64", values=freshData)
+```
+
+**Applies to:** Google Sheets (`updateGoogleSheet`), Google Calendar bulk event edits, Notion multi-page mutations, or any multi-row write against shared state that was last read more than a few seconds ago or after any slow operation (agent spawn, page-reader fetch, long reasoning).
+
+Source: Google referral batch session (2026-06-01). Memory: `feedback_sheet_reread_before_bulk_update.md`.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
