@@ -344,6 +344,44 @@ module.exports = {
 
 Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
 
+## PM2 Cron Scripts Must Source Secrets at Runtime, Not via PM2 Env Injection
+
+PM2 captures environment variables **at `pm2 start` time only**. If a secret (e.g. `CRON_SECRET`, an API key) changes after the process is registered — or was not in the shell when `pm2 start` ran — every scheduled fire silently fails with 401/403 with no diagnostic output.
+
+**Rule:** Cron shell scripts must read bearer tokens and secrets directly from `.env` at execution time:
+
+```bash
+# BAD — CRON_SECRET captured at pm2 start; stale after rotation
+curl -X POST http://localhost:3001/api/cron/daily-push \
+  -H "Authorization: Bearer $CRON_SECRET"
+
+# GOOD — source from .env at run time
+CRON_SECRET=$(grep '^CRON_SECRET=' /var/www/myapp/.env | cut -d= -f2-)
+curl -X POST http://localhost:3001/api/cron/daily-push \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+**Why:** `pm2 save` + `pm2 resurrect` restores process configuration but not the live env from when `pm2 start` ran. After a reboot, a credential rotation, or a fresh deploy, the env block is empty or stale for values not in `ecosystem.config.cjs`.
+
+Source: runEvaluator `runeval-daily-push.sh` (commit `0719185`, 2026-06-07) — `CRON_SECRET` was added as a runtime grep after observing silent 401s when the secret changed between `pm2 start` and later cron fires.
+
+## New PM2 Cron Processes Must Be Registered in All Health-Checker Allowlists
+
+A PM2 process with a `schedule` (via `cron_restart` or an external cron shell script that calls the app) enters `waiting restart` state between fires. Health-monitoring scripts that check PM2 process states must know which processes are cron-triggered (expected to be stopped between runs) vs. always-on (unexpected if stopped).
+
+When you add a **new** PM2 cron process, update every health-checker registry that maintains this distinction:
+
+1. **`wsl-watchdog.sh` `CRON_PROCESSES` array** (in `~/repos/scripts/`) — processes listed here are exempt from the "waiting restart" false-positive alert. Missing entry → spurious Discord alert every time the cron process waits between fires.
+
+2. **Discord bot's process registry** — the Discord health monitor maintains its own `CRON_PROCESSES` allowlist. Processes not listed are reported as unexpectedly stopped.
+
+**Why:** On 2026-06-07, adding `runeval-daily-push` without updating `CRON_PROCESSES` in `wsl-watchdog.sh` generated false-positive "waiting restart" alerts for every cron cycle. Fix: commit `26875f1` added the process to the allowlist.
+
+**Checklist for any new PM2 cron process:**
+- [ ] Add to `wsl-watchdog.sh` `CRON_PROCESSES` array
+- [ ] Add to Discord health monitor `CRON_PROCESSES` allowlist
+- [ ] Document in the repo's `CLAUDE.md` with its cron schedule and the `CRON_PROCESSES` registration note
+
 ## Next.js `experimental.mcpServer` Causes Extra Port Binding
 
 If `experimental: { mcpServer: true }` (or any truthy value) is set in `next.config.ts`, Next.js binds an additional port for its built-in MCP server. This causes `EADDRINUSE` when PM2 restarts overlap with that port still being held.
