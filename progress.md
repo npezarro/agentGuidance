@@ -13,6 +13,7 @@
 
 | Date | Type | Description |
 |------|------|-------------|
+| 2026-06-08 | docs | Cover Letter Header rule in `guidance/written-voice.md`: pointer-only entry to `privateContext/guidance/cover-letter-header.md` (literal values held private). Enforced via `write-as-nick` skill Quality Gate. Pre-commit sensitive-identifier hook correctly blocked the naive single-file edit and forced the public/private split. Commit 5296640 on `claude/learnings-685`. |
 | 2026-06-03 | docs | ESSENTIAL rule 16: suggest `/onboard` for compound-task signals (3+ files, multiple verbs, unfamiliar repos, multi-phase); skip for single-file edits, known-cause fixes, lookups, tasks inside documented projects. Pairs with `onboard` skill in claude-skills. Commit dd8d6f9. |
 | 2026-06-02 | docs | README polish: lead with Claude Code harness framing, add Operating in Production metrics, expand Related Projects → 9-entry Ecosystem section, fix broken auto-dev link. Threshold redaction (50%/75% → "configurable") in claude-usage-monitor description. Metrics refresh: ~24K LOC, 175+ autonomous commits, 655+ learning-agent runs, 45+ wiki pages. Commits 8829fc5, fc60a65, 70997f3. |
 | 2026-05-26 | docs | Add "LinkedIn posts: milestone / story-time" register to guidance/written-voice.md synopsis (longer story posts, full-name collaborator credits, celebrate others, no private repo names) |
