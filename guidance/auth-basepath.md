@@ -334,4 +334,45 @@ Google({
 
 This tells the OAuth provider exactly where to redirect, bypassing Auth.js's URL construction entirely. Works when `NEXTAUTH_URL` already includes the basePath (e.g., `https://example.com/student`).
 
+## Third-Party API OAuth Token Refresh
+
+When integrating with external APIs that issue short-lived access tokens (~24h), **auto-refresh on expiry — do not return errors to callers**.
+
+### The pattern
+
+Third-party APIs (Garmin Connect, Strava, etc.) issue access tokens that expire in ~24h alongside long-lived refresh tokens. A route that stores and uses these tokens should:
+
+1. Check expiry before calling the downstream API
+2. If expired, call the provider's token refresh endpoint with the stored `refresh_token`
+3. Persist the new `access_token` and `expires_at` to DB
+4. Proceed with the original request using the fresh token
+5. Only return a "user must re-link" error if the **refresh itself** fails (e.g., refresh token also expired or revoked)
+
+```typescript
+// health-hub: src/app/api/garmin/training/push/route.ts
+let accessToken = tokenRow.accessToken;
+if (tokenRow.expiresAt && tokenRow.expiresAt.getTime() < Date.now()) {
+  try {
+    const refreshed = await refreshAccessToken(tokenRow.refreshToken);
+    const newExp = new Date(Date.now() + (refreshed.expires_in ?? 86400) * 1000);
+    await prisma.oAuthToken.update({ where: { id: tokenRow.id },
+      data: { accessToken: refreshed.access_token, expiresAt: newExp } });
+    accessToken = refreshed.access_token;
+  } catch {
+    return Response.json({ error: "Token refresh failed; user must re-link" }, { status: 401 });
+  }
+}
+```
+
+### Why this matters
+
+Without silent refresh, **any automated job that runs daily against a ~24h-lived access token will fail after the first day**. The Garmin daily push-to-watch cron (runeval → health-hub) hit this: the initial OAuth flow sets the access token, the cron runs fine on day 1, then fails with 401 every day after until the user manually re-links. Silent refresh means the cron never surfaces this failure.
+
+### What NOT to do
+
+- Do NOT return `{ error: "OAuth token expired; user must re-link" }` on expiry of a short-lived access token. This surfaces unnecessary friction when a refresh is all that's needed.
+- Do NOT cache the `access_token` in env vars or process memory — always read it from DB so refreshes are immediately visible to all processes.
+
+**Source:** health-hub commit `69aa711` (2026-06-07) — Garmin push route switched from 401-on-expiry to silent auto-refresh, fixing the automated daily push-to-watch cron.
+
 **Trade-off:** Simpler (no Apache redirect needed), but couples the callback URL to the env var. The three-part pattern is more robust for complex proxy setups.
