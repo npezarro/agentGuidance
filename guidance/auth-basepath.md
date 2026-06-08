@@ -287,15 +287,9 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **Standalone mode changes basePath behavior.** In `next dev`, Next.js strips the basePath from `req.url` before the route handler sees it. In standalone mode (`node server.js`), it does NOT strip it — `@auth/core` sees the full URL including the basePath prefix. So the NextAuth `basePath` must include the Next.js basePath:
-   ```typescript
-   // next dev: handler sees /api/auth/signin/google → basePath: "/api/auth"
-   // standalone: handler sees /finance/api/auth/signin/google → basePath: "/finance/api/auth"
+8. **Standalone mode strips basePath — same as dev.** Next.js 16 standalone (`output: 'standalone'`) strips the app's basePath from `req.url` **before** route handlers, middleware, and proxy see it. Both `next dev` and `node .next/standalone/server.js` behave the same way: `basePath: "/api/auth"` (unprefixed) is correct for both modes. Empirically verified 2026-06-06 against shopper, humans, and foodie — all Next.js 16.2.6, all using unprefixed basePath, all working.
 
-   // Dynamic config that works in both modes:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,
-   ```
-   **Why this trips people up:** The runeval fix (above) uses a hardcoded `"/api/auth"` because runeval's Apache proxy rewrites the URL. Apps without that rewrite need the dynamic basePath.
+   **Note:** An earlier version of this gotcha (pre-June 2026) claimed standalone did NOT strip basePath. That was a misattribution from a shopper debugging loop. The current rule at the top of this Gotchas section (`"/api/auth"`, never `"/<app>/api/auth"`) is correct and applies in both dev and standalone.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
