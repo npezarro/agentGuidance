@@ -532,6 +532,52 @@ function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
 
 Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 
+## WebFetch Routes Through Anthropic's Edge — Cannot Reach Private Hosts
+
+Claude Code's `WebFetch` tool sends requests through **Anthropic's server-side edge fetcher**, not the agent's local network namespace. This means:
+
+- `WebFetch http://localhost:3092/...` — resolves against Anthropic's servers, returns nothing useful
+- `WebFetch http://host.docker.internal:3092/...` — same failure, silently returns empty/wrong output
+- `WebFetch http://192.168.x.x/...` (any RFC1918 address) — same failure
+
+**The failure is silent.** The agent has no signal that the fetch went to the wrong place — it just gets empty or unrelated content.
+
+**Fix:** For any URL that is not on the public internet, use `Bash(curl:*)` instead of WebFetch. Bash runs in the agent's local process and has access to the correct network namespace (local, Docker-internal, SSH-tunneled).
+
+```bash
+# WRONG — goes to Anthropic's edge, never reaches your local proxy
+# (WebFetch) http://host.docker.internal:3092/fetch?url=...
+
+# CORRECT — runs in-process, reaches the Docker network
+curl "http://host.docker.internal:3092/fetch?url=..."
+```
+
+**Note:** `curl` must actually be installed in the execution environment (not present in slim Docker images by default).
+
+**Rule:** Treat WebFetch as a public-internet-only tool. For container-to-host, SSH-tunneled localhost, or private network access, always use Bash+curl.
+
+Source: shopper Docker bridge (2026-06-03) — Amazon-blocked queries showed `[UNVERIFIED]` prices for weeks because a system-prompt fallback used WebFetch to reach the page-reader proxy, which was only on Docker-internal. Memory: `learning_webfetch_edge_fetcher.md`.
+
+## Bash `$HOSTNAME` Is Auto-Populated — `${HOSTNAME:-default}` Never Falls Back
+
+Bash automatically populates `$HOSTNAME` with the system hostname (e.g., `wordpress-7-vm` on the GCP VM). This means `${HOSTNAME:-"127.0.0.1"}` **never** triggers the fallback — `$HOSTNAME` is always set.
+
+Services that bind on `process.env.HOSTNAME` (Next.js standalone, Vite preview, others) end up bound to the VM's external/internal IP instead of loopback. Apache's `localhost` proxy then gets connection-refused, and the public URL returns 503 with no clear error in the app log.
+
+```bash
+# WRONG — fallback never fires; service binds to VM hostname (e.g., 10.128.0.2)
+export HOSTNAME=${HOSTNAME:-"127.0.0.1"}
+
+# CORRECT — force-set to loopback
+export HOSTNAME="127.0.0.1"
+```
+
+**Affected bash-builtins (same trap applies):** `BASH_VERSION`, `PWD`, `OLDPWD`, `EUID`, `UID`, `SHELL`. Any variable auto-populated by bash will silently ignore a `:-default` guard.
+
+**Diagnosis:** Service says "Ready on port N" but Apache/curl-from-localhost get refused → run `ss -ltnp | grep <port>` and check the bind address before assuming the proxy is broken.
+
+Source: foodie `start.sh` debugging (2026-06-06) — 409 PM2 restarts before the bind-address mismatch was found. Memory: `learning_bash_hostname_default.md`.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
