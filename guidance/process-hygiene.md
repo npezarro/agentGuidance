@@ -283,6 +283,26 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Bash `date +%H` Zero-Pad Causes Octal Parse Failure
+
+`date +%H` emits zero-padded hours: `00` through `09`. When used inside bash arithmetic `(( ))`, bash tries to parse `08` and `09` as octal — both are invalid octal values and cause an arithmetic failure.
+
+```bash
+# BAD — fails at 8am and 9am with "value too great for base" or similar
+HOUR=$(date +%H)
+if (( HOUR >= 8 && HOUR <= 9 )); then
+
+# GOOD — use +%-H (Linux) to strip the zero-pad, emitting 0-23 unpadded
+HOUR=$(date +%-H)
+if (( HOUR >= 8 && HOUR <= 9 )); then
+```
+
+**Fix:** Use `date +%-H` (Linux, `%` strips zero-pad) to get unpadded hours 0–23. On macOS, use `date +%k` instead (space-padded, but arithmetic handles leading space correctly when quoted).
+
+**When this matters:** Any cron or script that reads the current hour for schedule-awareness logic. The failure only appears at 08:00–09:59, making it easy to miss in testing.
+
+Source: `scripts/cron-freshness.sh` fix commit `ec4d8f9` (2026-05-31) — discovered when the schedule-aware check silently failed every morning between 8–10am.
+
 ## PM2 wait_ready Anti-Pattern
 
 Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
