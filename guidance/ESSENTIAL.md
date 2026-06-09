@@ -30,6 +30,8 @@ Never use `grep -c pattern || echo "0"` with `set -o pipefail`. Use `grep -c pat
 ## 7. Update CLAUDE.md When Adding Features
 After implementing a new feature, route, export, or command, update the repo's CLAUDE.md before committing. Documentation lag is structural — close it at commit time.
 
+**Pre-commit output gate:** Before filing any PR that adds new routes, commands, or features, write one sentence: "CLAUDE.md updated: [what was added]" or "CLAUDE.md not applicable: [reason no new routes/commands were added]." This check must appear in output before the PR link is posted.
+
 ## 8. Verify Before Asserting
 Never assert user actions (e.g., "you applied for X") without checking the actual source (Gmail, Drive, git). Prep materials don't mean the action was taken.
 
