@@ -50,6 +50,13 @@
 **Learned:** A sanitization commit is NOT a remediation -- it just adds a clean layer on top while leaving the original data in git history. When a repo has been pushed to a public remote, always check `git log -p` on the remote branch, not just HEAD. The correct remediation is history rewriting (filter-repo/BFG) or repo recreation. Flag this explicitly in audit reports: "sanitization commit detected -- history rewrite required."
 
 ---
+## 2026-06-09 | 30-repo portfolio security scan
+**Task:** Comprehensive security scan of all 30 public GitHub repositories for secrets, misconfig, dependency vulnerabilities, and gitignore gaps
+**What worked:** Systematic 10-phase pipeline (secrets/IPs/SSH/homepaths/env-files/key-files/git-history/gitignore/npm-audit/env-example) executed sequentially per repo with depth-limited clones to manage bandwidth. Separating secret-exposure risk (CRITICAL if found) from dependency-vulnerability risk (severity rated per npm audit) kept threat models distinct -- no false cross-severity inflation.
+**What didn't:** Hardcoded IP grep filter to exclude internal-network ranges (192.168/10.0) assumed the user had not published infrastructure docs; would need validation against known public IPs first.
+**Learned:** Portfolio-wide scans reveal structural patterns faster than per-repo audits: 9/30 repos are clean (30%), 3 share a common gitignore gap (no file at all), 5 share vitest vulnerability (likely upgraded together would fix multiple repos at once). Dependency vulnerabilities in dev/test tools (vitest, postcss build stage) are lower runtime risk than in production code but still warrant tracking. Zero secrets detected across 30 repos indicates strong developer hygiene with .gitignore and .env.example practices; focus remediation efforts on the 3 repos missing gitignore entirely and 5 with critical dev-tool vulns.
+
+---
 ## 2026-03-31 | multi-repo security scan (claude-usage-monitor, mic-volume-guard, reddit-bottom-sheet-blocker, GeminiCompletionChime, aisleOffersFilterClaimandTracking, markdownMakerBookmarklet)
 **Task:** Full 10-phase security scan of 6 public repos for secrets, PII, config exposure
 **What worked:** Sequential per-repo scanning avoids bash cancellation issues. Checking git author emails separately from content grep catches the most consistent PII vector. Reading .claude/settings.json explicitly (learned from prior scans) caught infra disclosure in 4 repos.
