@@ -98,9 +98,21 @@ The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible ins
    ```
    URL-encode the target URL. Use `stealth=true` for bot-protected pages.
 
-**Pattern:** Use as a WebFetch fallback in Docker-bridged Claude CLI system prompts. If `WebFetch` returns a 500, 403, empty body, or bot-block page, retry via the proxy. Only fall back to this after direct WebFetch fails — the proxy uses a full headless browser and is slower.
+**Pattern:** Use as a fallback in Docker-bridged Claude CLI system prompts when the direct URL returns a 500, 403, empty body, or bot-block response. Call it via `Bash(curl:*)`, NOT WebFetch.
 
-Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
+**CRITICAL:** Do NOT instruct Docker-containerized Claude CLI to retry via `WebFetch http://host.docker.internal:3092/...`. WebFetch routes through Anthropic's edge fetcher — it cannot reach `host.docker.internal` or any RFC1918/localhost address. The fallback silently returns empty/wrong content with no error signal. Always use `Bash: curl` for docker-internal URLs.
+
+```bash
+# WRONG — WebFetch goes to Anthropic's edge, never reaches your local proxy
+# (WebFetch) http://host.docker.internal:3092/fetch?url=...
+
+# CORRECT — Bash(curl) runs in-process and reaches the Docker network
+curl "http://host.docker.internal:3092/fetch?url=ENCODED_URL&stealth=true"
+```
+
+Note: `curl` must be installed in the container image (not present in slim/alpine images by default — add to Dockerfile with `apt-get install -y curl` or `apk add curl`).
+
+Source: shopper `docker/CLAUDE.md` (2026-05-24, original pattern); corrected 2026-06-03 after Amazon-blocked queries shipped `[UNVERIFIED]` prices for weeks due to the silent WebFetch failure. See also `process-hygiene.md` § "WebFetch Routes Through Anthropic's Edge".
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
