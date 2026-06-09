@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-06-09 | Fable 5 ecosystem review session: fixed the missing `--invokes-claude` guard in `hooks/trigger-learning-review.sh` (the hook spawns a full claude run, so learning passes were re-triggering themselves: 7-20 runs/day observed vs 3 scheduled; same failure family as the 2026-05-15 scorer recursion). Four-system audit (harness, learning agent, autonomousDev, supervisor) plus full repo sweep; report and action list in `privateContext/deliverables/audits/2026-06-09-fable5-ecosystem-review.md`. Open harness items: move runtime-fetched hooks in settings.json to local invocations, ESSENTIAL.md at 16 rules vs its top-10 charter, score-session.sh points at the stale supervisor tree.
+
+### Previous
 2026-06-08 | Added a Cover Letter Header rule to `guidance/written-voice.md` under "What Nick Does NOT Do." Pointer-only entry (this is a public repo); literal header text and resume doc reference live in `privateContext/guidance/cover-letter-header.md`. Enforced by the `write-as-nick` skill's Quality Gate. First commit attempt was correctly blocked by the pre-commit sensitive-identifier scan, which forced the public/private split. Commit `5296640` on staging branch `claude/learnings-685` (learning-agent flow will PR into main). Full closeout: `privateContext/deliverables/closeouts/2026-06-08-cover-letter-header-rule.md`.
 
 ### Previous
