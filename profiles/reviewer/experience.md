@@ -48,3 +48,24 @@
 **What worked:** Fetched all 9 diffs in parallel, then read the current state of every modified file to check for duplicates and context. Verified the Node 20 EOL claim (April 30, 2026) via nodejs.org. Compared #199 and #204 side-by-side since both added npm overrides to the same file; identified #204 as the more complete version and #199 as having one unique pattern ($devDep reference syntax) worth preserving after rebase. Also caught a corrupted UTF-8 character in #199's diff on an existing line.
 **What didn't:** Could have checked research-quality.md earlier to confirm deep-research.md was complementary rather than overlapping; ended up reading it after forming an initial opinion.
 **Learned:** When two PRs modify the same file at the same location, compare both diffs side-by-side before recommending merge order. The more complete PR should merge first; the other should rebase and contribute only its unique additions. Also: always verify factual date claims (EOL dates, deprecation timelines) against primary sources rather than trusting PR authors.
+
+---
+## 2026-06-09 | learning-agent system review
+**Task:** Full design + implementation review of the hourly learning agent (autonomousDev-private/learnings-pass).
+**What worked:** Diffing the public vs private copies of run.sh/prompt.md immediately exposed split-brain drift (prompt fixes landed public-only, runner fixes private-only, cron runs private). Counting runs/day from runner.log timestamps vs the crontab schedule (3/day) proved the Stop hook is the dominant invoker (7-20 runs/day).
+**What didn't:** Nearly trusted the architecture docs' cadence claims; three docs gave three different frequencies (hourly/4h/8h) and all were wrong about effective behavior.
+**Learned:** For cron+hook agents, always reconcile three sources: crontab, hook config, and actual run timestamps in logs. Also: a Stop hook that launches a claude -p job is self-retriggering unless it sets the recursion guard, because -p transcripts contain "role":"user" lines for every tool_result, so significance heuristics based on user-message counts always pass.
+
+---
+## 2026-06-09 | ecosystem supervisor design review
+**Task:** Critical design + implementation review of the two-tier agent quality system (per-interaction scorer + daily supervisor).
+**What worked:** Following the runtime, not the repo: crontab and hook configs revealed the live system runs from autonomousDev-private while the reviewed path (autonomousDev) is a split-brain copy that the Stop hook still writes to. Sampling actual score JSONL distributions (bimodal 0/100) and .raw parse failures gave hard evidence of scorer noise instead of opinions about prompt quality.
+**What didn't:** Initially assumed one supervisor install; only the empty reports/ dir and a 396-byte runner.log forced the question of where the cron actually points.
+**Learned:** For any cron/hook-driven system, verify the invocation path end to end (crontab entry, hook command, script path) before reviewing code, because safety fixes applied to one copy of a duplicated tree silently miss the copy that actually executes. Also: LLM judges invoked via claude -p inherit global CLAUDE.md and memory, which contaminates their evidence with cross-session references; score data citing facts not present in the input is the fingerprint of that contamination.
+
+---
+## 2026-06-09 | autonomousDev design + implementation review
+**Task:** Critical review of the autonomous dev agent: task selection, reliability, verification rigor, cost/value, modernization options.
+**What worked:** Verified every documented gate against live evidence before trusting it: runner.log showed "VERIFY_RESULT: FAIL ... (exit 0)" which proved the verification gate was dead ($? captured after `|| true` in command substitution is always 0). Cross-checked crontab against repo paths first, which revealed the reviewed repo (autonomousDev) was a stale fork and the live runner was autonomousDev-private. Quantified value with outcomes.jsonl + gh pr view: 8 runs, $19.37, 1 merged PR.
+**What didn't:** Almost reviewed the wrong repo; only the crontab check caught it. Also outcomes.jsonl was pretty-printed multi-line JSON, so line-based jq failed silently; jq -s slurp worked.
+**Learned:** In bash agent runners, three recurring kill patterns: (1) `VAR=$(cmd || true); EXIT=$?` makes EXIT always 0; (2) `set -e` + bare `EXIT_CODE=$?` after the main command makes all failure handling dead code (failed runs vanish, state/run-numbers get reused); (3) sourced-but-missing .env silently disables the entire reporting/approval pipeline while the agent keeps spending. For cron agent systems, always check crontab paths before reviewing code, and grep the runner log for the failure-branch strings (TIMEOUT/FAIL) — zero hits across hundreds of runs means the branch is unreachable, not that nothing failed.
