@@ -83,7 +83,7 @@ When the closeout surfaces open items or follow-ups, **address them independentl
 
 12. **Score this session.** After posting to `#cli-interactions`, run the ecosystem supervisor scorer in the background:
     ```bash
-    ~/repos/autonomousDev/supervisor/score-interactive.sh &
+    ~/repos/autonomousDev-private/supervisor/score-interactive.sh &
     ```
     This scores the session against ESSENTIAL.md rules and writes a JSON score file for the daily supervisor to analyze. No need to wait for the result or report it to the user.
 
