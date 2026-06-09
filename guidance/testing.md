@@ -373,6 +373,28 @@ browser-cli console                       # check for errors
 
 **Prefer this over Playwright/headless** for testing on the user's machine — it runs in the real browser with real cookies/session, bypasses CAPTCHA, and tests exactly what the user sees.
 
+## Don't Grep Test Output to Detect Pass/Fail
+
+Parsing test runner output with `grep` to determine pass/fail is fragile. A test suite that passes but has a test _named_ "handles errors" or prints "0 failed" will match the wrong pattern and flip your result.
+
+```bash
+# WRONG — a passing test named "handles errors" matches the grep and RESULT=FAIL
+if npm test 2>&1 | grep -qi "error\|fail"; then
+  RESULT="FAIL"
+fi
+
+# RIGHT — use the actual exit code; output is only for human-readable detail
+TEST_EXIT=0
+TEST_OUTPUT=$(npm test 2>&1) || TEST_EXIT=$?
+if [ "$TEST_EXIT" -ne 0 ]; then
+  RESULT="FAIL"
+fi
+```
+
+**Why:** autonomousDev-private's `verify.sh` originally grepped test output for "FAIL" to detect failures. A refactor added error-handling tests with names containing "error", causing every subsequent verification run to false-positive as a build failure regardless of actual test results. Fixed in f6e304e (2026-06-09) to use the real exit code via `npm test 2>&1 || TEST_EXIT=$?`.
+
+**Exception:** You can still grep output for metadata extraction (e.g., `grep -oP '\d+ passed'` to surface a human-friendly count in a log line), but never use output grep as the pass/fail gate.
+
 ## CI Workflow Gotchas
 
 Two patterns have caused repeated CI failures across 5+ repos (nll-hunter, page-reader, pm-interview-practice, phone-agent, browser-agent, markdownMakerBookmarklet):

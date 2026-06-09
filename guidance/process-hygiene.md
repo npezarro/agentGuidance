@@ -283,6 +283,51 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Bash `set -e` Kills Error Handlers Before They Fire
+
+When using `set -e` (errexit), a failing command causes the script to exit **immediately** before the next line executes. This makes bare `$?` capture after a command dead code — the error handler that reads `$?` never runs.
+
+```bash
+# WRONG — set -e exits after 'some_command' fails; EXIT_CODE=$? never executes
+set -e
+some_command
+EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+  notify_discord "Failed: $EXIT_CODE"   # unreachable
+fi
+
+# RIGHT — || captures exit code inline without triggering set -e
+EXIT_CODE=0
+some_command || EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+  notify_discord "Failed: $EXIT_CODE"   # now reachable
+fi
+```
+
+**Why:** autonomousDev-private's three runners + verify.sh had this bug: timeout logs, Discord alerts, and state-file writes were all dead code because `set -e` aborted before the inline `EXIT_CODE=$?` capture. All failure notifications silently never fired for months (f6e304e, 2026-06-09).
+
+**How to apply:** In any `set -e` or `set -euo pipefail` script, capture exit codes inline with `cmd || VAR=$?`. Never write `cmd; VAR=$?` — the semicolon is still `set -e`-transparent and exits on failure.
+
+## Bash `git stash pop` Must Be Guarded
+
+Never call `git stash pop` unconditionally in a script. If the script stashed nothing (because the working tree was clean), an unconditional pop will dump a **pre-existing user stash** onto whatever branch is checked out, potentially overwriting unrelated in-progress work.
+
+```bash
+# WRONG — pops whatever is on the stash stack, even if this script didn't push it
+git stash
+# ... do work ...
+git stash pop   # might dump user's saved state onto wrong branch
+
+# RIGHT — track whether THIS script stashed, only pop what we pushed
+STASHED=false
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  git stash --quiet && STASHED=true
+fi
+trap '[ "$STASHED" = true ] && git stash pop --quiet 2>/dev/null || true' EXIT
+```
+
+**Why:** autonomousDev-private's `verify.sh` had an unconditional `git stash pop` in its `trap cleanup EXIT`. Any user with staged work could have it silently overwritten when the verify script ran. Fixed in f6e304e (2026-06-09) by adding the `STASHED=false` guard flag.
+
 ## PM2 wait_ready Anti-Pattern
 
 Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
