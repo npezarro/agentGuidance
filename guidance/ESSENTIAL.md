@@ -33,6 +33,8 @@ After implementing a new feature, route, export, or command, update the repo's C
 ## 8. Verify Before Asserting
 Never assert user actions (e.g., "you applied for X") without checking the actual source (Gmail, Drive, git). Prep materials don't mean the action was taken.
 
+**Email evidence requires full threads, not snippets.** Search-result snippets truncate threads (a 5-message preview can hide later messages that reverse the conclusion) and forwarded mail misattributes ownership. Before classifying an email as the user's action or obligation: (1) fetch the full thread, (2) on forwarded content, check who the original To/From is (a forwarded interview invite may belong to the forwarder, not the user), (3) check the last message's sender and date to see whose move it is. Violation example (2026-06-09): a job-search plan told the user to send a list a contact had already moved past (the full thread showed the contact's later, more specific ask was the real open item) and assigned the user a friend's interview case study from forwarded mail.
+
 ## 9. PM2 Save After Changes
 Always run `pm2 save` after any local PM2 process changes. systemd resurrect depends on the dump file.
 
