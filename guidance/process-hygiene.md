@@ -283,6 +283,51 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Bash `set -e` Kills Error Handlers Before They Fire
+
+When using `set -e` (errexit), a failing command causes the script to exit **immediately** before the next line executes. This makes bare `$?` capture after a command dead code — the error handler that reads `$?` never runs.
+
+```bash
+# WRONG — set -e exits after 'some_command' fails; EXIT_CODE=$? never executes
+set -e
+some_command
+EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+  notify_discord "Failed: $EXIT_CODE"   # unreachable
+fi
+
+# RIGHT — || captures exit code inline without triggering set -e
+EXIT_CODE=0
+some_command || EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+  notify_discord "Failed: $EXIT_CODE"   # now reachable
+fi
+```
+
+**Why:** autonomousDev-private's three runners + verify.sh had this bug: timeout logs, Discord alerts, and state-file writes were all dead code because `set -e` aborted before the inline `EXIT_CODE=$?` capture. All failure notifications silently never fired for months (f6e304e, 2026-06-09).
+
+**How to apply:** In any `set -e` or `set -euo pipefail` script, capture exit codes inline with `cmd || VAR=$?`. Never write `cmd; VAR=$?` — the semicolon is still `set -e`-transparent and exits on failure.
+
+## Bash `git stash pop` Must Be Guarded
+
+Never call `git stash pop` unconditionally in a script. If the script stashed nothing (because the working tree was clean), an unconditional pop will dump a **pre-existing user stash** onto whatever branch is checked out, potentially overwriting unrelated in-progress work.
+
+```bash
+# WRONG — pops whatever is on the stash stack, even if this script didn't push it
+git stash
+# ... do work ...
+git stash pop   # might dump user's saved state onto wrong branch
+
+# RIGHT — track whether THIS script stashed, only pop what we pushed
+STASHED=false
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  git stash --quiet && STASHED=true
+fi
+trap '[ "$STASHED" = true ] && git stash pop --quiet 2>/dev/null || true' EXIT
+```
+
+**Why:** autonomousDev-private's `verify.sh` had an unconditional `git stash pop` in its `trap cleanup EXIT`. Any user with staged work could have it silently overwritten when the verify script ran. Fixed in f6e304e (2026-06-09) by adding the `STASHED=false` guard flag.
+
 ## PM2 wait_ready Anti-Pattern
 
 Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
@@ -584,3 +629,56 @@ When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes
 Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
 
 How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
+
+### Gemini CLI `-p` does NOT support multimodal (video/image) input (2026-06-05)
+
+`gemini -p` (headless CLI mode with `GOOGLE_GENAI_USE_GCA=true`) treats `@filepath` references as **text only**. Binary attachments (mp4, jpg, png, etc.) are not passed as multimodal Parts — Gemini responds with "I cannot view image/video files." This is true even with `--skip-trust` and even though the Gemini API itself supports native video/image input.
+
+**Do not plan VLM (vision/video) tasks to route through `gemini -p`.** The CLI silently fails without a clear error at the planning stage.
+
+**Alternatives:**
+- For free local image understanding: `claude -p --model haiku` natively reads images via the Read tool. ~20-30s per image batch, $0 on host auth.
+- For paid native video: use the Gemini Files API directly (Node SDK or REST) with `GEMINI_API_KEY` from AI Studio. ~$0.0015/min on Flash.
+- For text-only Gemini work: `gemini -p` works fine.
+
+Source: audio-description-creator build 2026-06-05 — original architecture routed visual-understanding step through Gemini CLI (free GCA tier) but it silently produced no useful output.
+
+### Chokidar file-watcher: denylist segment vs. substring matching (2026-06-09)
+
+Chokidar's `ignored` function receives the **full file path**. Two types of denylist entries need different matching logic:
+
+- **Single-segment entries** (e.g., `.state`, `node_modules`): match by checking if any path segment equals the entry → `filePath.split('/').includes(d)`
+- **Multi-segment entries** (e.g., `.state/tunnel-health-state.json`): match by substring presence → `filePath.includes(d)`
+
+Using only segment matching for all entries causes multi-segment entries to be silently skipped. If a service's own state/log files aren't excluded, the watcher creates a feedback loop: service writes state → chokidar event fires → service processes event → writes more state → repeat → OOM.
+
+```js
+const ignored = (filePath) => {
+  return denylist.some(d =>
+    d.includes('/') ? filePath.includes(d) : filePath.split('/').includes(d)
+  );
+};
+```
+
+Also always extend the default denylist to include heavy/noisy directories (`.local`, `.rustup`, `.cache`, `node_modules`) and the service's own state/DB paths. Set `kill_timeout` high enough (≥5000ms) for chokidar to close cleanly on PM2 restart — default 1.6s may cause EADDRINUSE loops.
+
+Source: activity-tracker commits 787a863, 42f1ade, 343596d, cd920d6 (2026-06-09) — 4 commits required to resolve an OOM crash loop caused by the service watching its own `.state/` files.
+
+### Bash `$HOSTNAME` is always set — never use `${HOSTNAME:-default}` as a bind-address guard (2026-06-06)
+
+Bash **auto-populates `$HOSTNAME`** with the system hostname (e.g., `wordpress-7-vm` on the GCP VM). The `${HOSTNAME:-default}` substitution **never falls back** because `$HOSTNAME` is always non-empty.
+
+**Why this matters for Node.js servers:** Next.js standalone, Vite preview, and several other Node servers read `process.env.HOSTNAME` to decide their bind address. If `$HOSTNAME` is the VM's external hostname, the server binds to the VM's IP instead of loopback, and Apache's `localhost` proxy gets connection-refused (public URL returns 503 with no useful error in app logs — server says "Ready in 0ms").
+
+**Fix:** Force-set the bind address explicitly:
+```bash
+export HOSTNAME="127.0.0.1"   # GOOD — force-set, always wins
+# NOT this:
+export HOSTNAME=${HOSTNAME:-"0.0.0.0"}  # BAD — bash pre-fills $HOSTNAME, fallback never triggers
+```
+
+Other bash builtins similarly always populated (must not be used as `:-` defaults): `BASH_VERSION`, `PWD`, `OLDPWD`, `EUID`, `UID`, `PATH`, `SHELL`.
+
+**Diagnostic:** If a Node service logs "listening" but Apache/curl-from-localhost gets connection-refused, run `ss -ltnp | grep <port>` and check the bind address before assuming the proxy is broken.
+
+Source: foodie debugging 2026-06-06 — 409 historical PM2 restarts before diagnosis; `humans/start.sh` already used the correct force-set pattern.

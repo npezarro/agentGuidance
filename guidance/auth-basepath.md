@@ -315,6 +315,26 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
 
+12. **Guard the NextAuth route handler with a VALID_ACTIONS allowlist to prevent UnknownAction crashes.** Bots and crawlers frequently probe `/api/auth/<random-slug>`, causing Auth.js v5 to throw `UnknownAction` (fills logs, can crash non-resilient setups). Only forward requests with known action slugs:
+   ```typescript
+   const VALID_ACTIONS = ["signin", "signout", "callback", "session", "csrf", "providers", "error"];
+
+   export const GET = async (req: NextRequest) => {
+     const action = req.nextUrl.pathname.split("/").pop();
+     if (req.method !== "GET" || !action || !VALID_ACTIONS.includes(action)) {
+       return new Response(null, { status: 200 });
+     }
+     try {
+       return await handlers.GET(req);
+     } catch (e) {
+       console.error("[auth] GET error:", e);
+       return new Response(null, { status: 500 });
+     }
+   };
+   // Mirror for POST handler with req.method !== "POST"
+   ```
+   Apply to both GET and POST handlers in `app/api/auth/[...nextauth]/route.ts`. Source: humans commit `314a5ca` (2026-06-08).
+
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
