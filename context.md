@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-06-10 | Section 7 proposals implemented (all eight). In this repo: `hooks/check-repo-writer.sh` (PostToolUse warning when edits land in repos declaring `canonical-copy:`/`writer:` in CLAUDE.md), `hooks/load-repo-context.sh` (SessionStart per-repo context packs), ESSENTIAL.md capped at 10 rules with a graduation policy (6 demoted to hook-enforced/guidance homes; CLAUDE.md-update rule homed in code-review.md), agent-journal.md signal-gate rules. settings.json (user-level) now invokes ALL hooks from the local clone — zero GitHub-raw fetches remain. NOTE: this repo now rests on main (hooks execute from the working copy); a stranded April stash was recovered, 2 old stashes remain untriaged. Full closeout: `privateContext/deliverables/closeouts/2026-06-10-section7-implementation.md`.
+
+### Previous
 2026-06-09 | Fable 5 ecosystem review session: fixed the missing `--invokes-claude` guard in `hooks/trigger-learning-review.sh` (the hook spawns a full claude run, so learning passes were re-triggering themselves: 7-20 runs/day observed vs 3 scheduled; same failure family as the 2026-05-15 scorer recursion). Four-system audit (harness, learning agent, autonomousDev, supervisor) plus full repo sweep; report and action list in `privateContext/deliverables/audits/2026-06-09-fable5-ecosystem-review.md`. Open harness items: move runtime-fetched hooks in settings.json to local invocations, ESSENTIAL.md at 16 rules vs its top-10 charter, score-session.sh points at the stale supervisor tree.
 
 ### Previous
