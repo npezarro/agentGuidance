@@ -629,3 +629,16 @@ When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes
 Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
 
 How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
+
+### Gemini CLI `-p` does NOT support multimodal (video/image) input (2026-06-05)
+
+`gemini -p` (headless CLI mode with `GOOGLE_GENAI_USE_GCA=true`) treats `@filepath` references as **text only**. Binary attachments (mp4, jpg, png, etc.) are not passed as multimodal Parts — Gemini responds with "I cannot view image/video files." This is true even with `--skip-trust` and even though the Gemini API itself supports native video/image input.
+
+**Do not plan VLM (vision/video) tasks to route through `gemini -p`.** The CLI silently fails without a clear error at the planning stage.
+
+**Alternatives:**
+- For free local image understanding: `claude -p --model haiku` natively reads images via the Read tool. ~20-30s per image batch, $0 on host auth.
+- For paid native video: use the Gemini Files API directly (Node SDK or REST) with `GEMINI_API_KEY` from AI Studio. ~$0.0015/min on Flash.
+- For text-only Gemini work: `gemini -p` works fine.
+
+Source: audio-description-creator build 2026-06-05 — original architecture routed visual-understanding step through Gemini CLI (free GCA tier) but it silently produced no useful output.
