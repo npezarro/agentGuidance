@@ -479,6 +479,22 @@ Source: shopper, foodie, travel-assistant (commits 49da1e1, 78bbb74, d8b65c9 —
 
 **Why it matters:** The usage API and all autonomous agent token reads go through the credentials file. An expired token causes every quota-gating job to silently fail or report misleading usage data.
 
+## `claude -p` vs `claude --print`: Positional Argument Trap
+
+`-p` is NOT a clean alias for `--print`. The `-p` flag treats the **next CLI argument as a positional prompt string**, which means any flag that follows it gets consumed as prompt text instead.
+
+```bash
+# WRONG: '--model claude-sonnet-4-6' is consumed as the prompt; stdin is ignored
+echo "my prompt" | claude -p --model claude-sonnet-4-6
+
+# CORRECT: use --print (long form) when combining with other flags
+echo "my prompt" | claude --print --model claude-sonnet-4-6
+```
+
+**Why it matters for automation:** Piped-stdin scripts that use `claude -p --model X` silently produce wrong output — the model flag becomes the prompt and `--model` defaults to whatever Claude picks. No error, no warning. Source: deal-scout CLAUDE.md (PR #26).
+
+**Rule:** In any script or cron job that pipes stdin to `claude`, use `--print` (not `-p`) whenever other flags follow. Reserve `-p` for single-argument invocations like `claude -p "inline prompt"` (no piped stdin).
+
 ## Python HTTP Client Gotchas
 
 ### urllib3.Retry: Unsupported Constructor Parameters
