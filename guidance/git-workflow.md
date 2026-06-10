@@ -97,3 +97,21 @@ Open PRs that sit unmerged cause cascading merge conflicts across all other bran
 - **Don't leave PRs for someone else to merge** unless the task explicitly requires review. Unmerged PRs are invisible debt that compounds with every new branch.
 - **Never modify `context.md` or `progress.md` on a branch that other branches also modify.** These files conflict constantly. If you must update them, do it as the very last commit before merging, after rebasing on main. The auto-merger can resolve context.md/progress.md conflicts locally, but code conflicts in these files alongside real code conflicts will block the merge entirely.
 - **If a merge fails with code conflicts:** close the PR, delete the branch, and redo the work on a fresh branch from main. Don't waste time resolving complex merge conflicts on stale branches.
+
+## Staging Changes in Hook-Executing Repos: Use Worktrees, Not Branch Checkouts
+
+**Never run `git checkout <branch>` in the main checkout of a repo whose working copy is referenced by live hooks or SessionStart scripts** (e.g., `~/repos/agentGuidance`, `~/repos/autonomousDev-private`). The session harness executes directly from these working-copy paths. Switching their branch silently reverts all guidance, hooks, and config to whatever the target branch holds — new rules vanish, graduated rules reappear, hooks change behavior — for every concurrent session and every agent that runs during or after the switch.
+
+**The safe pattern:** use a git worktree instead.
+
+```bash
+# Stage changes for review without touching the main checkout
+git -C ~/repos/<repo> worktree add /tmp/learnings-wt-<repo> -b claude/learnings-<run>
+# ... make edits, commit, push, open PR from inside /tmp/learnings-wt-<repo> ...
+git -C ~/repos/<repo> worktree remove /tmp/learnings-wt-<repo>
+# Main checkout stays on main throughout; hooks keep running from live state
+```
+
+**Real incident (2026-06-10, e721c06):** the learning agent checked out its staging branch inside `~/repos/agentGuidance`. The ESSENTIAL.md rules reverted to the pre-section-7 version (16 rules), new hooks disappeared, and the live harness ran in the wrong state for the duration of the session. All of this was silent — no error, no warning.
+
+**Repos requiring worktrees:** any repo where `~/repos/<repo>/` appears in a hook path, SessionStart hook, or PM2 config that loads guidance at runtime.
