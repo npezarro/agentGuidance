@@ -421,6 +421,31 @@ GitHub Actions `cache: npm` with `npm ci` requires `package-lock.json` in the re
 
 **Fix:** Remove `package-lock.json` from `.gitignore` and commit it. This also ensures deterministic installs across environments.
 
+### Vitest Fails When Any Imported Module Throws at Import Time
+
+If a module (e.g., `db.ts`, `prisma.ts`) runs `new PrismaClient()` or reads a required env var **at module load time**, any test file that imports it will crash the entire vitest runner before any test executes. CI shows a cryptic initialization error rather than a test failure, and the repo CI can stay red for weeks with no obvious cause.
+
+**Example:** `card-automapper.test.ts` imports `db.ts`; `db.ts` calls `new PrismaClient()` at the top level; Prisma throws when `DATABASE_URL` is unset. finance-tracker CI was broken May 27 to Jun 10 for this reason.
+
+**Fix:** Set a dummy value in `vitest.config.ts`:
+```typescript
+// vitest.config.ts
+export default defineConfig({
+  test: {
+    env: {
+      DATABASE_URL: 'file:./test.db',  // keeps Prisma happy at import time
+    },
+  },
+});
+```
+
+Or in a `setupFiles` entry:
+```typescript
+process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'file:./test.db';
+```
+
+The error stack shows `PrismaClientInitializationError` (or similar) before the first `describe()`, so it reads as a build or config problem rather than a missing env var.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
