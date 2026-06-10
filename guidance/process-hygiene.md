@@ -642,3 +642,43 @@ How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via 
 - For text-only Gemini work: `gemini -p` works fine.
 
 Source: audio-description-creator build 2026-06-05 — original architecture routed visual-understanding step through Gemini CLI (free GCA tier) but it silently produced no useful output.
+
+### Chokidar file-watcher: denylist segment vs. substring matching (2026-06-09)
+
+Chokidar's `ignored` function receives the **full file path**. Two types of denylist entries need different matching logic:
+
+- **Single-segment entries** (e.g., `.state`, `node_modules`): match by checking if any path segment equals the entry → `filePath.split('/').includes(d)`
+- **Multi-segment entries** (e.g., `.state/tunnel-health-state.json`): match by substring presence → `filePath.includes(d)`
+
+Using only segment matching for all entries causes multi-segment entries to be silently skipped. If a service's own state/log files aren't excluded, the watcher creates a feedback loop: service writes state → chokidar event fires → service processes event → writes more state → repeat → OOM.
+
+```js
+const ignored = (filePath) => {
+  return denylist.some(d =>
+    d.includes('/') ? filePath.includes(d) : filePath.split('/').includes(d)
+  );
+};
+```
+
+Also always extend the default denylist to include heavy/noisy directories (`.local`, `.rustup`, `.cache`, `node_modules`) and the service's own state/DB paths. Set `kill_timeout` high enough (≥5000ms) for chokidar to close cleanly on PM2 restart — default 1.6s may cause EADDRINUSE loops.
+
+Source: activity-tracker commits 787a863, 42f1ade, 343596d, cd920d6 (2026-06-09) — 4 commits required to resolve an OOM crash loop caused by the service watching its own `.state/` files.
+
+### Bash `$HOSTNAME` is always set — never use `${HOSTNAME:-default}` as a bind-address guard (2026-06-06)
+
+Bash **auto-populates `$HOSTNAME`** with the system hostname (e.g., `wordpress-7-vm` on the GCP VM). The `${HOSTNAME:-default}` substitution **never falls back** because `$HOSTNAME` is always non-empty.
+
+**Why this matters for Node.js servers:** Next.js standalone, Vite preview, and several other Node servers read `process.env.HOSTNAME` to decide their bind address. If `$HOSTNAME` is the VM's external hostname, the server binds to the VM's IP instead of loopback, and Apache's `localhost` proxy gets connection-refused (public URL returns 503 with no useful error in app logs — server says "Ready in 0ms").
+
+**Fix:** Force-set the bind address explicitly:
+```bash
+export HOSTNAME="127.0.0.1"   # GOOD — force-set, always wins
+# NOT this:
+export HOSTNAME=${HOSTNAME:-"0.0.0.0"}  # BAD — bash pre-fills $HOSTNAME, fallback never triggers
+```
+
+Other bash builtins similarly always populated (must not be used as `:-` defaults): `BASH_VERSION`, `PWD`, `OLDPWD`, `EUID`, `UID`, `PATH`, `SHELL`.
+
+**Diagnostic:** If a Node service logs "listening" but Apache/curl-from-localhost gets connection-refused, run `ss -ltnp | grep <port>` and check the bind address before assuming the proxy is broken.
+
+Source: foodie debugging 2026-06-06 — 409 historical PM2 restarts before diagnosis; `humans/start.sh` already used the correct force-set pattern.
