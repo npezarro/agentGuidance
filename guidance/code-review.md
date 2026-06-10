@@ -237,3 +237,7 @@ When a prompt specifies a strict output format (e.g., "ONLY valid JSON", "no mar
 **Common violations:** wrapping JSON in fences when told not to; adding explanatory text when told "no explanation"; submitting a self-diagnosis inside the violating output.
 
 **Why:** Multiple scoring sessions (2026-05-15) violated this pattern and then self-diagnosed the violation inside the same response — demonstrating the agent knew the rule and still didn't fix it. Hard format constraints are enforcement gates for downstream parsers. Identifying a violation is not fixing it.
+
+## Update CLAUDE.md When Adding Features
+
+After implementing a new feature, route, export, or command, update the repo's CLAUDE.md before committing. Documentation lag is structural — close it at commit time. (Graduated from ESSENTIAL 2026-06-10: the CLAUDE.md drift-check PostToolUse hook now flags commits that add exports/routes/env vars without a CLAUDE.md update.)
