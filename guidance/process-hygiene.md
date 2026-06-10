@@ -698,3 +698,51 @@ Other bash builtins similarly always populated (must not be used as `:-` default
 **Diagnostic:** If a Node service logs "listening" but Apache/curl-from-localhost gets connection-refused, run `ss -ltnp | grep <port>` and check the bind address before assuming the proxy is broken.
 
 Source: foodie debugging 2026-06-06 — 409 historical PM2 restarts before diagnosis; `humans/start.sh` already used the correct force-set pattern.
+
+### SQLite `.iterate()` Cleanup and File-Watcher Depth Limiting (2026-06-10)
+
+**SQLite iterator cleanup:** Always wrap `.iterate()` in try/finally to ensure the cursor is closed even on error. An unclosed iterator holds a read transaction open, preventing WAL checkpoints and causing memory growth under high load:
+
+```js
+const iter = stmt.iterate(params);
+try {
+  for (const row of iter) { /* process */ }
+} finally {
+  try { iter.return(); } catch (_) {}
+}
+```
+
+Also tune `PRAGMA cache_size` to cap SQLite's memory footprint (`PRAGMA cache_size = -32000` sets a 32 MB cap).
+
+**File-watcher depth limiting:** Always set an explicit `depth` cap on chokidar watchers. The default (unbounded) can traverse large trees (home dir, deep node_modules) and OOM the process:
+
+```js
+chokidar.watch(paths, { depth: 2, usePolling: false })
+```
+
+`depth: 2` is usually sufficient for project file-watching. Combine with the denylist segment/substring pattern (see above) to prevent feedback loops.
+
+Source: activity-tracker commits f455135, 9e3e3d1 (2026-06-10) — OOM crash loop resolved by adding try/finally to DB iterators, tuning cache_size, and fixing depth fallback (using `?? 2` instead of `|| 2`, since `0` is a valid depth).
+
+### Background Queue Saturation Guards for Webhook Handlers (2026-06-10)
+
+When a route handler spawns fire-and-forget background work (webhook processors, job dispatchers), track pending task count and return HTTP 503 when a cap is exceeded. Without this guard, burst traffic creates unbounded task queues that OOM the process:
+
+```js
+let pendingTasks = 0;
+const MAX_PENDING_TASKS = 100;
+
+app.post('/webhook', (req, res) => {
+  if (pendingTasks >= MAX_PENDING_TASKS) {
+    return res.status(503).json({ error: 'Queue full, retry later' });
+  }
+  pendingTasks++;
+  processInBackground(req.body)
+    .finally(() => pendingTasks--);  // MUST use .finally(), not .then()
+  res.status(202).send();
+});
+```
+
+Always decrement with `.finally()`, not `.then()` alone — rejected promises skip `.then()` and the count never decrements.
+
+Source: health-hub commit 3709cf0 (2026-06-10) — background queue grew unbounded during Garmin webhook bursts, eventually crashing the process.
