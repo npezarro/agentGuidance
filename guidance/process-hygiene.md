@@ -389,6 +389,38 @@ module.exports = {
 
 Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
 
+## PM2 Periodic-Exit Scripts Must Use `autorestart: false` with `cron_restart`
+
+When a PM2 process is a **script** (runs, does work, then exits with code 0), PM2's default `autorestart: true` immediately re-fires it after every clean exit. Combined with `cron_restart`, this creates a restart loop: the cron fires, the script runs, exits 0, PM2 immediately re-fires it again — bypassing the cron schedule entirely.
+
+**Rule:** For any PM2 process that exits on completion (data push scripts, sync jobs, batch processors), always pair `cron_restart` with `autorestart: false`:
+
+```js
+// BAD — script exits 0 after each push; PM2 re-fires immediately, ignoring cron
+module.exports = {
+  apps: [{
+    name: "dashboard-push",
+    script: "scripts/push-metrics.sh",
+    cron_restart: "*/5 * * * *",
+    // autorestart defaults to true → restart loop
+  }]
+};
+
+// GOOD — autorestart: false lets cron_restart be the only trigger
+module.exports = {
+  apps: [{
+    name: "dashboard-push",
+    script: "scripts/push-metrics.sh",
+    cron_restart: "*/5 * * * *",
+    autorestart: false,  // process stays in "waiting restart" until cron fires
+  }]
+};
+```
+
+**Contrast with long-running services:** Always-on servers (Next.js, Express, supervisors) should keep `autorestart: true` (the default) so PM2 recovers from crashes. The `autorestart: false` pattern is only for scripts that exit normally after each run.
+
+**Why:** finance-tracker `dashboard-push` was registering hundreds of restarts because the push script exits 0 after successfully flushing metrics, and PM2 treated every exit as a completed process eligible for immediate re-launch. Fix: commit `63b80ca` added `autorestart: false`. Also check: PM2 health allowlists (see the next section) since `autorestart: false` processes appear in `waiting restart` state between cron fires.
+
 ## PM2 Cron Scripts Must Source Secrets at Runtime, Not via PM2 Env Injection
 
 PM2 captures environment variables **at `pm2 start` time only**. If a secret (e.g. `CRON_SECRET`, an API key) changes after the process is registered — or was not in the shell when `pm2 start` ran — every scheduled fire silently fails with 401/403 with no diagnostic output.
