@@ -746,3 +746,25 @@ app.post('/webhook', (req, res) => {
 Always decrement with `.finally()`, not `.then()` alone — rejected promises skip `.then()` and the count never decrements.
 
 Source: health-hub commit 3709cf0 (2026-06-10) — background queue grew unbounded during Garmin webhook bursts, eventually crashing the process.
+
+### SQLite `createMany` Variable Limit and Webhook Timestamp Validation (2026-06-11)
+
+**SQLite `createMany` variable limit:** SQLite limits bind parameters per statement (~999 for older builds, up to 32766 in recent ones). Prisma's `createMany` maps each field of each record to a bind variable — for large arrays this can silently fail or throw. Chunk `createMany` calls for tables with more than a handful of fields:
+
+```js
+const CHUNK_SIZE = 100;
+for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+  await prisma.someTable.createMany({ data: records.slice(i, i + CHUNK_SIZE) });
+}
+```
+
+**Timestamp Date validation before Prisma insert:** Converting webhook numeric timestamps with `new Date(Number(raw.ts) * 1000)` produces `Invalid Date` when the value is non-numeric, null, or NaN. Prisma/LibSQL crashes on `Invalid Date` being inserted into a DateTime column. Always validate after construction:
+
+```js
+let startTime = new Date(Number(raw.startTimeInSeconds) * 1000);
+if (Number.isNaN(startTime.getTime())) {
+  startTime = new Date(); // fallback to current time
+}
+```
+
+Source: health-hub commit c5162e6 (2026-06-11) — 20 PM2 restarts traced to these two issues during Garmin webhook bursts.
