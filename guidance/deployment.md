@@ -212,6 +212,33 @@ fi
 
 **Env knobs:** `DEPLOY_LOCK_WAIT=0` to fail fast, `DEPLOY_LOCK_BYPASS=1` as a break-glass escape hatch (coordinate before using).
 
+## Webhook-Triggered Deploy: Timeout and In-Flight Dedup
+
+When a webhook handler spawns a build process via `execFile`/`child_process.spawn`, two failure modes arise:
+
+**1. Timeout too short for the actual build.** Next.js builds on the VM take 5-10 minutes. A 120s `execFile` timeout SIGTERMs the build mid-type-check, leaving `.next/` gutted (no `standalone/`, no `BUILD_ID`). PM2 keeps serving HTML from open file handles while every static chunk 404s (or worse: Cloudflare caches the 500s under immutable headers). **Fix:** Set `execFile` timeout to at least 900,000ms (15 min) for any build that includes `next build`.
+
+**2. Burst webhook events trigger concurrent builds for the same target.** PR-merged + branch-delete push events arrive within seconds of each other. Without dedup, two builds run in the same directory simultaneously, producing the same gutted-artifact failure mode as the flock section above. **Fix:** Track in-flight deploys in a `Set` keyed by target name; skip (and log) any trigger whose target is already building:
+
+```js
+const deploysInFlight = new Set();
+
+async function triggerDeploy(target) {
+  if (deploysInFlight.has(target)) {
+    log(`deploy for ${target} already running — skipping duplicate trigger`);
+    return;
+  }
+  deploysInFlight.add(target);
+  try {
+    await execFile('deploy.sh', [target], { timeout: 900_000 });
+  } finally {
+    deploysInFlight.delete(target);
+  }
+}
+```
+
+**Source:** claude-auto-merger `e98b4a8` (2026-06-12), which hardened the deploy pipeline after a doc-sync PR fired two triggers within 2s and a 120s timeout killed the build mid-type-check.
+
 ## Concurrent rsyncs Silently Drop Subdirectories
 
 **Never run parallel rsyncs from the same dev host to multiple production directories.** Concurrent rsync operations (e.g., deploying shopper, foodie, and travel in the same shell session with `&`) can silently drop subdirectories in the destination.
