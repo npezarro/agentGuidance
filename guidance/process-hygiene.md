@@ -800,3 +800,50 @@ if (Number.isNaN(startTime.getTime())) {
 ```
 
 Source: health-hub commit c5162e6 (2026-06-11) — 20 PM2 restarts traced to these two issues during Garmin webhook bursts.
+
+### PrismaClient Global Singleton in Next.js
+
+Next.js can re-evaluate modules multiple times — during development hot reload and in production when bundler chunks each re-evaluate their imports. Each re-evaluation creates a new `PrismaClient` instance, exhausting DB connection pools and causing `Too many connections` or `Connection timeout` errors.
+
+**Fix:** Always guard PrismaClient instantiation with a global variable:
+
+```ts
+declare global {
+  var __prisma: PrismaClient | undefined;
+}
+
+export const prisma =
+  global.__prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
+
+global.__prisma = prisma;
+```
+
+This is the canonical pattern. `global.__prisma` persists across module re-evaluations; the `??` means only one instance is ever created per process lifetime.
+
+**Pair with startup connection retry in production:**
+
+```ts
+if (process.env.NODE_ENV === "production") {
+  const connectWithRetry = async (retries = 5, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await prisma.$connect();
+        console.log("[db] Prisma connected successfully");
+        return;
+      } catch (err) {
+        console.error(`[db] Connection failed (attempt ${i + 1}/${retries}):`, (err as Error).message);
+        if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    console.error("[db] All Prisma connection attempts failed. App may be unstable.");
+  };
+  connectWithRetry();
+}
+```
+
+**Why:** humans commit `1b9df8d` (2026-06-11) — crash loop resolved by adding the global singleton guard + retry logic. All Next.js + Prisma apps in this ecosystem (humans, finance-tracker, health-hub) should use this pattern.
+
+**Apply to:** any Next.js app that imports PrismaClient in `src/lib/db.ts` (or equivalent). If you see `warn(prisma-client) There are already 10 instances of Prisma Client actively running` in logs, the singleton is missing.
