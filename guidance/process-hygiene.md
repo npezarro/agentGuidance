@@ -663,6 +663,41 @@ function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
 
 Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 
+### SSH Tunnel Bridge: Use 127.0.0.1 and Retry Transient Errors
+
+When an app connects to a local service via an SSH reverse tunnel (e.g., the Claude bridge on port 3095), two patterns prevent tunnel flap from causing permanent job failures:
+
+**1. Use `127.0.0.1`, not `localhost`**
+
+`localhost` can resolve to `::1` (IPv6) while the tunnel listener is bound to `127.0.0.1` only, causing silent `ECONNREFUSED`. Hard-code the IPv4 loopback:
+
+```typescript
+const BRIDGE_URL = process.env.CLAUDE_BRIDGE_URL || "http://127.0.0.1:3095";
+```
+
+**2. Retry transient connection errors (3 attempts, 5 s delay)**
+
+SSH tunnels flap briefly on reconnect. Errors that indicate the tunnel is temporarily down should be retried rather than immediately failing the job:
+
+```typescript
+function isTransientError(err: any): boolean {
+  const msg = err.message || "";
+  return (
+    msg.includes("fetch failed") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("UND_ERR_CONNECT_TIMEOUT") ||
+    msg.includes("EHOSTUNREACH") ||
+    msg.includes("socket hang up")
+  );
+}
+// 3 attempts, 5 s between retries — only for isTransientError(err)
+```
+
+Do NOT retry non-transient errors (400/401/403/503 "slots busy", 429 rate-limit) — those must fail immediately.
+
+**Source:** foodie commit `de929dc` (2026-06-11) — tunnel flap permanently failed a query (Job #18); both the `localhost`→`127.0.0.1` switch and the retry loop were required to resolve it.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
