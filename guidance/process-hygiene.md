@@ -698,6 +698,38 @@ Do NOT retry non-transient errors (400/401/403/503 "slots busy", 429 rate-limit)
 
 **Source:** foodie commit `de929dc` (2026-06-11) — tunnel flap permanently failed a query (Job #18); both the `localhost`→`127.0.0.1` switch and the retry loop were required to resolve it.
 
+**Applies broadly:** The `isTransientError` check is the key primitive — apply the same retry guard to any internal HTTP service call that routes through a local broker or tunnel, not just the Claude bridge. Shopper's query-executor uses the same pattern for internal service calls (commit `be1d94e`, 2026-06-13).
+
+## ID-Based Cursor Iteration for Large Dataset Processing
+
+When a script processes all rows from a large DB table in batches, use **ID-based cursor pagination** instead of offset-based pagination (`LIMIT N OFFSET M`):
+
+```typescript
+let lastId = 0;
+const BATCH_SIZE = 1000;
+
+while (true) {
+  const rows = await db.all(
+    'SELECT * FROM entries WHERE id > ? ORDER BY id LIMIT ?',
+    [lastId, BATCH_SIZE]
+  );
+  if (rows.length === 0) break;
+
+  for (const row of rows) {
+    await processRow(row);
+  }
+  lastId = rows[rows.length - 1].id;
+}
+```
+
+**Why not offset pagination?** `LIMIT N OFFSET M` scans from the start on every batch (O(M) cost), accumulates memory across large offsets, and silently skips or re-processes rows when data changes between batches.
+
+**Why ID-based works:** Each batch uses a WHERE clause on the indexed `id` column (`id > lastId`), giving O(1) lookup cost. The cursor state (`lastId`) is trivially resumable on crash/restart. No rows are skipped regardless of concurrent inserts.
+
+**Batch sizing:** Keep batches small enough that peak per-batch memory stays under ~50–100 MB. The activity-tracker uses 1000 rows/batch for its entries table; very wide rows (BLOBs, large text columns) need smaller batches.
+
+**Source:** activity-tracker commit `0a8e4a9` (2026-06-13) — OOM crash loop fixed by switching the summarizer from unbounded queries to ID-based iteration with 1000-row batches.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
