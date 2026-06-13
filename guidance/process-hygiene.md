@@ -914,3 +914,22 @@ if (process.env.NODE_ENV === "production") {
 **Why:** humans commit `1b9df8d` (2026-06-11) — crash loop resolved by adding the global singleton guard + retry logic. All Next.js + Prisma apps in this ecosystem (humans, finance-tracker, health-hub) should use this pattern.
 
 **Apply to:** any Next.js app that imports PrismaClient in `src/lib/db.ts` (or equivalent). If you see `warn(prisma-client) There are already 10 instances of Prisma Client actively running` in logs, the singleton is missing.
+
+### `PrismaLibSql` Takes a Config Object, NOT a `@libsql/client` Instance
+
+`PrismaLibSql` from `@prisma/adapter-libsql` expects a **Config object** `{ url, authToken? }` — it does NOT accept a pre-constructed `@libsql/client` instance.
+
+```ts
+// CORRECT — Config object
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+const adapter = new PrismaLibSql({ url, authToken });
+
+// WRONG — @libsql/client instance (causes connection errors)
+import { createClient } from "@libsql/client";
+const client = createClient({ url, authToken });
+const adapter = new PrismaLibSql(client);  // ❌ wrong constructor signature
+```
+
+**Why this trips AI agents:** The `@libsql/client` package and `@prisma/adapter-libsql` are often imported together in docs and examples, making the instance-passing form look natural. The error message from passing an instance is not always obvious — it may manifest as a connection failure or unexpected adapter state rather than a type error.
+
+**Source:** health-hub commits c7681b4 → c0995b6 (2026-06-13) — a Gemini-generated fix swapped to the instance form, causing connection errors; reverted to Config object within 1 minute.
