@@ -973,3 +973,83 @@ router.get('/threads/:threadId/messages', requireAuth, (req, res) => {
 Source: claudeNet commits d96d78d → 466e73f → 070ad9b (2026-06-12/13) — a single missing null-check in `formatMessage` revealed missing try-catch in 145 lines across `lib/routes-api.js`.
 
 **Source:** health-hub commits c7681b4 → c0995b6 (2026-06-13) — a Gemini-generated fix swapped to the instance form, causing connection errors; reverted to Config object within 1 minute.
+
+### Nullable Column Guard: `!== undefined` Instead of `||`
+
+When a DB column can legitimately be stored as `null` (e.g. "no target linked"), using `|| default` silently clobbers stored nulls:
+
+```js
+// WRONG — clobbers stored null with the default; "row missing" and "row has null" are indistinguishable
+const targetId = settings ? settings.target_instance_id || null : null;
+
+// CORRECT — preserves stored null; only defaults when the row itself is absent
+const targetId = (settings && settings.target_instance_id) !== undefined
+  ? settings.target_instance_id
+  : null;
+```
+
+**When it matters:** foreign-key columns, optional config values, and any "unlinked" state where `null` is a valid stored value that must round-trip correctly through the GET response.
+
+Source: claudeNet commit 0729414 (2026-06-13) — `target_instance_id` in thread settings is legitimately `null` when no target is set; `|| null` would silently return `null` even when a non-null value was stored.
+
+## Claude CLI `--model` Alias vs. SDK Model ID
+
+The Claude CLI's `--model` flag takes **short aliases**, not API model IDs:
+
+| CLI alias (correct) | API model ID (wrong for CLI) |
+|---|---|
+| `sonnet` | `claude-sonnet-4-6` |
+| `opus` | `claude-opus-4-8` |
+| `haiku` | `claude-haiku-4-5-20251001` |
+
+Using the API ID string causes the CLI call to fail or be silently ignored:
+
+```bash
+# CORRECT
+claude --print --model sonnet "your prompt"
+
+# WRONG — claude-sonnet-4-6 is an SDK model ID, not a CLI alias
+claude --print --model claude-sonnet-4-6 "your prompt"
+```
+
+**Why agents get this wrong:** the `claude-api` skill and SDK docs use full API model IDs. When an agent generates shell commands invoking `claude`, it copies the API ID format instead of the CLI short-form alias.
+
+**When to check:** any code that calls `claude --model <name>` in a shell script or `execSync`/`spawn` call. Aliases (`sonnet`, `opus`, `haiku`) are stable; API IDs are version-suffixed and only valid for the SDK.
+
+Source: deal-scout commit 69af5c4 (2026-06-13) — scout.js failing because `claude-sonnet-4-6` is not a valid CLI alias.
+
+## Health Endpoint: Data Pipeline Freshness Gate
+
+A `/health` or `/api/health` endpoint should check not only DB connectivity but whether background sync jobs have recently written. An app that is "up" but serving stale data is silently broken.
+
+**Pattern (Next.js / TypeScript):**
+
+```typescript
+const STALE_THRESHOLD_MS = 36 * 60 * 60 * 1000; // 1.5× expected sync interval
+
+const staleProviders = (
+  await Promise.all(
+    PROVIDERS.map(async (provider) => {
+      const conn = await db.query.connections.findFirst({
+        where: (c, { eq }) => eq(c.providerName, provider),
+      });
+      const stale = !conn?.lastSyncedAt ||
+        Date.now() - conn.lastSyncedAt.getTime() > STALE_THRESHOLD_MS;
+      return stale ? provider : null;
+    })
+  )
+).filter(Boolean);
+
+if (staleProviders.length > 0) {
+  return NextResponse.json({ status: 'degraded', staleProviders }, { status: 503 });
+}
+```
+
+**Key rules:**
+- Run all provider checks via `Promise.all` (parallel, not serial)
+- Return **503**, not 200 with a warning body — PM2 health checks and load balancers need the status code
+- Include provider names in the response for rapid diagnosis
+- Threshold = ~1.5× expected sync interval (e.g. 36h for a 24h cron)
+- `lastSyncedAt IS NULL` is stale — treat it as "never synced"
+
+Source: finance-tracker commit 7ef5c71 (2026-06-13).
