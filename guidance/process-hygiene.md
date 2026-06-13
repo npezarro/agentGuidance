@@ -1053,3 +1053,37 @@ if (staleProviders.length > 0) {
 - `lastSyncedAt IS NULL` is stale — treat it as "never synced"
 
 Source: finance-tracker commit 7ef5c71 (2026-06-13).
+
+### V8 Object Nullification in Batch Processing Functions (2026-06-13)
+
+V8 does not always garbage-collect large objects that remain in scope until a function returns, even when those objects are no longer accessed. In batch-processing functions that build large aggregation maps (counts by key, duration histograms, parsed rows), explicitly set those objects to `null` after use to reduce peak RSS:
+
+```js
+export function buildSummaryFromIterator(sinceId, limit) {
+  let appDurations = {};   // use `let`, not `const`
+  let fileCounts = {};
+  let shellCommands = [];
+
+  for (let evt of iterateEventsSinceId(sinceId, limit)) {
+    // ... process evt ...
+    evt = null;  // free each row object before the next arrives
+  }
+
+  const summary = buildMarkdown(appDurations, fileCounts, shellCommands);
+
+  // Explicitly clear large accumulators before return
+  appDurations = null;
+  fileCounts = null;
+  shellCommands = null;
+
+  return { summary };
+}
+```
+
+**Two nullification sites:**
+1. **Loop-body:** set `evt = null` after processing each row so the row object can be reclaimed before the next row is fetched.
+2. **Post-accumulation:** set aggregation maps to `null` before `return`. V8 may keep them alive until the caller's frame unwinds; explicit null breaks that hold.
+
+**When to apply:** any function that processes thousands of rows or builds large hash maps, and where the process is memory-constrained (PM2 `max_memory_restart`, containerized Node.js, etc.). Requires `let` declarations, not `const`.
+
+Source: activity-tracker commits 6b5d813 + 18585d1 (2026-06-13) — OOM crash loop on the activity-tracker summarizer fixed by nullifying per-row `evt` references and post-run aggregation maps.
