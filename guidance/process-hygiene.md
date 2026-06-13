@@ -932,4 +932,44 @@ const adapter = new PrismaLibSql(client);  // ❌ wrong constructor signature
 
 **Why this trips AI agents:** The `@libsql/client` package and `@prisma/adapter-libsql` are often imported together in docs and examples, making the instance-passing form look natural. The error message from passing an instance is not always obvious — it may manifest as a connection failure or unexpected adapter state rather than a type error.
 
+## Express API Routes: Null-Check After DB Insert and Full try-catch Audit
+
+### DB Write → DB Read Can Return Null
+
+In Express routes using `better-sqlite3`, a read immediately after a write in the same handler can return `null` even after the write reports success:
+
+```js
+db.prepare('INSERT INTO instances ...').run(instanceKey, ...);
+const instance = db.prepare('SELECT * FROM instances WHERE instance_key = ?').get(instanceKey);
+// instance can be null (race/rollback edge case)
+if (!instance) {
+  return res.status(500).json({ error: 'Failed to retrieve instance after insert' });
+}
+res.json({ ok: true, instanceId: instance.id }); // crashes without null check above
+```
+
+Without the null guard, `instance.id` throws a TypeError and Express returns a 500 with no diagnostic — the client sees a generic error and the root cause is invisible.
+
+**Fix:** Always null-check DB reads, even when they immediately follow a write.
+
+### try-catch in Every Route Handler
+
+Express 4.x does NOT automatically catch synchronous exceptions thrown inside route handlers — they bubble up as unhandled exceptions, not to the registered error handler. Every route that touches the DB, calls JSON.parse, or formats data needs an explicit try-catch:
+
+```js
+router.get('/threads/:threadId/messages', requireAuth, (req, res) => {
+  try {
+    const messages = db.prepare(sql).all(...params);
+    res.json({ messages });
+  } catch (err) {
+    console.error('GET /messages error:', err);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+```
+
+**The cascade trigger:** once a single missing null-check or missing try-catch is found, audit ALL routes in the file — the pattern is always systemic (every route was written with the same unchecked assumptions). A partial fix leaves silent 500s in remaining routes.
+
+Source: claudeNet commits d96d78d → 466e73f → 070ad9b (2026-06-12/13) — a single missing null-check in `formatMessage` revealed missing try-catch in 145 lines across `lib/routes-api.js`.
+
 **Source:** health-hub commits c7681b4 → c0995b6 (2026-06-13) — a Gemini-generated fix swapped to the instance form, causing connection errors; reverted to Config object within 1 minute.
