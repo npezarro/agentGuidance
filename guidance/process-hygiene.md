@@ -59,22 +59,27 @@ When PM2 restarts a process, the old Node instance may not release its port befo
    ```js
    { kill_timeout: 3000, listen_timeout: 3000 }
    ```
-2. **Graceful shutdown handler in server code** — handle both SIGINT and SIGTERM, add a force-exit fallback, and register global error handlers:
+2. **Graceful shutdown handler in server code** — handle both SIGINT and SIGTERM, close DB connections inside `server.close()` callback, add a force-exit fallback, and register global error handlers:
    ```js
-   function gracefulShutdown(signal) {
-     server.close(() => process.exit(0));
-     // Force exit if connections don't drain within 10 seconds
-     setTimeout(() => process.exit(1), 10000);
+   function shutdown() {
+     server.close(() => {
+       // Close DB BEFORE process.exit() — flushes WAL, releases locks
+       if (db && typeof db.close === 'function') db.close();
+       process.exit(0);
+     });
+     // Force exit if graceful shutdown takes too long
+     setTimeout(() => process.exit(1), 5000);
    }
-   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+   process.on('SIGINT', shutdown);
+   process.on('SIGTERM', shutdown);
    process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason));
    process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); setTimeout(() => process.exit(1), 100); });
    ```
    - SIGINT handles Ctrl-C in dev, SIGTERM handles PM2 restart. Both are needed.
-   - The 10-second force-exit prevents PM2 from hanging on keep-alive connections that never drain.
+   - Close DB (and any other resource) inside `server.close()` callback, not after it — ensures SQLite WAL is flushed and connections released before the process exits, preventing SQLITE_BUSY or "database is locked" on the next PM2 start.
+   - The force-exit prevents PM2 from hanging on keep-alive connections that never drain.
    - `unhandledRejection`/`uncaughtException` log before exiting; without these, PM2 sees a silent crash with no diagnostic output.
-   - Source: pezantTools server.js (2026-05-28).
+   - Source: pezantTools server.js (2026-05-28); claudeNet server.js (2026-06-14).
 3. **Use a `start.sh` wrapper for Next.js standalone** — `next start` as the PM2 script loses process tracking. A wrapper lets PM2 signal the actual node process:
    ```bash
    #!/bin/bash
@@ -441,6 +446,25 @@ curl -X POST http://localhost:3001/api/cron/daily-push \
 **Why:** `pm2 save` + `pm2 resurrect` restores process configuration but not the live env from when `pm2 start` ran. After a reboot, a credential rotation, or a fresh deploy, the env block is empty or stale for values not in `ecosystem.config.cjs`.
 
 Source: runEvaluator `runeval-daily-push.sh` (commit `0719185`, 2026-06-07) — `CRON_SECRET` was added as a runtime grep after observing silent 401s when the secret changed between `pm2 start` and later cron fires.
+
+## Cron Wrappers on Remote Machines: Self-Sync via `git pull --ff-only`
+
+Cron scripts running on isolated machines (a second PC, Raspberry Pi, or any host without an automatic deploy pipeline) should `git pull --ff-only` at the start of each run. Without this, code/config fixes pushed to GitHub don't reach the machine until someone manually SSHs in — meaning a fix shipped during the day won't make the overnight scheduled run.
+
+```bash
+# At the top of the cron wrapper, before activating venv / installing deps
+cd "$REPO"
+echo "--- git pull ---"
+git pull --ff-only 2>&1 | grep -v "^Already up to date" || true
+```
+
+- `--ff-only` prevents the pull from attempting a merge if the local branch has diverged. On diverge, the pull prints a warning but doesn't fail the run (due to `|| true`).
+- `grep -v "Already up to date"` keeps the log clean on no-op pulls.
+- Place this BEFORE `source .venv/bin/activate` or `npm install` so updated dependency specs are also picked up.
+
+**Machines this applies to:** any host that runs scheduled jobs but doesn't receive automatic deploys (git hooks, PM2 reload, CI/CD). VMs with deploy pipelines don't need this; isolated machines (second PC, Raspberry Pi, air-gapped ML node) do.
+
+Source: arc-prize-2026 `cron_overnight_run.sh` commit `673235e` (2026-06-14) — without self-sync, a CUDA allocator fix pushed at 09:00 would not have reached PC2 in time for the 02:00 overnight run.
 
 ## New PM2 Cron Processes Must Be Registered in All Health-Checker Allowlists
 
