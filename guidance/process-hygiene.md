@@ -97,6 +97,29 @@ When PM2 restarts a process, the old Node instance may not release its port befo
 
 **Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
 
+**Belt-and-suspenders: proactive port cleanup in start.sh.** When `kill_timeout` alone isn't enough (e.g., a previous process crashed without releasing the socket), add a `kill_port()` function at the top of `start.sh` that clears the port before launching:
+
+```bash
+kill_port() {
+  local sig=$1
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k -$sig "${PORT}/tcp" >/dev/null 2>&1 || true
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -ti :"${PORT}" | xargs kill -$sig >/dev/null 2>&1 || true
+  fi
+}
+
+kill_port TERM
+# Wait up to 50s for port to be free; escalate to SIGKILL at attempt 5
+for i in {1..5}; do
+  ss -tulpn 2>/dev/null | grep -q ":${PORT} " || break
+  [ $i -eq 5 ] && kill_port 9
+  sleep 10
+done
+```
+
+Start with SIGTERM (graceful), escalate to SIGKILL only after several retries. Use `fuser` when available (util-linux); fall back to `lsof` (macOS / minimal Linux). This is a start.sh–level fix, not a replacement for ecosystem.config `kill_timeout`. Source: employ `start.sh` (commit 6c7f362, 2026-06-14).
+
 ## Docker Bind Mount Refresh
 
 **`docker compose restart` does NOT refresh bind mounts.** When a container is restarted with `docker compose restart`, the container process is restarted but the container itself is not recreated. Bind mount inodes remain stale, so any files updated on the host (e.g., credential files, OAuth tokens) are not visible inside the container until the container is recreated.
@@ -1352,3 +1375,23 @@ for (const [key, value] of Object.entries(req.query)) {
 Source: `auth-proxy/server.js` commit `47062dd` (2026-06-14) — OAuth callback proxy was corrupting state param when Google included repeated query params.
 
 Source: health-hub commit `c09d9d0` (2026-06-14) — three-commit fix sequence (`90ec8f7` added datasourceUrl explicitly, `3796db2` corrected Config object gotcha, `c09d9d0` removed the now-exposed datasourceUrl conflict).
+
+## OAuth Bootstrap: Copied Token Gets Revoked on Source Rotation
+
+When bootstrapping a bridge container's auth by **copying a token from a source container**, the target is now sharing the source's OAuth refresh token. When the source rotates (via its nightly relogin cron or any `claude auth` refresh), the old token value is invalidated and the target immediately 401s ("Invalid authentication credentials").
+
+**The bootstrap is a stopgap only.** Immediately after bootstrapping, give the target its own independent login:
+
+```bash
+set -a; . $HOME/.env; set +a   # export BROWSER_AGENT_KEY (bare `. ~/.env` does NOT export it)
+ALT_ACCOUNT_TAG=<app> POST_RESTART=true \
+  ~/repos/scripts/claude-auto-relogin-container.sh <target>
+```
+
+Verify `health: auth:ok` again after this step. Once the target has its own token, it self-refreshes normally like every other sibling container and survives future source rotations.
+
+**Add to nightly cron:** Also add a relogin entry and use `set -a; . $HOME/.env; set +a` (not `. $HOME/.env &&`):
+- `. $HOME/.env && cmd` — sources variables but does NOT export them; downstream scripts that reference `$BROWSER_AGENT_KEY` as an env var get an empty value.
+- `set -a; . $HOME/.env; set +a; cmd` — `set -a` forces all sourced variables to be automatically exported, so `BROWSER_AGENT_KEY` is visible to child processes.
+
+Source: `bootstrap-bridge-auth` skill update (commit `0b6c420`, 2026-06-14) — the issue was found when an employ-bridge bootstrapped from employ's token and expired ~12h later.
