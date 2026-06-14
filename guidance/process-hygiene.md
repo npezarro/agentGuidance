@@ -1117,3 +1117,32 @@ const watcher = chokidar.watch(dirs, {
 **When to apply:** Any time a new watcher-based collector or processor is added to a service that already has a database or log file inside the watched tree. Audit the `ignored` function first — the exclusion is easy to miss when the feature is "just add a new watched directory."
 
 Source: activity-tracker CLAUDE.md commit b39a91d (2026-06-14) — documented after summarizer OOM fix revealed the db-exclusion rule was missing from the gotchas section.
+
+## `Promise.race` Timeout Wrapper Leaves a Dangling Timer
+
+When implementing a timeout helper with `Promise.race`, the naïve form leaves the `setTimeout` running even after the main promise resolves. In Node.js every active timer holds a reference that delays event-loop exit and accumulates as timer-slot garbage in long-running servers.
+
+```js
+// BAD: timer fires (and logs) after the main promise already resolved
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
+// GOOD: capture the ID and clear it in .finally()
+function withTimeout(promise, ms) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+```
+
+**When to apply:** Any `withTimeout` / `withDeadline` helper, webhook background-task runners, or any code that uses `Promise.race` with a timeout side channel. The `.finally` guard is zero-cost on the happy path and prevents phantom timer callbacks in high-throughput services.
+
+**Bonus: check backpressure before heavy work.** If the timeout wrapper is used inside a webhook handler that gates on queue depth, perform the 503 backpressure check BEFORE parsing the body or writing to the DB. Rejecting early avoids wasted parse/storage work when the queue is full.
+
+Source: health-hub commit `1623f9b` (2026-06-14) — Gemini-generated fix for the Garmin webhook `withTimeout()` helper; timer leak + backpressure ordering both corrected in the same PR.
