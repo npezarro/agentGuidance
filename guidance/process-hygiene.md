@@ -1237,4 +1237,94 @@ return new PrismaClient({ adapter });  // ✓
 
 **Related:** `PrismaLibSql` itself expects a **Config object** `{ url, authToken? }` — not a pre-constructed `@libsql/client` instance (documented above). These are two separate gotchas that can compound: wrong constructor argument to the adapter AND redundant datasourceUrl to PrismaClient.
 
+## Bash Monitoring Scripts: Alert-Once-Then-Suppress via Marker State
+
+**The problem:** A cron monitoring script that uses a file marker to track failure presence (just `touch $FAIL_MARKER`) will re-post an `@here` Discord ping on every subsequent cron cycle during a persistent failure, creating alert spam.
+
+**The fix:** The marker must encode *whether an alert was already sent*, not just that a failure occurred. Use a two-state protocol:
+
+```bash
+if [ -f "$FAIL_MARKER" ]; then
+  if [ "$(cat "$FAIL_MARKER" 2>/dev/null)" != "alerted" ]; then
+    # Second consecutive failure — alert once and suppress further pings
+    post_alert "Service still failing after restart" "ping"
+    echo "alerted" > "$FAIL_MARKER"
+    # else: already alerted, skip (persistent failure suppressed)
+  fi
+else
+  # First failure — grace period, just mark it
+  touch "$FAIL_MARKER"
+fi
+
+# On recovery, clear the marker so the next failure cycle resets
+rm -f "$FAIL_MARKER"
+```
+
+**Why three states?** First failure (marker absent) = transient blip grace period, no alert. Second failure (marker has no content or empty) = escalate once. Subsequent failures (marker contains "alerted") = suppress. Recovery (service healthy) = rm marker.
+
+**When to apply:** Any bash cron script that sends a Discord/Slack alert on failure and uses a marker file to track state. Without this, a service that stays broken for hours generates hundreds of @here pings.
+
+Source: `scripts/bridge-auth-refresh.sh` commit `8a0436e` (2026-06-14) — fixed bridge auth refresh alerting every 10 minutes during persistent OAuth failure.
+
+## External API 429 Handling: Exponential Backoff + Inter-Request Throttle
+
+When calling an external REST API in a sequential loop (paginating results, fetching per-entity data), two defenses are needed:
+
+**1. Inter-request throttle delay:** Add a fixed sleep between consecutive requests to avoid saturating rate limits before they trigger:
+```js
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// In a fetch loop:
+for (const item of items) {
+  await sleep(200); // 200ms between requests prevents burst triggering 429
+  const res = await fetchItem(item.id);
+}
+```
+
+**2. Exponential backoff on 429:** When a 429 response arrives, back off with jitter and retry:
+```js
+async function apiFetch(path, options, retryCount = 0) {
+  const res = await rawFetch(path, options);
+
+  if (res.status === 429 && retryCount < 5) {
+    const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+    console.warn(`Rate limited on ${path}. Retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1})`);
+    await sleep(delay);
+    return apiFetch(path, options, retryCount + 1);
+  }
+
+  return res;
+}
+```
+
+The `+ Math.random() * 1000` jitter prevents thundering-herd retries when multiple parallel workers all hit the limit simultaneously.
+
+**When to apply:** Any code that calls a third-party API (Teller, Garmin, Google, etc.) in a loop. The inter-request sleep prevents rate-limit hits proactively; the 429 backoff handles them reactively when limits vary by tier or time-of-day.
+
+Source: `finance-tracker/src/lib/teller.ts` commit `67b8ec5` (2026-06-14) — Teller API rate limiting during account sync.
+
+## Express: `URLSearchParams(req.query)` Doesn't Handle Repeated Query Params
+
+`new URLSearchParams(req.query)` appears correct but fails when a query parameter appears more than once in the URL (e.g. `?foo=a&foo=b`). Express parses repeated params as an **array** (`req.query.foo === ['a', 'b']`), but `URLSearchParams` constructor receives a plain object and coerces arrays to a string (`foo=a,b`) instead of two separate entries.
+
+**Fix:** Iterate explicitly and call `.append()` for each value:
+```js
+// WRONG — loses multiple values for the same key
+const params = new URLSearchParams(req.query);
+
+// CORRECT — handles both scalar and array values
+const params = new URLSearchParams();
+for (const [key, value] of Object.entries(req.query)) {
+  if (Array.isArray(value)) {
+    value.forEach(v => params.append(key, v));
+  } else {
+    params.append(key, value);
+  }
+}
+```
+
+**When it matters:** Any Express route that builds a URL from `req.query` to forward to a downstream service (OAuth callbacks, search proxies, redirect handlers). A missing value here can silently break the OAuth state parameter, causing auth failures that are hard to trace.
+
+Source: `auth-proxy/server.js` commit `47062dd` (2026-06-14) — OAuth callback proxy was corrupting state param when Google included repeated query params.
+
 Source: health-hub commit `c09d9d0` (2026-06-14) — three-commit fix sequence (`90ec8f7` added datasourceUrl explicitly, `3796db2` corrected Config object gotcha, `c09d9d0` removed the now-exposed datasourceUrl conflict).
