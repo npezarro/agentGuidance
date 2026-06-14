@@ -1087,3 +1087,33 @@ export function buildSummaryFromIterator(sinceId, limit) {
 **When to apply:** any function that processes thousands of rows or builds large hash maps, and where the process is memory-constrained (PM2 `max_memory_restart`, containerized Node.js, etc.). Requires `let` declarations, not `const`.
 
 Source: activity-tracker commits 6b5d813 + 18585d1 (2026-06-13) — OOM crash loop on the activity-tracker summarizer fixed by nullifying per-row `evt` references and post-run aggregation maps.
+
+## File-Watcher Feedback Loop: Exclude Files the Service Writes To
+
+Any service that (1) watches a directory with chokidar or a similar inotify-backed watcher AND (2) writes to a file inside that directory must explicitly exclude its own output files from watcher events. Without the exclusion, every write triggers an event, which triggers processing, which writes again — an infinite self-triggering loop that pegs CPU and floods the event log.
+
+**Common write targets that must be excluded:**
+- SQLite database files (`.db`, `.db-wal`, `.db-shm`)
+- Log files (`.log`)
+- Lock / state files (`.json.tmp`, `.lock`)
+- Editor swap / backup files (`~` suffix, `.bak`, `.swp`)
+
+**Chokidar pattern:**
+```js
+const watcher = chokidar.watch(dirs, {
+  ignored: (path) => {
+    if (path.includes('activity.db')) return true;   // DB + WAL + SHM
+    if (path.endsWith('.log'))        return true;
+    if (path.endsWith('~') || path.endsWith('.bak')) return true;
+    return false;
+  },
+  ignorePermissionErrors: true,
+  // ...
+});
+```
+
+**Why substring match, not exact path:** SQLite writes three files simultaneously (`activity.db`, `activity.db-wal`, `activity.db-shm`). A substring check on the base name catches all three without enumerating each suffix.
+
+**When to apply:** Any time a new watcher-based collector or processor is added to a service that already has a database or log file inside the watched tree. Audit the `ignored` function first — the exclusion is easy to miss when the feature is "just add a new watched directory."
+
+Source: activity-tracker CLAUDE.md commit b39a91d (2026-06-14) — documented after summarizer OOM fix revealed the db-exclusion rule was missing from the gotchas section.
