@@ -1146,3 +1146,95 @@ function withTimeout(promise, ms) {
 **Bonus: check backpressure before heavy work.** If the timeout wrapper is used inside a webhook handler that gates on queue depth, perform the 503 backpressure check BEFORE parsing the body or writing to the DB. Rejecting early avoids wasted parse/storage work when the queue is full.
 
 Source: health-hub commit `1623f9b` (2026-06-14) — Gemini-generated fix for the Garmin webhook `withTimeout()` helper; timer leak + backpressure ordering both corrected in the same PR.
+
+## Defensive JSON Parsing in Batch/Summarization Loops
+
+When a batch or summarization function processes DB rows in a loop and advances a cursor or timestamp **after** the loop, a bare `JSON.parse` call will permanently stall the pipeline if any row contains corrupt or missing JSON.
+
+**The failure mode:**
+```js
+// BAD — one corrupt row aborts the whole batch and the cursor never advances
+export function buildSummary(events) {
+  for (const evt of events) {
+    const meta = JSON.parse(evt.metadata_json); // throws SyntaxError on corrupt row
+    // ... build summary using meta
+  }
+  // ← cursor/timestamp advance happens here; never reached after throw
+}
+
+export function runSummarization(config) {
+  setInterval(() => {
+    try {
+      const events = fetchWindow(lastSummarizeTime);
+      buildSummary(events);              // throws → caught below
+      lastSummarizeTime = now();         // ← never runs; same window re-fetched every tick
+    } catch (err) {
+      log.error(err);                    // logs every 60s but does nothing useful
+    }
+  }, 60_000);
+}
+```
+
+Net effect: no output file is ever written again; the error repeats every tick until the corrupt row ages out of retention (up to 30 days in a 30-day window).
+
+**Fix — defensive parse helper:**
+```js
+function parseMetadata(evt) {
+  try {
+    return JSON.parse(evt.metadata_json) ?? {};
+  } catch {
+    console.warn(`[summarizer] Skipping malformed metadata_json (source=${evt.source}, type=${evt.event_type})`);
+    return {};
+  }
+}
+
+// All call sites: meta = parseMetadata(evt);
+// Existing `meta.field || default` guards already handle the empty-object case.
+```
+
+**When to apply:** Any function that:
+- Processes DB rows in a loop using `JSON.parse` on a stored column, AND
+- advances a cursor, timestamp, or counter AFTER the loop body.
+
+One corrupt row in a DB column can arrive from a crashed writer, a schema migration edge case, or a race. Always guard.
+
+Source: activity-tracker commit `a2ff5fb` (2026-06-14) — `buildSummary` stalled daily-context.md generation; fix adds `parseMetadata()` wrapper + 3 regression tests.
+
+## SQLite `busy_timeout` Alongside WAL Mode
+
+WAL (`journal_mode = WAL`) reduces write-write contention in SQLite, but does not prevent `SQLITE_BUSY` errors when concurrent API requests hit a read-write boundary. Without a `busy_timeout`, the first concurrent access that finds the DB busy returns an immediate error (better-sqlite3 throws synchronously), which bubbles up as a 500 to the API caller.
+
+**Fix — add `busy_timeout` to the initialization pragma block:**
+```js
+function initDb() {
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');  // ← wait up to 5s instead of throwing immediately
+  // ...
+}
+```
+
+**Why 5000ms:** High enough to survive transient request bursts without indefinitely blocking callers. If a write holds the lock for longer than 5s the service has deeper problems.
+
+**When to apply:** Any `better-sqlite3` Express/Node.js server that serves more than one concurrent request. The symptom is sporadic 500 errors under load with no obvious error in the handler — only visible in the DB layer logs as `SQLITE_BUSY`.
+
+Source: claudeNet commit `b7c8efb` (2026-06-13) — 500 errors under concurrent API load resolved by adding `busy_timeout` to the existing WAL pragma block.
+
+## PrismaClient + LibSQL Adapter: Don't Pass `datasourceUrl` in the Constructor
+
+When using `PrismaLibSql` as the Prisma adapter, the adapter already owns the database connection. Passing `datasourceUrl` as an additional constructor option to `PrismaClient` conflicts with the adapter's connection state and causes errors.
+
+```ts
+// WRONG — datasourceUrl conflicts with the adapter
+const adapter = new PrismaLibSql({ url });
+return new PrismaClient({ adapter, datasourceUrl: url });  // ❌
+
+// CORRECT — adapter handles the connection; PrismaClient needs only the adapter
+const adapter = new PrismaLibSql({ url });
+return new PrismaClient({ adapter });  // ✓
+```
+
+**Related:** `PrismaLibSql` itself expects a **Config object** `{ url, authToken? }` — not a pre-constructed `@libsql/client` instance (documented above). These are two separate gotchas that can compound: wrong constructor argument to the adapter AND redundant datasourceUrl to PrismaClient.
+
+Source: health-hub commit `c09d9d0` (2026-06-14) — three-commit fix sequence (`90ec8f7` added datasourceUrl explicitly, `3796db2` corrected Config object gotcha, `c09d9d0` removed the now-exposed datasourceUrl conflict).
