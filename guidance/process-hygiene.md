@@ -1395,3 +1395,40 @@ Verify `health: auth:ok` again after this step. Once the target has its own toke
 - `set -a; . $HOME/.env; set +a; cmd` — `set -a` forces all sourced variables to be automatically exported, so `BROWSER_AGENT_KEY` is visible to child processes.
 
 Source: `bootstrap-bridge-auth` skill update (commit `0b6c420`, 2026-06-14) — the issue was found when an employ-bridge bootstrapped from employ's token and expired ~12h later.
+
+## SQLite UPSERT with Optional Columns: Branch by Presence to Avoid Null Overwrite
+
+When a PATCH-style endpoint has optional fields, a single SQLite `ON CONFLICT DO UPDATE SET` that lists all columns will overwrite existing values with `null` whenever those fields are absent from the request body.
+
+**The problem:** `target_instance_id = excluded.target_instance_id` in an UPSERT means "set to whatever was passed in." If the client omits `instanceId`, the bound value is `null`, and the UPSERT silently clears the stored value.
+
+**The fix:** Branch on whether the optional field was provided, and use a separate prepared statement for each case:
+
+```js
+if (instanceId !== undefined) {
+  // Full UPSERT — includes target_instance_id
+  db.prepare(`
+    INSERT INTO thread_settings (thread_id, user_id, mode, target_instance_id, updated_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(thread_id, user_id) DO UPDATE SET
+      mode = COALESCE(excluded.mode, thread_settings.mode),
+      target_instance_id = excluded.target_instance_id,
+      updated_at = excluded.updated_at
+  `).run(threadId, userId, mode, instanceId || null);
+} else {
+  // Reduced UPSERT — leaves target_instance_id untouched
+  db.prepare(`
+    INSERT INTO thread_settings (thread_id, user_id, mode, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(thread_id, user_id) DO UPDATE SET
+      mode = COALESCE(excluded.mode, thread_settings.mode),
+      updated_at = excluded.updated_at
+  `).run(threadId, userId, mode);
+}
+```
+
+**Why COALESCE isn't enough:** `COALESCE(excluded.col, table.col)` works for non-null fallback, but the column still appears in the UPDATE SET list — if you want to leave it completely untouched when absent from the payload, you must omit it from the query.
+
+**When to apply:** Any SQLite UPSERT backing a PATCH endpoint where some columns are optional. Check for `= excluded.<col>` assignments in UPDATE SET clauses — each one is a potential silent null overwrite.
+
+Source: claudeNet `lib/routes-api.js` commit `86b35b6` (2026-06-14) — PATCH `/thread/:id/settings` was clearing `target_instance_id` whenever the request body included only `mode`.
