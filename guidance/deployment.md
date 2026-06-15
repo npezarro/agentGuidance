@@ -239,6 +239,8 @@ async function triggerDeploy(target) {
 
 **Source:** claude-auto-merger `e98b4a8` (2026-06-12), which hardened the deploy pipeline after a doc-sync PR fired two triggers within 2s and a 120s timeout killed the build mid-type-check.
 
+**Diagnosing stuck Cloudflare-cached 500s after a bad deploy:** If static assets return errors even after a successful re-deploy, Cloudflare may have cached a 500 response under `cache-control: immutable` headers. Diagnose with `curl -sI <asset-url>` — look for `cf-cache-status: HIT` on a 4xx/5xx. Recovery: add a temporary bypass-cache rule for the affected path prefix (see `cloudflare-site-setup` skill for the API commands). The bypass rule forces CF to re-fetch from origin on every request. Remove it once the 500 is no longer live. If your CF API token lacks `Cache Purge:Purge` scope, this bypass-rule workaround is the only programmatic option (dashboard only for adding purge scope). Source: 2026-06-14 runeval incident; documented in `cloudflare-site-setup/SKILL.md`.
+
 ## Concurrent rsyncs Silently Drop Subdirectories
 
 **Never run parallel rsyncs from the same dev host to multiple production directories.** Concurrent rsync operations (e.g., deploying shopper, foodie, and travel in the same shell session with `&`) can silently drop subdirectories in the destination.
