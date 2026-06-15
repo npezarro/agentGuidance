@@ -336,6 +336,36 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    Apply to both GET and POST handlers in `app/api/auth/[...nextauth]/route.ts`. Source: humans commit `314a5ca` (2026-06-08).
 
+13. **Add a stale-session-cookie guard in proxy.ts to prevent broken auth state.** If a user has a session cookie but the session has expired or been invalidated, the default behavior is to render the dashboard (cookie present) but fail all API calls (session missing). Fix: in `proxy.ts`, check `auth()` on page navigations when the session cookie is present, and redirect + clear the cookie if the session is invalid:
+   ```typescript
+   const SESSION_COOKIE = "__Secure-<appname>.session-token";
+
+   export async function proxy(req: NextRequest) {
+     // ... existing signin handler ...
+
+     // Stale-cookie guard: if a session cookie is present but session is
+     // invalid/expired, clear it so the user reaches sign-in, not a broken UI.
+     // Only check on page navigations (not API/asset paths).
+     if (
+       !req.nextUrl.pathname.startsWith("/api/") &&
+       req.cookies.has(SESSION_COOKIE)
+     ) {
+       const session = await auth();
+       if (!session?.user) {
+         const response = NextResponse.redirect(new URL("/", req.url));
+         response.cookies.delete(SESSION_COOKIE);
+         return response;
+       }
+     }
+     return NextResponse.next();
+   }
+
+   export const config = {
+     matcher: ["/api/auth/signin/:path*", "/dashboard/:path*", "/dashboard"],
+   };
+   ```
+   Extend the `matcher` to include all authenticated page paths (`/dashboard/:path*` etc.) so the guard runs on navigation. Source: employ commit `986b4e5` (2026-06-14).
+
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:

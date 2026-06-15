@@ -366,3 +366,35 @@ npm run build
 **Why the default is wrong here:** `NODE_ENV=production` is correct for the running app but wrong for the install-and-build step. A bare `npm install` in a production environment is a footgun: it silently omits the tools you need, with an error that looks like "next: command not found" rather than "missing devDependency."
 
 Source: finance-tracker `scripts/vm-deploy.sh` commit `a78a06b` (2026-06-14).
+
+## start.sh: Always `cd` to Script Directory First
+
+At the top of every `start.sh`, do `cd "$(dirname "$0")"` before any path operations:
+
+```bash
+#!/bin/bash
+cd "$(dirname "$0")"  # all subsequent paths are relative to the script's dir
+[ -f .env ] && source .env
+```
+
+Without this, if PM2 or a cron job invokes `start.sh` from a different working directory, every relative path (`./employ.db`, `./.next/standalone/`, `$(pwd)`) silently resolves to the wrong location. `$(dirname "$0")` is the script's own dir regardless of the caller's `$PWD`. Also use `$(pwd)` (not the capture `CURRENT_DIR=$(cd "$(dirname "$0")" && pwd)`) since after the leading `cd`, `$(pwd)` is already correct.
+
+Source: employ commit `207d378` (2026-06-14).
+
+## Bash Scripts: Use `node -e` for JSON Parsing, Not sed/grep
+
+When a shell script needs to extract a field from a JSON file, use `node -e` instead of `sed`/`grep`:
+
+```bash
+# Fragile — breaks on whitespace variations, nested keys, or multiline values
+MANIFEST_DIR=$(grep '"appDir":' "$MANIFEST" | sed 's/.*"appDir": "\([^"]*\)".*/\1/')
+
+# Robust — handles any valid JSON, fails cleanly on error
+MANIFEST_DIR=$(node -e "try { const m=require('$MANIFEST'); console.log(m.appDir || '') } catch(e) { process.exit(1) }" 2>/dev/null)
+```
+
+Check the exit code (`$?`) after the `node -e` call: exit 1 means the file was missing or unparseable. The `try/catch` ensures the process exits cleanly rather than printing a stack trace to stdout that gets captured as the value.
+
+**When to use:** Any bash script that reads a JSON build artifact (`.next/required-server-files.json`, `package.json`, health endpoint response) to make a branching decision. `sed`/`grep` on JSON is fragile and fails silently on minor format differences.
+
+Source: employ commit `207d378` (2026-06-14).
