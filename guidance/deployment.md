@@ -307,3 +307,62 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Next.js Standalone: Flat VM Layout vs Nested Dev Layout in start.sh
+
+When deploying a Next.js standalone build, `rsync` typically copies the **contents** of `.next/standalone/` to the target directory (e.g., `/var/www/app/`). This produces a **flat layout** where `server.js` is at the root:
+
+```
+/var/www/app/
+  server.js           ← direct (flat deploy)
+  .next/
+    server/
+    ...
+```
+
+A dev clone has the **nested layout** where the standalone dir is still under `.next/`:
+
+```
+<project>/
+  .next/
+    standalone/
+      server.js       ← nested (local dev)
+      .next/
+        server/
+```
+
+If `start.sh` only checks for `.next/standalone/server.js` (nested), it will not find the file in a flat VM deploy and fall through to `npm run build` — which fails on the VM if the `next` CLI isn't installed, or overwrites a working build unnecessarily.
+
+**Fix — detect layout in start.sh:**
+```bash
+if [ -f "./server.js" ] && [ -d "./.next/server" ]; then
+  # Flat VM deploy: standalone contents rsynced to this dir
+  exec node ./server.js
+elif [ -f "./.next/standalone/server.js" ]; then
+  # Nested dev layout
+  exec node ./.next/standalone/server.js
+else
+  echo "No server.js found in flat or nested location — build may be missing"; exit 1
+fi
+```
+
+**Why the layout differs:** `rsync -az .next/standalone/ /var/www/app/` (trailing slash on source) copies the directory's contents rather than the directory itself, flattening the path. `rsync -az .next/standalone /var/www/app/` (no trailing slash) would nest it. The flat rsync is the common idiom in deploy scripts here.
+
+Source: employ `start.sh` commit `1d369cc` (2026-06-14) — start.sh was always triggering `npm run build` on the VM because it only checked `.next/standalone/server.js`; flat rsync had placed `server.js` at root.
+
+## `npm install --production=false` in VM Build Scripts
+
+When a VM-side deploy script runs `npm install` inside a directory where `NODE_ENV=production` is set (common in PM2 ecosystem configs), npm skips `devDependencies`. Build tooling (`next`, `typescript`, `esbuild`, etc.) lives in devDeps and is absent after a production install — the subsequent `npm run build` fails.
+
+**Fix:** Always pass `--production=false` to npm install in build scripts, regardless of environment:
+
+```bash
+# In vm-deploy.sh or similar on-VM build scripts:
+npm install --production=false   # always install devDeps — they're needed for the build
+npx prisma generate              # if applicable
+npm run build
+```
+
+**Why the default is wrong here:** `NODE_ENV=production` is correct for the running app but wrong for the install-and-build step. A bare `npm install` in a production environment is a footgun: it silently omits the tools you need, with an error that looks like "next: command not found" rather than "missing devDependency."
+
+Source: finance-tracker `scripts/vm-deploy.sh` commit `a78a06b` (2026-06-14).
