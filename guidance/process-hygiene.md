@@ -1486,3 +1486,80 @@ itself, starting with the TLDR / top-line summary.
 **Scope:** Applies to any pipeline where a second LLM call edits, expands, or annotates the output of a first call and the result is shown directly to a user. Examples: buying-guide refinement pass, foodie second-pass review, any "improve this draft" agent step.
 
 Source: shopper `docker/bridge-server.js` commit `93ab08b` (2026-06-14) — users saw the editor's internal change notes before the TLDR on every shopper guide that triggered the refinement pass.
+
+## Webhook Queue: Array-Based Queue Over Promise Chains
+
+When a server handler receives bursty events (webhooks, sensor streams, message queues) and must process them sequentially with I/O work (DB writes, API calls), avoid the "growing promise chain" anti-pattern:
+
+```js
+// ANTI-PATTERN: unbounded heap growth
+let queue = Promise.resolve();
+queue = queue.then(async () => { /* process event */ });
+```
+
+Under sustained high-volume traffic, each `.then()` link retains closure references to the event payload, request ID, and intermediate state — the chain grows indefinitely, causing slow heap exhaustion over hours to days.
+
+**Use an explicit array-based queue with a single-instance processor:**
+
+```js
+const queue = [];         // functions, not promises — lightweight
+let isProcessing = false;
+
+async function processQueue() {
+  if (isProcessing) return;    // prevent re-entrancy
+  isProcessing = true;
+  while (queue.length > 0) {
+    const task = queue.shift(); // shift() lets GC reclaim immediately
+    try { await task(); } catch (e) { console.error('queue task failed', e); }
+    // error in one task does NOT stop remaining tasks
+  }
+  isProcessing = false;
+}
+
+// Enqueue from the request handler (fire-and-forget):
+queue.push(async () => { /* process webhook body */ });
+processQueue();  // idempotent: no-op if already draining
+```
+
+**Key properties:**
+- Tasks are stored as functions (cheap), not pending promises (retain scope until GC)
+- `shift()` lets the GC reclaim each completed task immediately
+- `isProcessing` flag prevents concurrent drain starts — at most one drain loop active
+- Per-task try/catch: one failure doesn't break the rest of the queue
+
+**Also guard nullable items in event payloads** before property access — external services sometimes send null entries in array fields:
+
+```js
+for (const sample of samples) {
+  if (!sample || typeof sample !== 'object') continue; // null guard
+  if (sample.heartRate) { /* safe to access */ }
+}
+```
+
+Source: health-hub `src/app/api/garmin/webhook/route.ts` commit `d5fda69` (2026-06-15) — Garmin webhook handler caused heap exhaustion on sustained sensor traffic; the promise-chain anti-pattern was the root cause.
+
+## Multi-Phase AI Research Pipeline with Disqualification Gates
+
+When building an AI agent that researches and recommends (restaurants, vendors, candidates, etc.), structure the bridge prompt as sequential phases that narrow candidates and deepen verification — rather than one long monolithic research pass.
+
+**Phase 1 — Initial Shortlist:** Broad search across sources. Output: ranked list of N candidates.
+
+**Phase 2 — Deep Review (highest value):** For each shortlisted candidate, extract **verbatim quotes** (2-4 per source: Google Maps, Yelp, Reddit, editorial). Do NOT paraphrase — exact quotes are the trust signal. Apply explicit **Disqualification Triggers**:
+- Declining quality trend (reviews mentioning "used to be good")
+- Hygiene or service red flags in recent reviews
+- Rating trend reversal in last 6 months
+- Hard criteria mismatch (permanently closed, no matching menu items, out of price range)
+
+Output two sections: **What people are saying** (quoted snippets with attribution) and **Disqualified** (removed candidates with reason). Transparency in rejection demonstrates the agent applied real judgment — it is UX-critical, not optional.
+
+**Phase 3 — Specialty Verification:** For each surviving candidate, answer the specific expertise question (signature dishes, pricing, key differentiators) by consulting menus, official sites, or authoritative sources.
+
+**Implementation notes:**
+- Increase bridge/LLM timeout for each additional phase — each substantive phase adds 3-5 minutes; set timeout to `(N_phases × 5 min) + buffer`
+- Verbatim quote extraction is non-negotiable: paraphrasing erodes trust; exact quotes build it
+- Disqualification criteria must be **explicit and checkable**, not vague sentiment
+- Disqualification is UX-critical: it shows verification was real, not just a shortlist
+
+**When to apply:** Any structured research task with candidate evaluation: restaurants, vendors, purchasing decisions, service providers. Not needed for simple single-answer lookups.
+
+Source: foodie `docker/bridge-server.js` commits `0d7064c` (deep review + verbatim extraction + disqualification gates) and `1aac025` (signature dishes phase) — 2026-06-14.
