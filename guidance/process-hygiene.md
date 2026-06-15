@@ -747,6 +747,40 @@ Do NOT retry non-transient errors (400/401/403/503 "slots busy", 429 rate-limit)
 
 **Applies broadly:** The `isTransientError` check is the key primitive — apply the same retry guard to any internal HTTP service call that routes through a local broker or tunnel, not just the Claude bridge. Shopper's query-executor uses the same pattern for internal service calls (commit `be1d94e`, 2026-06-13).
 
+### Node.js `http.request` Retry: Include DNS Errors (`ENOTFOUND`, `EAI_AGAIN`)
+
+DNS resolution failures are transient — a temporary nameserver blip produces `ENOTFOUND` or `EAI_AGAIN`, then resolves on the next attempt. When building an `on('error')` retry handler for `http.request`, include both DNS error codes alongside the usual connection errors:
+
+```js
+req.on('error', (err) => {
+  const retryable = [
+    'EAI_AGAIN',     // DNS temporary failure
+    'ENOTFOUND',     // DNS resolution failure (often transient)
+    'ECONNRESET',    // connection dropped
+    'ETIMEDOUT',     // connection timeout
+    'ECONNREFUSED',  // service not yet up
+  ];
+  if (retries > 0 && retryable.includes(err.code)) {
+    setTimeout(() => apiRequest(method, path, body, retries - 1).then(resolve).catch(reject), 2000);
+  } else {
+    reject(err);
+  }
+});
+```
+
+**Prefer loopback for co-located services:** If a worker and its API server run on the same host, hardcode `http://127.0.0.1:<port>` in the PM2 ecosystem config rather than using the public hostname. This skips DNS entirely, eliminating `ENOTFOUND` as a failure mode:
+
+```js
+// worker.ecosystem.config.js
+env: {
+  SERVICE_URL: 'http://127.0.0.1:3010', // loopback — avoids DNS failures with public endpoint
+}
+```
+
+The loopback approach and the retry guard are complementary: loopback eliminates DNS flap for same-host services; the retry guard still catches `ECONNREFUSED` when the server restarts.
+
+Source: claudeNet `bin/claudenet-worker.js` commit `d94e46d` (2026-06-14) — worker was crashing on DNS failures when CLAUDENET_URL was set to the public hostname.
+
 ## ID-Based Cursor Iteration for Large Dataset Processing
 
 When a script processes all rows from a large DB table in batches, use **ID-based cursor pagination** instead of offset-based pagination (`LIMIT N OFFSET M`):
