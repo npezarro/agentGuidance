@@ -1563,3 +1563,38 @@ Output two sections: **What people are saying** (quoted snippets with attributio
 **When to apply:** Any structured research task with candidate evaluation: restaurants, vendors, purchasing decisions, service providers. Not needed for simple single-answer lookups.
 
 Source: foodie `docker/bridge-server.js` commits `0d7064c` (deep review + verbatim extraction + disqualification gates) and `1aac025` (signature dishes phase) — 2026-06-14.
+
+## `for…of` Loop: Don't Assign to `const` Loop Variable (Crash Loop Gotcha)
+
+Trying to reassign a `for…of` loop variable declared with `const` (or from destructuring with `const`) throws `TypeError: Assignment to constant variable` and crashes the loop — turning the crash into a crash loop if PM2 auto-restarts:
+
+```javascript
+// WRONG — crashes every iteration
+for (const evt of db.prepare('SELECT * FROM events').iterate()) {
+  process(evt);
+  evt = null; // TypeError: Assignment to constant variable
+}
+```
+
+**Fix:** Use `let`. Also: nulling a loop variable to "help GC" is cargo-cult code — modern JS releases the reference when the block exits. Drop the null assignment.
+
+```javascript
+// CORRECT
+for (const evt of db.prepare('SELECT * FROM events').iterate()) {
+  process(evt);
+}
+```
+
+**Destructured variables from function returns are also `const` by default:**
+
+```javascript
+// WRONG — lastId is const, can't be updated in a loop
+const { summary, lastId, count } = buildSummaryFromIterator(sinceId, MAX);
+// … later trying to re-use lastId fails at assignment
+```
+
+Use `let` for any variable you intend to update after the initial binding.
+
+**Why:** This caused an activity-tracker crash loop (`e1dd9fc`, 2026-06-15): `buildSummaryFromIterator` destructured with `const`, and loop body tried `evt = null` to release memory. Every summarizer invocation crashed before advancing `lastSummarizeTime`, causing PM2 to restart and re-attempt indefinitely.
+
+Source: activity-tracker `e1dd9fc` (2026-06-15).
