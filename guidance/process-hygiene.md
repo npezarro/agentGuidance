@@ -1466,3 +1466,23 @@ if (instanceId !== undefined) {
 **When to apply:** Any SQLite UPSERT backing a PATCH endpoint where some columns are optional. Check for `= excluded.<col>` assignments in UPDATE SET clauses — each one is a potential silent null overwrite.
 
 Source: claudeNet `lib/routes-api.js` commit `86b35b6` (2026-06-14) — PATCH `/thread/:id/settings` was clearing `target_instance_id` whenever the request body included only `mode`.
+
+## Multi-Pass AI Content Generation: Editor Commentary Placement
+
+When a pipeline uses a refinement/editing pass (a second LLM call that reviews and improves the initial output), the editor model defaults to starting its response with meta-commentary about what it changed: "I noticed the price was missing, so I added it..." This pushes the actual content — the TLDR, the recommendations — below the fold, which creates a poor UX.
+
+**Fix:** Add an explicit instruction to the refinement prompt:
+
+```
+IMPORTANT: If you include any editor notes about what was changed, updated, or verified,
+place them at the BOTTOM of the output after the Sources section (e.g., under a "---"
+divider with a heading like "Editor Notes"). NEVER put change notes, commentary, or
+preamble before the content. The first thing in your response must be the content
+itself, starting with the TLDR / top-line summary.
+```
+
+**Why it needs to be explicit:** Without this instruction the model's default is to "show its work" by leading with a reasoning preamble. The model treats the refinement task as a review task, not a pass-through task, and naturally opens with observations before restating the guide.
+
+**Scope:** Applies to any pipeline where a second LLM call edits, expands, or annotates the output of a first call and the result is shown directly to a user. Examples: buying-guide refinement pass, foodie second-pass review, any "improve this draft" agent step.
+
+Source: shopper `docker/bridge-server.js` commit `93ab08b` (2026-06-14) — users saw the editor's internal change notes before the TLDR on every shopper guide that triggered the refinement pass.
