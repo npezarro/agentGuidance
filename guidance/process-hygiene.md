@@ -1564,6 +1564,40 @@ for (const sample of samples) {
 
 Source: health-hub `src/app/api/garmin/webhook/route.ts` commit `d5fda69` (2026-06-15) — Garmin webhook handler caused heap exhaustion on sustained sensor traffic; the promise-chain anti-pattern was the root cause.
 
+**Refinement for large payloads: Queue IDs, not bodies.** When webhook payloads are large (batch activity dumps, sensor summaries), even the array-based queue can OOM because function closures still capture the full payload. Pattern: persist the raw event to the DB first, queue only the returned ID, then fetch from DB one-by-one during background drain:
+
+```js
+// Phase 1 — request handler: sync DB write, return IDs to caller
+const [eventId] = await storeRawEvent(payload);  // returns array of IDs
+res.json({ stored: 1 });
+
+// Enqueue only the ID (not the body):
+queue.push(eventId);
+processQueue();
+
+// Phase 2 — drain loop re-fetches from DB per event:
+async function processQueue() {
+  if (isProcessing) return;
+  isProcessing = true;
+  try {
+    while (queue.length > 0) {
+      const id = queue.shift();
+      const event = await db.webhookEvent.findUnique({ where: { id } });
+      if (!event || event.processed) continue;
+      try { await handleEvent(event); }
+      catch (e) { console.error('webhook event failed', id, e); }
+      await db.webhookEvent.update({ where: { id }, data: { processed: true } });
+    }
+  } finally {
+    isProcessing = false;   // always reset — even if an error escapes the loop
+  }
+}
+```
+
+**Why `try...finally` on the while loop:** Per-task try/catch handles expected errors, but an unhandled rejection escaping the loop leaves `isProcessing = true` permanently, blocking all future processing. The `finally` guarantees reset regardless of how the loop exits.
+
+Source: health-hub commit `40355f3` (2026-06-16) — Garmin activity batch payloads (60+ activities) held in queue closures caused OOM; switching to ID-based queue + DB-refetch eliminated the memory spike.
+
 ## Multi-Phase AI Research Pipeline with Disqualification Gates
 
 When building an AI agent that researches and recommends (restaurants, vendors, candidates, etc.), structure the bridge prompt as sequential phases that narrow candidates and deepen verification — rather than one long monolithic research pass.
