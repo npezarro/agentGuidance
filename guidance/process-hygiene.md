@@ -1598,3 +1598,46 @@ Use `let` for any variable you intend to update after the initial binding.
 **Why:** This caused an activity-tracker crash loop (`e1dd9fc`, 2026-06-15): `buildSummaryFromIterator` destructured with `const`, and loop body tried `evt = null` to release memory. Every summarizer invocation crashed before advancing `lastSummarizeTime`, causing PM2 to restart and re-attempt indefinitely.
 
 Source: activity-tracker `e1dd9fc` (2026-06-15).
+
+### Slug Guard: Always Return `[]` on Empty Derived Slug (2026-06-16)
+
+When converting a string to a slug for use as a URL path segment, guard against returning an empty string. A slug-generation function that strips all non-alphanumeric characters from an empty or special-character-only input (e.g., `""`, `"!!!"`, `"   "`) produces `""` — which, if not caught, gets used as a URL path segment and probes a root endpoint (e.g., `https://job-boards.greenhouse.io/`). Root ATS endpoints return HTTP 200, causing a false-positive "board found" match.
+
+```javascript
+// WRONG — empty/whitespace input returns [''] which probes root URLs
+function slugify(name) {
+  const clean = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim();
+  return [clean.replace(/\s+/g, '-')]; // returns [''] if clean is ''
+}
+
+// CORRECT — guard immediately after cleaning
+function slugify(name) {
+  const clean = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim();
+  if (!clean) return []; // never use a blank slug as a URL path segment
+  return [clean.replace(/\s+/g, '-')];
+}
+```
+
+This applies to any pattern where a derived identifier is used to construct a URL (ATS slugs, API org names, subdomain components). An empty slug probing root URLs causes false positives that waste probes and may return wrong results.
+
+Source: job-scraper `09f9018` (2026-06-16).
+
+### Shell Script Network Calls: Always Set Timeouts on `curl` and `ssh` (2026-06-16)
+
+Unattended shell scripts (cron jobs, PM2 start scripts, push-metrics workers) that call `curl` or `ssh` without timeouts will hang indefinitely if the remote host is slow or unreachable. This stalls the PM2 process, blocks the flock, and causes the next cron tick to queue behind it.
+
+**curl:** always pass `--max-time <seconds>` (total) and `--connect-timeout <seconds>` (TCP handshake only):
+
+```bash
+curl --max-time 10 --connect-timeout 5 -s "https://api.example.com/data"
+```
+
+**ssh:** always pass `ConnectTimeout` and `ServerAliveInterval` (detect dead connections mid-transfer):
+
+```bash
+ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 user@host "command"
+```
+
+Without these, a single hung SSH or curl stalls the whole PM2 process indefinitely — no alert fires, and the cron is silently blocked until the process is killed manually.
+
+Source: pezantTools `3d26bae` (2026-06-16) — dashboard-push was hanging on SSH and curl calls to the VM.
