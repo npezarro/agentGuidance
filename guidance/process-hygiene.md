@@ -120,6 +120,32 @@ done
 
 Start with SIGTERM (graceful), escalate to SIGKILL only after several retries. Use `fuser` when available (util-linux); fall back to `lsof` (macOS / minimal Linux). This is a start.sh–level fix, not a replacement for ecosystem.config `kill_timeout`. Source: employ `start.sh` (commit 6c7f362, 2026-06-14).
 
+**App-level retry loop in `server.listen()`.** When the above layers still aren't enough (e.g., the OS hasn't released the socket despite kill_timeout + proactive kill), wrap `app.listen()` in a retry loop instead of exiting immediately:
+
+```js
+function startServer(retries = 5) {
+  const srv = app.listen(PORT, () => {
+    console.log(`Listening on port ${PORT}`);
+    if (process.send) process.send('ready');
+  });
+  srv.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && retries > 0) {
+      console.warn(`Port ${PORT} in use, retrying in 2s... (${retries} left)`);
+      setTimeout(() => { srv.close(); startServer(retries - 1); }, 2000);
+    } else {
+      console.error('Server error:', err);
+      process.exit(1);
+    }
+  });
+  return srv;
+}
+const server = startServer();
+```
+
+- Only retry on `EADDRINUSE`; hard-exit on all other errors.
+- 2s delay gives the OS time to release the port between attempts.
+- Source: claudeNet `server.js` commit `020d188` (2026-06-15) — PM2 `kill_timeout: 10000` + graceful shutdown + proactive port kill were already in place, but EADDRINUSE still occurred intermittently. App-level retry eliminated the crash loop.
+
 ## Docker Bind Mount Refresh
 
 **`docker compose restart` does NOT refresh bind mounts.** When a container is restarted with `docker compose restart`, the container process is restarted but the container itself is not recreated. Bind mount inodes remain stale, so any files updated on the host (e.g., credential files, OAuth tokens) are not visible inside the container until the container is recreated.
