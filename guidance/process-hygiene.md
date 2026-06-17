@@ -146,6 +146,8 @@ const server = startServer();
 - 2s delay gives the OS time to release the port between attempts.
 - Source: claudeNet `server.js` commit `020d188` (2026-06-15) — PM2 `kill_timeout: 10000` + graceful shutdown + proactive port kill were already in place, but EADDRINUSE still occurred intermittently. App-level retry eliminated the crash loop.
 
+**Client-side companion: also retry `ECONNREFUSED`.** A worker or client process that starts before its server is fully bound will receive `ECONNREFUSED` instead of `EADDRINUSE`. Include `ECONNREFUSED` in the retryable error set alongside network errors (`EAI_AGAIN`, `ECONNRESET`, `ETIMEDOUT`). This handles the startup-race case where the server and client launch concurrently (e.g., PM2 starts both in rapid succession). Source: claudeNet `bin/claudenet-worker.js` commit `1788628` (2026-06-16).
+
 ## Docker Bind Mount Refresh
 
 **`docker compose restart` does NOT refresh bind mounts.** When a container is restarted with `docker compose restart`, the container process is restarted but the container itself is not recreated. Bind mount inodes remain stale, so any files updated on the host (e.g., credential files, OAuth tokens) are not visible inside the container until the container is recreated.
@@ -1492,6 +1494,38 @@ if (instanceId !== undefined) {
 **When to apply:** Any SQLite UPSERT backing a PATCH endpoint where some columns are optional. Check for `= excluded.<col>` assignments in UPDATE SET clauses — each one is a potential silent null overwrite.
 
 Source: claudeNet `lib/routes-api.js` commit `86b35b6` (2026-06-14) — PATCH `/thread/:id/settings` was clearing `target_instance_id` whenever the request body included only `mode`.
+
+## SQLite Corruption Auto-Detect and Restore
+
+**Run `PRAGMA quick_check` at startup and auto-restore from backup when corruption is detected.** SQLite corruption can occur from power loss, OOM kills mid-write, or disk I/O errors. Without a startup check the app silently serves stale or incorrect data. The pattern:
+
+```typescript
+// In getDb() — before enabling WAL mode or running migrations:
+const db = new Database(dbPath);
+const result = db.pragma("quick_check") as { quick_check: string }[];
+if (!(result.length === 1 && result[0].quick_check === "ok")) {
+  db.close();
+  // 1. Find latest valid backup: iterate backups/ newest-first, open each readonly, run quick_check
+  // 2. Rename corrupted db to <name>.corrupted.<timestamp> (preserved for investigation)
+  // 3. Remove WAL/SHM sidecar files from the corrupted DB path
+  // 4. Copy backup to the DB path
+  // 5. Reopen and verify the restored DB passes quick_check
+  // 6. Alert Discord — do NOT silently swallow the event
+  const restored = restoreFromBackup(dbPath);
+  db = new Database(dbPath);
+}
+db.pragma("journal_mode = WAL");
+```
+
+**Companion: proactive cron between restarts.** `getDb()` only runs on process start; corruption that occurs mid-run is undetected until the next restart. Add a standalone integrity-check cron script (e.g., `scripts/check-db-integrity.js`, every 30 min) that opens the DB, runs `PRAGMA quick_check`, restores from backup if needed, and restarts the PM2 process via `pm2 restart <name>` so the app reconnects to the clean file.
+
+**Key implementation details:**
+- Iterate backups newest-first and open each readonly before trusting it — a backup may itself be corrupted.
+- Remove `.db-wal` and `.db-shm` sidecar files from the corrupted path before copying the backup, or SQLite may try to replay a stale WAL on top of the fresh backup.
+- Always send a Discord alert (not just a log line) on both detected corruption and restore failure — this is a production data-loss event.
+- `checkDbHealth()` should also call `quick_check` so the `/api/health` endpoint reflects DB integrity, not just app liveness.
+
+**When to apply:** Any `better-sqlite3` or `sqlite3` app with an existing backup cron (daily `.backup` command is the standard). The check adds <5ms to cold start. Source: shopper `src/lib/db.ts` + `scripts/check-db-integrity.js` commit `563d6a4` (2026-06-16).
 
 ## Multi-Pass AI Content Generation: Editor Commentary Placement
 
