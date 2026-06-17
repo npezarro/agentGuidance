@@ -329,6 +329,7 @@ These invariants recur in every full-stack project:
 3. **Serialization roundtrip:** Data written to localStorage/database must survive JSON.parse(JSON.stringify(data)) without losing fields.
 4. **Auth-gated endpoints:** Every endpoint behind `requireAuth` must return 401 for unauthenticated requests, not 500.
 5. **Unit/format consistency:** If prices are stored as strings (`"2.99"`) but displayed as numbers (`2.99`), test the parseFloat boundary.
+6. **LocalStorage hydration schema tolerance:** Any hook or util that reads state from localStorage must normalize/validate the parsed result — `JSON.parse` succeeds on structurally invalid values (older schema missing required fields, manual edits, truncated writes, non-object values like `null`). A try/catch only guards parse *throws*, not malformed-but-valid JSON that crashes later on `.length` or `.filter` access. Always normalize after parse: guarantee required fields exist and have correct types, fall back to defaults otherwise. Test with partial/stale schemas from a prior app version, not just the current structure. Source: valueSortify `9ce7120` (2026-06-17).
 
 ## Zod Validation in API Routes
 
