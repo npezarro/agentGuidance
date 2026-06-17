@@ -368,6 +368,33 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    Extend the `matcher` to include all authenticated page paths (`/dashboard/:path*` etc.) so the guard runs on navigation. Source: employ commit `986b4e5` (2026-06-14).
 
+14. **Strip `NEXTAUTH_URL` to bare origin in auth.ts to prevent `UnknownAction` errors.** When `NEXTAUTH_URL` is set to a value that includes a path (e.g., `https://example.com/myapp`), Auth.js v5 may misparse the action segment from the URL and throw `UnknownAction`. Fix: in `auth.ts`, overwrite `NEXTAUTH_URL` with just the origin before `NextAuth()` initializes, then set `AUTH_URL` explicitly:
+   ```typescript
+   if (process.env.NEXTAUTH_URL) {
+     try {
+       const origin = new URL(process.env.NEXTAUTH_URL).origin;
+       process.env.NEXTAUTH_URL = origin;           // bare origin only
+       process.env.AUTH_URL = `${origin}/api/auth`; // explicit auth base
+     } catch { /* ignore invalid URL */ }
+   }
+   ```
+   The existing guidance (item 1 checklist: `AUTH_URL=https://example.com`) covers setting `AUTH_URL` to a bare origin, but NEXTAUTH_URL also needs to be stripped — leaving it with a path causes Auth.js to derive incorrect action slugs. Source: finance-tracker commit `4c4aeab` (2026-06-17).
+
+15. **Add `import 'dotenv/config'` to auth.ts and db.ts in Next.js standalone apps.** In some deployment contexts (standalone `node server.js`, Prisma adapter, or when modules are imported before Next.js's own env loading runs), `.env` variables may not be available when `auth.ts` or `db.ts` initialize. Explicitly importing dotenv at the top of both files guarantees env vars are present regardless of import order:
+   ```typescript
+   // auth.ts — first line
+   import "dotenv/config";
+   import NextAuth from "next-auth";
+   // ...
+   ```
+   ```typescript
+   // lib/db.ts — first line
+   import "dotenv/config";
+   import { PrismaClient } from "@/generated/prisma/client";
+   // ...
+   ```
+   Source: finance-tracker commit `4448d3b` (2026-06-17).
+
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:

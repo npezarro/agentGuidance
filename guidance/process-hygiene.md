@@ -1731,6 +1731,17 @@ Use `let` for any variable you intend to update after the initial binding.
 
 **Why:** This caused an activity-tracker crash loop (`e1dd9fc`, 2026-06-15): `buildSummaryFromIterator` destructured with `const`, and loop body tried `evt = null` to release memory. Every summarizer invocation crashed before advancing `lastSummarizeTime`, causing PM2 to restart and re-attempt indefinitely.
 
+**Same applies to function-scope `const` null-for-GC patterns.** After a function body finishes, "help GC" null assignments on `const`-declared accumulators throw the same error:
+```javascript
+// WRONG — cargo-cult GC hint on const variables crashes the function
+const appDurations = {};
+const fileCounts   = {};
+// ... populate them ...
+appDurations = null; // TypeError: Assignment to constant variable
+fileCounts   = null;
+```
+**Fix:** Remove the null assignments entirely. Modern JS GC reclaims function-scope variables when the call frame exits. Source: activity-tracker commit `1359a8c` (2026-06-17).
+
 Source: activity-tracker `e1dd9fc` (2026-06-15).
 
 ### Slug Guard: Always Return `[]` on Empty Derived Slug (2026-06-16)
