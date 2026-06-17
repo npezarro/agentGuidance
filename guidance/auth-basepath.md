@@ -289,15 +289,16 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **Standalone mode changes basePath behavior.** In `next dev`, Next.js strips the basePath from `req.url` before the route handler sees it. In standalone mode (`node server.js`), it does NOT strip it — `@auth/core` sees the full URL including the basePath prefix. So the NextAuth `basePath` must include the Next.js basePath:
+8. **⚠️ CORRECTED (2026-06-17): Standalone DOES strip basePath — do NOT use dynamic basePath in NextAuth config.** Item 8 previously stated the opposite and was wrong. Both `next dev` and `node server.js` (standalone) strip the Next.js `basePath` from `req.url` before Route Handlers see it. NextAuth always receives `/api/auth/...` regardless of the app's basePath. Correct config:
    ```typescript
-   // next dev: handler sees /api/auth/signin/google → basePath: "/api/auth"
-   // standalone: handler sees /finance/api/auth/signin/google → basePath: "/finance/api/auth"
+   // CORRECT — always unprefixed. Standalone strips /finance, dev strips /finance.
+   basePath: "/api/auth",
 
-   // Dynamic config that works in both modes:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,
+   // WRONG — will break auth in standalone. Gemini/AI agents frequently suggest this:
+   basePath: `${process.env.BASE_PATH || ""}/api/auth`,  // produces "/finance/api/auth"
+   // NextAuth can't match "/api/auth/providers" against "/finance/api/auth" → 404 or silent failure
    ```
-   **Why this trips people up:** The runeval fix (above) uses a hardcoded `"/api/auth"` because runeval's Apache proxy rewrites the URL. Apps without that rewrite need the dynamic basePath.
+   **Why this was confusing:** The runeval proxy does its own URL rewriting before reaching the Next.js server, which is why runeval's own config looks different. Apps behind a standard Apache `ProxyPass` (no URL rewrite) all behave identically: standalone strips basePath. Verified live 2026-06-17: shopper (`basePath: "/api/auth"`, 200 OK) and finance-tracker master (`basePath: "/api/auth"`, 400 from NextAuth's own validation) both confirm routing works correctly. The 400 on finance-tracker is an unrelated NextAuth config issue, not a basePath issue.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 

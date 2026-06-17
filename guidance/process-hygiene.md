@@ -1256,6 +1256,46 @@ function withTimeout(promise, ms) {
 
 Source: health-hub commit `1623f9b` (2026-06-14) — Gemini-generated fix for the Garmin webhook `withTimeout()` helper; timer leak + backpressure ordering both corrected in the same PR.
 
+### Companion: `Promise.race` Does NOT Cancel the Losing Promise — Use a Cooperative Signal
+
+Fixing the dangling timer with `.finally(() => clearTimeout(timeoutId))` stops the *timer* from leaking, but the *losing promise* itself keeps running. If that promise wraps a `for…of` or `while` loop (common in webhook background-task handlers), the loop continues processing items even after `Promise.race` has already rejected with a timeout error. This wastes CPU and DB connections and can cause corrupted state if the loop writes.
+
+**Fix:** accept a cancellation signal object in the promise factory; check it before each iteration.
+
+```typescript
+// WRONG — loop keeps running after timeout even with .finally cleanup
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> { ... }
+
+// CORRECT — pass a mutable signal the timeout can flip
+function withTimeout<T>(
+  promiseFn: (signal: { aborted: boolean }) => Promise<T>,
+  ms: number,
+): Promise<T> {
+  const signal = { aborted: false };
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      signal.aborted = true;          // ← flip the signal before rejecting
+      reject(new Error(`timeout after ${ms}ms`));
+    }, ms);
+  });
+  return Promise.race([promiseFn(signal), timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+// Caller: check signal.aborted before each expensive unit of work
+await withTimeout(async (signal) => {
+  for (const id of eventIds) {
+    if (signal.aborted) break;        // ← cooperative exit on timeout
+    const event = await db.findById(id);
+    await processEvent(event);
+  }
+}, 30_000);
+```
+
+**Why a plain AbortController isn't used:** `AbortController` requires the inner async ops to accept a `signal` option (e.g., `fetch(..., { signal })`). For DB calls and business logic that don't accept signals natively, a shared mutable object is simpler and works without changing every callsite.
+
+Source: health-hub commit `c6bee11` (2026-06-17) — timeout already had `.finally` cleanup; still leaked because the inner `for…of` loop over webhook event IDs continued after rejection.
+
 ## Defensive JSON Parsing in Batch/Summarization Loops
 
 When a batch or summarization function processes DB rows in a loop and advances a cursor or timestamp **after** the loop, a bare `JSON.parse` call will permanently stall the pipeline if any row contains corrupt or missing JSON.
