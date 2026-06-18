@@ -211,6 +211,7 @@ When creating a new public-facing app with Claude:
 8. [ ] Model: Sonnet or Haiku (not Opus)
 9. [ ] Bridge: localhost-only, shared-secret auth
 10. [ ] Logging: query metadata (not full content), abuse alerting
+11. [ ] **Post-relogin account verification:** After OAuth relogin for a container bridge, read `oauthAccount.emailAddress` from `.claude.json` inside the container and assert it matches `EXPECTED_ACCOUNT`. Never assume the correct account was used — a wrong-account auth silently exposes the main account's tokens to public prompt injection (see `scripts/claude-auto-relogin-container.sh` for reference impl).
 
 ## Migration: Existing Shopper App
 
