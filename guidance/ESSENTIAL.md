@@ -10,6 +10,8 @@ Do not claim a feature works until you've tested every user-facing URL, redirect
 ## 2. Multi-Destination Learning Capture
 When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
 
+**Mandatory trigger events (call propagate-learning.sh even if no explicit correction occurred):** any error you had to work around, any assumption that proved wrong, any PR that needed rework, any service restart or config change. If you completed a fix-checker or autonomousDev run, run propagate-learning.sh once at the end regardless — the script is idempotent and the cost of a redundant call is zero.
+
 ## 3. Push Before Posting
 Always `git commit && git push` BEFORE posting links to Discord (#file-links, #cli-interactions). URLs don't resolve until the push lands.
 
