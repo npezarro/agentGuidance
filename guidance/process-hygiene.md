@@ -344,6 +344,47 @@ module.exports = {
 
 Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
 
+## PM2 Crash Loops from DB Dependency on Startup
+
+Services that connect to Postgres (or any external DB) at module load time can enter a tight PM2 restart loop if the DB isn't ready on first boot or after a VM reboot. Two-layer fix:
+
+**Layer 1 — PM2 exponential backoff:** Add `exp_backoff_restart_delay: 100` to the ecosystem config. PM2 doubles the restart delay on each consecutive failure (100ms → 200ms → 400ms…) instead of hammering the process in a tight loop.
+
+```js
+module.exports = {
+  apps: [{
+    name: "my-app",
+    max_restarts: 10,
+    autorestart: true,
+    exp_backoff_restart_delay: 100,
+  }],
+};
+```
+
+**Layer 2 — Application-level connection retry:** For Prisma, add startup retry in `src/lib/db.ts` so the process doesn't crash before the DB becomes available:
+
+```ts
+if (process.env.NODE_ENV === "production") {
+  const connectWithRetry = async (retries = 5, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await prisma.$connect();
+        return;
+      } catch (err) {
+        console.error(`[db] Prisma connect failed (${i + 1}/${retries}):`, (err as Error).message);
+        if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    console.error("[db] All Prisma connection attempts failed.");
+  };
+  connectWithRetry();
+}
+```
+
+**When to apply:** Any Next.js + Prisma service on PM2. Especially important after VM reboots — Postgres may take a few seconds to accept connections, causing the first startup attempt to fail. The two layers are complementary: app-level retry handles transient blips; PM2 backoff prevents hammering when DB is down for longer.
+
+Source: humans commit `314a5ca` (2026-06-08) — resolved crash loop on startup.
+
 ## PM2 Cron Scripts Must Source Secrets at Runtime, Not via PM2 Env Injection
 
 PM2 captures environment variables **at `pm2 start` time only**. If a secret (e.g. `CRON_SECRET`, an API key) changes after the process is registered — or was not in the shell when `pm2 start` ran — every scheduled fire silently fails with 401/403 with no diagnostic output.
