@@ -167,6 +167,23 @@ RedirectMatch ^/app$ /app/
 This pattern affected ClaudeNet, Epic Auth, and other services after adding an OIDC-protected project index page (2026-04-28). The `/manchu` route already had this redirect, which is why it worked while others broke.
 
 **When adding a new ProxyPass directive**, always check whether it uses trailing slashes and add the `RedirectMatch` if so.
+## sed Anchors in .env Patching
+
+When using `sed` to patch values in a `.env` file during deploy, always use a `^` line-start anchor. Without it, a pattern like `s|KEY=.*|VALUE|` matches any line where `KEY=` appears anywhere — including env vars with `KEY` as a suffix (e.g., patching `APP_URL=` can corrupt `NEXT_PUBLIC_APP_URL=`).
+
+```bash
+# GOOD: anchored — only matches lines that START with KEY=
+sed -i "s|^APP_URL=.*|APP_URL=\"https://example.com/myapp\"|" .env
+sed -i "s|^AUTH_URL=.*|AUTH_URL=\"https://example.com\"|" .env
+
+# BAD: unanchored — NEXT_PUBLIC_APP_URL= also matches APP_URL= pattern
+sed -i "s|APP_URL=.*|APP_URL=\"https://example.com/myapp\"|" .env
+```
+
+**Why this matters:** In runeval's deploy.sh (2026-06-01 `a58f0f0`), unanchored `APP_URL=.*` also matched `NEXT_PUBLIC_APP_URL=`, silently overwriting two vars with the value intended for one. This caused a hard-to-diagnose build mismatch where the public basePath differed from the server URL.
+
+**Also:** Don't skip `.env` patching when `.env` already exists. Deploy scripts that say "skip .env if it already exists" will silently leave stale `AUTH_URL` or `APP_URL` values from a prior deploy, breaking redeploys. Always patch the critical URL fields unconditionally.
+
 ## .env Protection During rsync Deploys
 
 When using `rsync --delete` to deploy, **always `--exclude '.env'`**. The `--delete` flag removes server-side files not in the source, which will overwrite the production `.env` (with its production-specific values like database ports, API endpoints) with local dev config.
