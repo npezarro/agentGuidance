@@ -315,6 +315,27 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
 
+12. **Trap JWT decode errors to prevent AUTH_SECRET rotation crash loops.** When `AUTH_SECRET` is rotated, cookies encrypted with the old secret cause Auth.js to throw `JWTSessionError` inside the JWT callback, which kills the `next-server` worker. PM2 restarts it, but if the old worker hasn't released its port yet, the new one hits `EADDRINUSE` → crash → repeat. Foodie saw **349 restarts** from this pattern on 2026-06-02. Fix: wrap `jwt.decode` in `try/catch` in the NextAuth config's `jwt` callback; on failure return `null` (treats the request as anonymous). Never let a stale cookie crash the server — treat it as an expired session instead.
+   ```typescript
+   callbacks: {
+     jwt: async ({ token, user }) => {
+       try {
+         // normal jwt logic
+       } catch (err) {
+         console.warn("JWT decode error (stale secret?), treating as anonymous:", err);
+         return null; // anonymous session
+       }
+     }
+   }
+   ```
+
+13. **Export HEAD and OPTIONS handlers on auth routes to prevent UnknownAction errors.** Health checks and CORS preflights that hit `GET /api/auth/[...nextauth]` throw Auth.js `UnknownAction` because Auth.js only exports `GET` and `POST`. Fix: add explicit stubs in your route handler:
+   ```typescript
+   export const { GET, POST } = handlers;
+   export const HEAD = () => new Response(null, { status: 200 });
+   export const OPTIONS = () => new Response(null, { status: 200 });
+   ```
+
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
