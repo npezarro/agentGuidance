@@ -570,6 +570,19 @@ function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
 
 Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 
+## Gemini CLI (`gemini -p`) Does Not Support Multimodal Input
+
+`gemini -p @filepath` passes files as **text**, not as multimodal Parts. For binary files (mp4, jpg, png, pdf), the CLI reads the bytes as a string — Gemini receives nothing useful and responds with "I cannot view image/video files."
+
+This applies even with `--skip-trust` and `GOOGLE_GENAI_USE_GCA=true`. The limitation is in how the CLI constructs its API request, not in the GCA credentials.
+
+**For VLM (vision/video) tasks:**
+- **Free option:** Use `claude -p --model haiku` — it natively reads images via the built-in Read tool, at $0 cost on host auth. ~20-30s per image batch.
+- **Paid option:** Use the Gemini Files API directly (Node SDK or REST) with `GEMINI_API_KEY` from AI Studio. Cheap (~$0.0015/min on Flash) but no longer free.
+- **Text-only Gemini work:** `gemini -p` is fine and free.
+
+Source: audio-description-creator build (2026-06-05) — original architecture routed visual-understanding through `gemini -p`; silently failed because CLI does not pass binary attachments as multimodal Parts. Memory: `learning_gemini_cli_no_multimodal.md`.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
