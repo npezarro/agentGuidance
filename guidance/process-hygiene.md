@@ -487,6 +487,25 @@ Note: `force=True` (Python 3.8+) removes existing root handlers before configuri
 
 Source: trading-agent `error_handler.py` commit 2af1a41 (2026-05-25).
 
+### Validate Email Addresses Before Sending
+
+Always guard `smtplib` send calls with a basic address sanity check. If `to_email` is empty, None, a placeholder (e.g., a username without a domain), or pulled from a config field that may not be set, passing it directly to `smtplib.SMTP` raises `smtplib.SMTPRecipientsRefused` or triggers an SMTP error that surfaces as an unhandled exception in the pipeline.
+
+```python
+def send_completion_email(to_email: str, subject: str, body: str) -> None:
+    if not to_email or "@" not in to_email:
+        log.warning(f"Skipping email — invalid address: {to_email!r}")
+        return
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        # ... rest of send
+```
+
+**Why:** Pipeline config fields that accept an email address may be left blank or filled with a display name instead of an address. The SMTP server will reject the recipient, throwing an exception that fails the whole job. A cheap guard at the function boundary prevents this.
+
+Source: auto-shorts-worker commit `0bc12ee` (2026-05-31) — completion email was skipping for invalid address configs.
+
 ### Python `-c` Inline Scripts: Add `sys.path` Before Module Imports
 
 When calling `python3 -c "..."` (inline script via bash substitution or heredoc), the containing directory is NOT automatically added to `sys.path`. Relative module imports fail with `ModuleNotFoundError`.
