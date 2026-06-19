@@ -429,3 +429,24 @@ logger.info(f"Claude fix complete (cost: ${cost:.4f})")
 ```
 
 Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25).
+
+## PM2 Cron Scripts Must Exit 0
+
+**The problem:** PM2 uses process exit codes to determine if a managed process crashed. When a script running as a PM2 cron job (e.g., `cron_restart`, or a separate cron-typed process entry) exits non-zero, PM2 counts it as a crash and restarts it — incrementing the `restarts` counter. If this happens every run cycle, the process quickly hits `max_restarts` and PM2 stops managing it. Before hitting that limit, each restart-on-exit cycle produces a restart storm in PM2 logs.
+
+**Real incident (2026-06-02):** `dashboard-push` (PM2 cron, every 5 min) ran `push-metrics.sh`. A transient SSH failure caused `ssh <vm-host> ...` to exit non-zero, which caused PM2 to restart `dashboard-push` on every cycle. Fix: `push-metrics.sh` now wraps each fallible step with `|| true` or `|| VARNAME="{}"` and guarantees `exit 0` even when the VM is unreachable.
+
+**Rule:** Any script run as a PM2 cron process must trap all errors and exit 0. Non-zero exit is reserved for actual crashes of long-running server processes. Apply this pattern:
+
+```bash
+# Fallible command — use || to suppress non-zero exit
+RESULT=$(some-command) || RESULT="{}"
+
+# Entire push step — always succeed at the script level
+push_to_server || true
+
+# Or use explicit trap
+trap 'exit 0' ERR
+```
+
+**Exceptions:** This applies only to cron/periodic processes. Long-running server processes (Express apps, daemons) should exit non-zero on unrecoverable errors so PM2 can restart them.
