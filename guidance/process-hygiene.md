@@ -1349,6 +1349,12 @@ One corrupt row in a DB column can arrive from a crashed writer, a schema migrat
 
 Source: activity-tracker commit `a2ff5fb` (2026-06-14) — `buildSummary` stalled daily-context.md generation; fix adds `parseMetadata()` wrapper + 3 regression tests.
 
+**Companion failure mode — list endpoint 500:** The same bare-parse risk applies to consumer GET routes (list/all/feed endpoints) that call `JSON.parse` inside a `.map()` callback on stored blob columns. One corrupt row throws a `SyntaxError` that propagates out of `.map()` and 500s the **entire response** — all healthy sibling rows are lost and the consumer feed goes dark. Degrading the bad row to a fallback while returning healthy siblings is always the better failure mode.
+
+Fix: a `safeJsonParse(raw, fallback, context)` helper that returns a fallback (`null`, `[]`, `{}`) on bad input and logs the failure with row context. Apply anywhere a list endpoint reads a JSON blob column from SQLite.
+
+Source: health-hub `src/lib/json.ts` (PR #66, 2026-06-20) — `/api/activities`, `/api/health`, `/api/streams` were 500ing the whole consumer feed on one corrupt row.
+
 ## SQLite `busy_timeout` Alongside WAL Mode
 
 WAL (`journal_mode = WAL`) reduces write-write contention in SQLite, but does not prevent `SQLITE_BUSY` errors when concurrent API requests hit a read-write boundary. Without a `busy_timeout`, the first concurrent access that finds the DB busy returns an immediate error (better-sqlite3 throws synchronously), which bubbles up as a 500 to the API caller.
