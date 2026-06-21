@@ -110,6 +110,24 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 
 Tests set `DATA_DIR` to a `tmp` directory and clean up after each run.
 
+#### Vitest: dummy env vars for import-time DB checks
+
+When a module runs a DB initialization check at **import time** (not call time), vitest fails to import it unless the env var is set — even if tests never open a real connection. Set a dummy value in `vitest.config.ts`:
+
+```typescript
+export default defineConfig({
+  test: {
+    env: {
+      // Dummy URL — db.ts throws at import time if DATABASE_URL is unset.
+      // Tests only exercise pure functions and never open a connection.
+      DATABASE_URL: "postgresql://test:test@localhost:5432/test",
+    },
+  },
+});
+```
+
+**Why it matters:** Without this, CI stays red indefinitely even though the test logic is correct — the failure is at the import layer, not test execution. finance-tracker CI was red for 2+ weeks (May 27–Jun 10 2026) for exactly this reason.
+
 ### Factory Pattern for Dependency Injection
 
 For servers with external dependencies (GitHub API, webhooks), export a factory:
