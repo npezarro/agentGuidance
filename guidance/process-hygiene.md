@@ -1792,3 +1792,37 @@ ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 user
 Without these, a single hung SSH or curl stalls the whole PM2 process indefinitely — no alert fires, and the cron is silently blocked until the process is killed manually.
 
 Source: pezantTools `3d26bae` (2026-06-16) — dashboard-push was hanging on SSH and curl calls to the VM.
+
+## Client-Side Storage Schema Validation
+
+### `localStorage` / `sessionStorage`: Validate Schema on Load
+
+`JSON.parse()` succeeds on structurally-valid JSON that violates the current app schema — an older object missing required fields, a manually-edited value, or a truncated write. Reading undefined properties on the result throws silently downstream or crashes components.
+
+**Pattern:** Always normalize parsed client-side storage data back to the known-good schema:
+
+```ts
+function normalizeState(raw: unknown): AppState {
+  const defaults = getDefaultState();
+  if (!raw || typeof raw !== 'object') return defaults;
+  const parsed = raw as Partial<AppState>;
+  return {
+    phase: parsed.phase ?? defaults.phase,
+    items: Array.isArray(parsed.items) ? parsed.items : defaults.items,
+    // ...all required fields with explicit defaults
+  };
+}
+
+function loadState(): AppState {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? normalizeState(JSON.parse(stored)) : getDefaultState();
+  } catch {
+    return getDefaultState();
+  }
+}
+```
+
+**Why `try/catch` alone is not enough:** `JSON.parse` throws only on invalid JSON syntax. A well-formed but schema-mismatched object (e.g. `{phase: "done"}` when the current schema requires `{phase: "done", categories: [...]}`) parses without error and passes silently until a component reads `state.categories.length` and crashes with "Cannot read properties of undefined".
+
+Source: valueSortify PR #141 (2026-06-21) — stored session from an older schema was missing category arrays; `useLocalStorage` returned the parse result verbatim and crashed on load.
