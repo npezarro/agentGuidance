@@ -5,6 +5,8 @@ These are the most-violated rules across the agent system. They are injected at 
 ## 1. Multi-Destination Learning Capture
 When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
 
+**Mandatory trigger for automated sessions (fix-checker, autonomousDev-private, autonomous-dev):** At the END of every automated session, call `propagate-learning.sh` unconditionally. Qualifying events: any error worked around, any assumption that proved wrong, any retry requiring a different approach, any service config that needed changing. If you completed with zero surprises, a single no-op call still satisfies this rule — it is idempotent. This rule fires regardless of whether you received a correction.
+
 ## 2. Guidance Updates Go to Repo Files, Not Just Memory
 "Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
 
