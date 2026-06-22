@@ -212,6 +212,35 @@ fi
 
 **Env knobs:** `DEPLOY_LOCK_WAIT=0` to fail fast, `DEPLOY_LOCK_BYPASS=1` as a break-glass escape hatch (coordinate before using).
 
+## Webhook-Triggered Deploy: Timeout and In-Flight Dedup
+
+When a webhook handler spawns a build process via `execFile`/`child_process.spawn`, two failure modes arise:
+
+**1. Timeout too short for the actual build.** Next.js builds on the VM take 5-10 minutes. A 120s `execFile` timeout SIGTERMs the build mid-type-check, leaving `.next/` gutted (no `standalone/`, no `BUILD_ID`). PM2 keeps serving HTML from open file handles while every static chunk 404s (or worse: Cloudflare caches the 500s under immutable headers). **Fix:** Set `execFile` timeout to at least 900,000ms (15 min) for any build that includes `next build`.
+
+**2. Burst webhook events trigger concurrent builds for the same target.** PR-merged + branch-delete push events arrive within seconds of each other. Without dedup, two builds run in the same directory simultaneously, producing the same gutted-artifact failure mode as the flock section above. **Fix:** Track in-flight deploys in a `Set` keyed by target name; skip (and log) any trigger whose target is already building:
+
+```js
+const deploysInFlight = new Set();
+
+async function triggerDeploy(target) {
+  if (deploysInFlight.has(target)) {
+    log(`deploy for ${target} already running — skipping duplicate trigger`);
+    return;
+  }
+  deploysInFlight.add(target);
+  try {
+    await execFile('deploy.sh', [target], { timeout: 900_000 });
+  } finally {
+    deploysInFlight.delete(target);
+  }
+}
+```
+
+**Source:** claude-auto-merger `e98b4a8` (2026-06-12), which hardened the deploy pipeline after a doc-sync PR fired two triggers within 2s and a 120s timeout killed the build mid-type-check.
+
+**Diagnosing stuck Cloudflare-cached 500s after a bad deploy:** If static assets return errors even after a successful re-deploy, Cloudflare may have cached a 500 response under `cache-control: immutable` headers. Diagnose with `curl -sI <asset-url>` — look for `cf-cache-status: HIT` on a 4xx/5xx. Recovery: add a temporary bypass-cache rule for the affected path prefix (see `cloudflare-site-setup` skill for the API commands). The bypass rule forces CF to re-fetch from origin on every request. Remove it once the 500 is no longer live. If your CF API token lacks `Cache Purge:Purge` scope, this bypass-rule workaround is the only programmatic option (dashboard only for adding purge scope). Source: 2026-06-14 runeval incident; documented in `cloudflare-site-setup/SKILL.md`.
+
 ## Concurrent rsyncs Silently Drop Subdirectories
 
 **Never run parallel rsyncs from the same dev host to multiple production directories.** Concurrent rsync operations (e.g., deploying shopper, foodie, and travel in the same shell session with `&`) can silently drop subdirectories in the destination.
@@ -295,3 +324,94 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 - Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
 
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
+
+## Next.js Standalone: Flat VM Layout vs Nested Dev Layout in start.sh
+
+When deploying a Next.js standalone build, `rsync` typically copies the **contents** of `.next/standalone/` to the target directory (e.g., `/var/www/app/`). This produces a **flat layout** where `server.js` is at the root:
+
+```
+/var/www/app/
+  server.js           ← direct (flat deploy)
+  .next/
+    server/
+    ...
+```
+
+A dev clone has the **nested layout** where the standalone dir is still under `.next/`:
+
+```
+<project>/
+  .next/
+    standalone/
+      server.js       ← nested (local dev)
+      .next/
+        server/
+```
+
+If `start.sh` only checks for `.next/standalone/server.js` (nested), it will not find the file in a flat VM deploy and fall through to `npm run build` — which fails on the VM if the `next` CLI isn't installed, or overwrites a working build unnecessarily.
+
+**Fix — detect layout in start.sh:**
+```bash
+if [ -f "./server.js" ] && [ -d "./.next/server" ]; then
+  # Flat VM deploy: standalone contents rsynced to this dir
+  exec node ./server.js
+elif [ -f "./.next/standalone/server.js" ]; then
+  # Nested dev layout
+  exec node ./.next/standalone/server.js
+else
+  echo "No server.js found in flat or nested location — build may be missing"; exit 1
+fi
+```
+
+**Why the layout differs:** `rsync -az .next/standalone/ /var/www/app/` (trailing slash on source) copies the directory's contents rather than the directory itself, flattening the path. `rsync -az .next/standalone /var/www/app/` (no trailing slash) would nest it. The flat rsync is the common idiom in deploy scripts here.
+
+Source: employ `start.sh` commit `1d369cc` (2026-06-14) — start.sh was always triggering `npm run build` on the VM because it only checked `.next/standalone/server.js`; flat rsync had placed `server.js` at root.
+
+## `npm install --production=false` in VM Build Scripts
+
+When a VM-side deploy script runs `npm install` inside a directory where `NODE_ENV=production` is set (common in PM2 ecosystem configs), npm skips `devDependencies`. Build tooling (`next`, `typescript`, `esbuild`, etc.) lives in devDeps and is absent after a production install — the subsequent `npm run build` fails.
+
+**Fix:** Always pass `--production=false` to npm install in build scripts, regardless of environment:
+
+```bash
+# In vm-deploy.sh or similar on-VM build scripts:
+npm install --production=false   # always install devDeps — they're needed for the build
+npx prisma generate              # if applicable
+npm run build
+```
+
+**Why the default is wrong here:** `NODE_ENV=production` is correct for the running app but wrong for the install-and-build step. A bare `npm install` in a production environment is a footgun: it silently omits the tools you need, with an error that looks like "next: command not found" rather than "missing devDependency."
+
+Source: finance-tracker `scripts/vm-deploy.sh` commit `a78a06b` (2026-06-14).
+
+## start.sh: Always `cd` to Script Directory First
+
+At the top of every `start.sh`, do `cd "$(dirname "$0")"` before any path operations:
+
+```bash
+#!/bin/bash
+cd "$(dirname "$0")"  # all subsequent paths are relative to the script's dir
+[ -f .env ] && source .env
+```
+
+Without this, if PM2 or a cron job invokes `start.sh` from a different working directory, every relative path (`./employ.db`, `./.next/standalone/`, `$(pwd)`) silently resolves to the wrong location. `$(dirname "$0")` is the script's own dir regardless of the caller's `$PWD`. Also use `$(pwd)` (not the capture `CURRENT_DIR=$(cd "$(dirname "$0")" && pwd)`) since after the leading `cd`, `$(pwd)` is already correct.
+
+Source: employ commit `207d378` (2026-06-14).
+
+## Bash Scripts: Use `node -e` for JSON Parsing, Not sed/grep
+
+When a shell script needs to extract a field from a JSON file, use `node -e` instead of `sed`/`grep`:
+
+```bash
+# Fragile — breaks on whitespace variations, nested keys, or multiline values
+MANIFEST_DIR=$(grep '"appDir":' "$MANIFEST" | sed 's/.*"appDir": "\([^"]*\)".*/\1/')
+
+# Robust — handles any valid JSON, fails cleanly on error
+MANIFEST_DIR=$(node -e "try { const m=require('$MANIFEST'); console.log(m.appDir || '') } catch(e) { process.exit(1) }" 2>/dev/null)
+```
+
+Check the exit code (`$?`) after the `node -e` call: exit 1 means the file was missing or unparseable. The `try/catch` ensures the process exits cleanly rather than printing a stack trace to stdout that gets captured as the value.
+
+**When to use:** Any bash script that reads a JSON build artifact (`.next/required-server-files.json`, `package.json`, health endpoint response) to make a branching decision. `sed`/`grep` on JSON is fragile and fails silently on minor format differences.
+
+Source: employ commit `207d378` (2026-06-14).

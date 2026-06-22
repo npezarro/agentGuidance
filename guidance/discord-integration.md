@@ -98,6 +98,21 @@ Create Discord channels and webhooks yourself using the bot API — don't ask th
 
 **Why:** The bot token has Manage Channels + Manage Webhooks permissions. Asking the user to create channels manually wastes their time when it's a simple API call.
 
+## App-Level Discord Notifications (Public Apps)
+
+Every public-facing app that runs async jobs (shopper, foodie, travel-assistant, employ) posts job start/complete/fail to its own per-project Discord channel via a `src/lib/discord-notify.ts` module. This is distinct from agent session reporting.
+
+**Pattern** (established across all 4 apps as of 2026-06-18):
+- `notifyJobStart(channel, jobId, query)` — posts header message, saves `discord_msg_id` in DB
+- `notifyJobComplete(channel, jobId, result)` — edits header in place, posts result as thread reply
+- `notifyJobFail(channel, jobId, error)` — edits header in place with error emoji
+- Header uses edit-in-place so the channel isn't flooded with redundant messages
+- 2000-char limit on Discord messages — truncate gracefully
+
+**When creating a new public app:** copy `discord-notify.ts` from shopper as the base, add `discord_msg_id`/`discord_thread_id` columns to the DB schema, post on every state transition.
+
+**Why:** Silent job failures are invisible without this. The pattern was retro-fitted to all 4 apps; start with it from day 1 on new apps.
+
 ## Inter-Agent Coordination
 
 - Check `#claude-agent-logs` and `#running-job-logs` to see what other agents are doing before starting work on a shared repo.
