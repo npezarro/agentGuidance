@@ -102,5 +102,20 @@ The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible ins
 
 Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
 
+## Browser Automation: Content Script vs External Driver
+
+When automating a site (form submission, navigation, clicking), choose between:
+
+- **browser-agent (content script):** Injected into the live page's JavaScript context. Subject to the site's Content Security Policy. Some sites (payment processors, subscription management pages) block injected scripts or go silent — commands time out with no error.
+- **Playwright / puppeteer (external driver):** Owns its own browser process. Not subject to the page's security context. Resistant to CSP blocks.
+
+**Rule:** If browser-agent commands go silent (heartbeat stale, every command times out), the site is blocking content-script injection. Spin up a dedicated Playwright script instead. Do NOT keep retrying browser-agent.
+
+**DOM discovery harness when a scripted flow breaks:** When a site redesigns and selectors stop working, don't guess. Write a throwaway script that walks the new flow and dumps — at each page — visible headings, button labels, link text + hrefs, radio/checkbox labels, and a screenshot. Encode the real selector against actual DOM structure, not guesses.
+
+**Key off structure, not marketing copy:** When detecting page state (e.g., "is the account active?"), prefer durable structural signals (link href patterns, presence/absence of a cancel vs reactivate anchor) over page text strings. Marketing copy changes with every redesign; href patterns change only when the flow changes.
+
+Source: Peloton cancel automation rewrite (2026-06-22) — browser-agent blocked by site; Playwright worked. See `privateContext/recurring-tasks/scripts/peloton-cancel.sh`.
+
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
