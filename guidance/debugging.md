@@ -194,3 +194,34 @@ Fixes:
 - Make the tested tool the canonical path; prompts that re-describe a "manual fallback" flow drift and silently lose features (e.g. pricing).
 
 Source: fb-marketplace-poster consolidation (2026-05-27) — main.js readline confirm + SDK key dependency forced the Discord agent into a fallback prompt that skipped shopper pricing. See `privateContext/deliverables/closeouts/2026-05-27-fbm-shopper-resale-pricing.md`.
+
+### 12. Browser CDP Timeout Recovery — Kill + Restart Pattern (2026-06-10)
+
+When a service calls a browser-agent CLI and receives "Timeout waiting for browser response", the Chrome/CDP session is stuck (not just slow). Recovery requires:
+
+1. Detect the specific timeout error string in your error handler
+2. Kill all chrome/chromium processes: `pkill -f chrome || true`
+3. PM2-restart the browser-agent service: `pm2 restart browser-agent`
+4. Implement a startup connectivity check that triggers recovery *before* the main task:
+
+```js
+async function checkBrowserConnectivity() {
+  try {
+    await runBrowserCLI(['status'], { timeout: 10000 });
+  } catch (err) {
+    if (err.message.includes('Timeout waiting for browser response')) {
+      await restartBrowserSystem();
+    }
+  }
+}
+
+async function restartBrowserSystem() {
+  execSync('pkill -f chrome || true');
+  execSync('pm2 restart browser-agent');
+  await new Promise(resolve => setTimeout(resolve, 3000)); // wait for startup
+}
+```
+
+Also increase the base CLI timeout from 60s to 120s to avoid false-positive timeouts on slow page loads (separate from CDP hangs).
+
+Source: reddit-referral-poster commit 48af749 (2026-06-10) — CDP sessions were silently hanging after connectivity loss; retries piled up with no recovery.

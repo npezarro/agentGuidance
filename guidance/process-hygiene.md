@@ -59,22 +59,27 @@ When PM2 restarts a process, the old Node instance may not release its port befo
    ```js
    { kill_timeout: 3000, listen_timeout: 3000 }
    ```
-2. **Graceful shutdown handler in server code** — handle both SIGINT and SIGTERM, add a force-exit fallback, and register global error handlers:
+2. **Graceful shutdown handler in server code** — handle both SIGINT and SIGTERM, close DB connections inside `server.close()` callback, add a force-exit fallback, and register global error handlers:
    ```js
-   function gracefulShutdown(signal) {
-     server.close(() => process.exit(0));
-     // Force exit if connections don't drain within 10 seconds
-     setTimeout(() => process.exit(1), 10000);
+   function shutdown() {
+     server.close(() => {
+       // Close DB BEFORE process.exit() — flushes WAL, releases locks
+       if (db && typeof db.close === 'function') db.close();
+       process.exit(0);
+     });
+     // Force exit if graceful shutdown takes too long
+     setTimeout(() => process.exit(1), 5000);
    }
-   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+   process.on('SIGINT', shutdown);
+   process.on('SIGTERM', shutdown);
    process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason));
    process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); setTimeout(() => process.exit(1), 100); });
    ```
    - SIGINT handles Ctrl-C in dev, SIGTERM handles PM2 restart. Both are needed.
-   - The 10-second force-exit prevents PM2 from hanging on keep-alive connections that never drain.
+   - Close DB (and any other resource) inside `server.close()` callback, not after it — ensures SQLite WAL is flushed and connections released before the process exits, preventing SQLITE_BUSY or "database is locked" on the next PM2 start.
+   - The force-exit prevents PM2 from hanging on keep-alive connections that never drain.
    - `unhandledRejection`/`uncaughtException` log before exiting; without these, PM2 sees a silent crash with no diagnostic output.
-   - Source: pezantTools server.js (2026-05-28).
+   - Source: pezantTools server.js (2026-05-28); claudeNet server.js (2026-06-14).
 3. **Use a `start.sh` wrapper for Next.js standalone** — `next start` as the PM2 script loses process tracking. A wrapper lets PM2 signal the actual node process:
    ```bash
    #!/bin/bash
@@ -91,6 +96,57 @@ When PM2 restarts a process, the old Node instance may not release its port befo
    - Build script must use `mkdir -p .next/standalone/.next` before `rm -rf .next/standalone/.next/static` — on a fresh clone the directory doesn't exist and `cp` will fail silently. Correct form: `next build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -r .next/static .next/standalone/.next/static`
 
 **Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
+
+**Belt-and-suspenders: proactive port cleanup in start.sh.** When `kill_timeout` alone isn't enough (e.g., a previous process crashed without releasing the socket), add a `kill_port()` function at the top of `start.sh` that clears the port before launching:
+
+```bash
+kill_port() {
+  local sig=$1
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k -$sig "${PORT}/tcp" >/dev/null 2>&1 || true
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -ti :"${PORT}" | xargs kill -$sig >/dev/null 2>&1 || true
+  fi
+}
+
+kill_port TERM
+# Wait up to 50s for port to be free; escalate to SIGKILL at attempt 5
+for i in {1..5}; do
+  ss -tulpn 2>/dev/null | grep -q ":${PORT} " || break
+  [ $i -eq 5 ] && kill_port 9
+  sleep 10
+done
+```
+
+Start with SIGTERM (graceful), escalate to SIGKILL only after several retries. Use `fuser` when available (util-linux); fall back to `lsof` (macOS / minimal Linux). This is a start.sh–level fix, not a replacement for ecosystem.config `kill_timeout`. Source: employ `start.sh` (commit 6c7f362, 2026-06-14).
+
+**App-level retry loop in `server.listen()`.** When the above layers still aren't enough (e.g., the OS hasn't released the socket despite kill_timeout + proactive kill), wrap `app.listen()` in a retry loop instead of exiting immediately:
+
+```js
+function startServer(retries = 5) {
+  const srv = app.listen(PORT, () => {
+    console.log(`Listening on port ${PORT}`);
+    if (process.send) process.send('ready');
+  });
+  srv.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && retries > 0) {
+      console.warn(`Port ${PORT} in use, retrying in 2s... (${retries} left)`);
+      setTimeout(() => { srv.close(); startServer(retries - 1); }, 2000);
+    } else {
+      console.error('Server error:', err);
+      process.exit(1);
+    }
+  });
+  return srv;
+}
+const server = startServer();
+```
+
+- Only retry on `EADDRINUSE`; hard-exit on all other errors.
+- 2s delay gives the OS time to release the port between attempts.
+- Source: claudeNet `server.js` commit `020d188` (2026-06-15) — PM2 `kill_timeout: 10000` + graceful shutdown + proactive port kill were already in place, but EADDRINUSE still occurred intermittently. App-level retry eliminated the crash loop.
+
+**Client-side companion: also retry `ECONNREFUSED`.** A worker or client process that starts before its server is fully bound will receive `ECONNREFUSED` instead of `EADDRINUSE`. Include `ECONNREFUSED` in the retryable error set alongside network errors (`EAI_AGAIN`, `ECONNRESET`, `ETIMEDOUT`). This handles the startup-race case where the server and client launch concurrently (e.g., PM2 starts both in rapid succession). Source: claudeNet `bin/claudenet-worker.js` commit `1788628` (2026-06-16).
 
 ## Docker Bind Mount Refresh
 
@@ -283,6 +339,51 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Bash `set -e` Kills Error Handlers Before They Fire
+
+When using `set -e` (errexit), a failing command causes the script to exit **immediately** before the next line executes. This makes bare `$?` capture after a command dead code — the error handler that reads `$?` never runs.
+
+```bash
+# WRONG — set -e exits after 'some_command' fails; EXIT_CODE=$? never executes
+set -e
+some_command
+EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+  notify_discord "Failed: $EXIT_CODE"   # unreachable
+fi
+
+# RIGHT — || captures exit code inline without triggering set -e
+EXIT_CODE=0
+some_command || EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+  notify_discord "Failed: $EXIT_CODE"   # now reachable
+fi
+```
+
+**Why:** autonomousDev-private's three runners + verify.sh had this bug: timeout logs, Discord alerts, and state-file writes were all dead code because `set -e` aborted before the inline `EXIT_CODE=$?` capture. All failure notifications silently never fired for months (f6e304e, 2026-06-09).
+
+**How to apply:** In any `set -e` or `set -euo pipefail` script, capture exit codes inline with `cmd || VAR=$?`. Never write `cmd; VAR=$?` — the semicolon is still `set -e`-transparent and exits on failure.
+
+## Bash `git stash pop` Must Be Guarded
+
+Never call `git stash pop` unconditionally in a script. If the script stashed nothing (because the working tree was clean), an unconditional pop will dump a **pre-existing user stash** onto whatever branch is checked out, potentially overwriting unrelated in-progress work.
+
+```bash
+# WRONG — pops whatever is on the stash stack, even if this script didn't push it
+git stash
+# ... do work ...
+git stash pop   # might dump user's saved state onto wrong branch
+
+# RIGHT — track whether THIS script stashed, only pop what we pushed
+STASHED=false
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  git stash --quiet && STASHED=true
+fi
+trap '[ "$STASHED" = true ] && git stash pop --quiet 2>/dev/null || true' EXIT
+```
+
+**Why:** autonomousDev-private's `verify.sh` had an unconditional `git stash pop` in its `trap cleanup EXIT`. Any user with staged work could have it silently overwritten when the verify script ran. Fixed in f6e304e (2026-06-09) by adding the `STASHED=false` guard flag.
+
 ## PM2 wait_ready Anti-Pattern
 
 Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
@@ -344,6 +445,38 @@ module.exports = {
 
 Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
 
+## PM2 Periodic-Exit Scripts Must Use `autorestart: false` with `cron_restart`
+
+When a PM2 process is a **script** (runs, does work, then exits with code 0), PM2's default `autorestart: true` immediately re-fires it after every clean exit. Combined with `cron_restart`, this creates a restart loop: the cron fires, the script runs, exits 0, PM2 immediately re-fires it again — bypassing the cron schedule entirely.
+
+**Rule:** For any PM2 process that exits on completion (data push scripts, sync jobs, batch processors), always pair `cron_restart` with `autorestart: false`:
+
+```js
+// BAD — script exits 0 after each push; PM2 re-fires immediately, ignoring cron
+module.exports = {
+  apps: [{
+    name: "dashboard-push",
+    script: "scripts/push-metrics.sh",
+    cron_restart: "*/5 * * * *",
+    // autorestart defaults to true → restart loop
+  }]
+};
+
+// GOOD — autorestart: false lets cron_restart be the only trigger
+module.exports = {
+  apps: [{
+    name: "dashboard-push",
+    script: "scripts/push-metrics.sh",
+    cron_restart: "*/5 * * * *",
+    autorestart: false,  // process stays in "waiting restart" until cron fires
+  }]
+};
+```
+
+**Contrast with long-running services:** Always-on servers (Next.js, Express, supervisors) should keep `autorestart: true` (the default) so PM2 recovers from crashes. The `autorestart: false` pattern is only for scripts that exit normally after each run.
+
+**Why:** finance-tracker `dashboard-push` was registering hundreds of restarts because the push script exits 0 after successfully flushing metrics, and PM2 treated every exit as a completed process eligible for immediate re-launch. Fix: commit `63b80ca` added `autorestart: false`. Also check: PM2 health allowlists (see the next section) since `autorestart: false` processes appear in `waiting restart` state between cron fires.
+
 ## PM2 Cron Scripts Must Source Secrets at Runtime, Not via PM2 Env Injection
 
 PM2 captures environment variables **at `pm2 start` time only**. If a secret (e.g. `CRON_SECRET`, an API key) changes after the process is registered — or was not in the shell when `pm2 start` ran — every scheduled fire silently fails with 401/403 with no diagnostic output.
@@ -364,6 +497,25 @@ curl -X POST http://localhost:3001/api/cron/daily-push \
 **Why:** `pm2 save` + `pm2 resurrect` restores process configuration but not the live env from when `pm2 start` ran. After a reboot, a credential rotation, or a fresh deploy, the env block is empty or stale for values not in `ecosystem.config.cjs`.
 
 Source: runEvaluator `runeval-daily-push.sh` (commit `0719185`, 2026-06-07) — `CRON_SECRET` was added as a runtime grep after observing silent 401s when the secret changed between `pm2 start` and later cron fires.
+
+## Cron Wrappers on Remote Machines: Self-Sync via `git pull --ff-only`
+
+Cron scripts running on isolated machines (a second PC, Raspberry Pi, or any host without an automatic deploy pipeline) should `git pull --ff-only` at the start of each run. Without this, code/config fixes pushed to GitHub don't reach the machine until someone manually SSHs in — meaning a fix shipped during the day won't make the overnight scheduled run.
+
+```bash
+# At the top of the cron wrapper, before activating venv / installing deps
+cd "$REPO"
+echo "--- git pull ---"
+git pull --ff-only 2>&1 | grep -v "^Already up to date" || true
+```
+
+- `--ff-only` prevents the pull from attempting a merge if the local branch has diverged. On diverge, the pull prints a warning but doesn't fail the run (due to `|| true`).
+- `grep -v "Already up to date"` keeps the log clean on no-op pulls.
+- Place this BEFORE `source .venv/bin/activate` or `npm install` so updated dependency specs are also picked up.
+
+**Machines this applies to:** any host that runs scheduled jobs but doesn't receive automatic deploys (git hooks, PM2 reload, CI/CD). VMs with deploy pipelines don't need this; isolated machines (second PC, Raspberry Pi, air-gapped ML node) do.
+
+Source: arc-prize-2026 `cron_overnight_run.sh` commit `673235e` (2026-06-14) — without self-sync, a CUDA allocator fix pushed at 09:00 would not have reached PC2 in time for the 02:00 overnight run.
 
 ## New PM2 Cron Processes Must Be Registered in All Health-Checker Allowlists
 
@@ -433,6 +585,22 @@ Source: shopper, foodie, travel-assistant (commits 49da1e1, 78bbb74, d8b65c9 —
 **Correct approach:** Use the direct OAuth refresh_token grant via the platform API. Reference implementation: `~/repos/scripts/refresh-claude-token.sh` (cron every 3h, 6h-before-expiry threshold, intra-cycle retry with backoff, consecutive-failure Discord alerting, temp files for token data to avoid shell interpolation). The threshold was raised from 4h to 6h after the 2026-05-28 incident where 4 consecutive rate-limited cycles caused token expiry — see `guidance/operational-safety.md` § "OAuth Refresh Rate-Limiting".
 
 **Why it matters:** The usage API and all autonomous agent token reads go through the credentials file. An expired token causes every quota-gating job to silently fail or report misleading usage data.
+
+## `claude -p` vs `claude --print`: Positional Argument Trap
+
+`-p` is NOT a clean alias for `--print`. The `-p` flag treats the **next CLI argument as a positional prompt string**, which means any flag that follows it gets consumed as prompt text instead.
+
+```bash
+# WRONG: '--model claude-sonnet-4-6' is consumed as the prompt; stdin is ignored
+echo "my prompt" | claude -p --model claude-sonnet-4-6
+
+# CORRECT: use --print (long form) when combining with other flags
+echo "my prompt" | claude --print --model claude-sonnet-4-6
+```
+
+**Why it matters for automation:** Piped-stdin scripts that use `claude -p --model X` silently produce wrong output — the model flag becomes the prompt and `--model` defaults to whatever Claude picks. No error, no warning. Source: deal-scout CLAUDE.md (PR #26).
+
+**Rule:** In any script or cron job that pipes stdin to `claude`, use `--print` (not `-p`) whenever other flags follow. Reserve `-p` for single-argument invocations like `claude -p "inline prompt"` (no piped stdin).
 
 ## Python HTTP Client Gotchas
 
@@ -570,6 +738,107 @@ function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
 
 Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 
+### SSH Tunnel Bridge: Use 127.0.0.1 and Retry Transient Errors
+
+When an app connects to a local service via an SSH reverse tunnel (e.g., the Claude bridge on port 3095), two patterns prevent tunnel flap from causing permanent job failures:
+
+**1. Use `127.0.0.1`, not `localhost`**
+
+`localhost` can resolve to `::1` (IPv6) while the tunnel listener is bound to `127.0.0.1` only, causing silent `ECONNREFUSED`. Hard-code the IPv4 loopback:
+
+```typescript
+const BRIDGE_URL = process.env.CLAUDE_BRIDGE_URL || "http://127.0.0.1:3095";
+```
+
+**2. Retry transient connection errors (3 attempts, 5 s delay)**
+
+SSH tunnels flap briefly on reconnect. Errors that indicate the tunnel is temporarily down should be retried rather than immediately failing the job:
+
+```typescript
+function isTransientError(err: any): boolean {
+  const msg = err.message || "";
+  return (
+    msg.includes("fetch failed") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("UND_ERR_CONNECT_TIMEOUT") ||
+    msg.includes("EHOSTUNREACH") ||
+    msg.includes("socket hang up")
+  );
+}
+// 3 attempts, 5 s between retries — only for isTransientError(err)
+```
+
+Do NOT retry non-transient errors (400/401/403/503 "slots busy", 429 rate-limit) — those must fail immediately.
+
+**Source:** foodie commit `de929dc` (2026-06-11) — tunnel flap permanently failed a query (Job #18); both the `localhost`→`127.0.0.1` switch and the retry loop were required to resolve it.
+
+**Applies broadly:** The `isTransientError` check is the key primitive — apply the same retry guard to any internal HTTP service call that routes through a local broker or tunnel, not just the Claude bridge. Shopper's query-executor uses the same pattern for internal service calls (commit `be1d94e`, 2026-06-13).
+
+### Node.js `http.request` Retry: Include DNS Errors (`ENOTFOUND`, `EAI_AGAIN`)
+
+DNS resolution failures are transient — a temporary nameserver blip produces `ENOTFOUND` or `EAI_AGAIN`, then resolves on the next attempt. When building an `on('error')` retry handler for `http.request`, include both DNS error codes alongside the usual connection errors:
+
+```js
+req.on('error', (err) => {
+  const retryable = [
+    'EAI_AGAIN',     // DNS temporary failure
+    'ENOTFOUND',     // DNS resolution failure (often transient)
+    'ECONNRESET',    // connection dropped
+    'ETIMEDOUT',     // connection timeout
+    'ECONNREFUSED',  // service not yet up
+  ];
+  if (retries > 0 && retryable.includes(err.code)) {
+    setTimeout(() => apiRequest(method, path, body, retries - 1).then(resolve).catch(reject), 2000);
+  } else {
+    reject(err);
+  }
+});
+```
+
+**Prefer loopback for co-located services:** If a worker and its API server run on the same host, hardcode `http://127.0.0.1:<port>` in the PM2 ecosystem config rather than using the public hostname. This skips DNS entirely, eliminating `ENOTFOUND` as a failure mode:
+
+```js
+// worker.ecosystem.config.js
+env: {
+  SERVICE_URL: 'http://127.0.0.1:3010', // loopback — avoids DNS failures with public endpoint
+}
+```
+
+The loopback approach and the retry guard are complementary: loopback eliminates DNS flap for same-host services; the retry guard still catches `ECONNREFUSED` when the server restarts.
+
+Source: claudeNet `bin/claudenet-worker.js` commit `d94e46d` (2026-06-14) — worker was crashing on DNS failures when CLAUDENET_URL was set to the public hostname.
+
+## ID-Based Cursor Iteration for Large Dataset Processing
+
+When a script processes all rows from a large DB table in batches, use **ID-based cursor pagination** instead of offset-based pagination (`LIMIT N OFFSET M`):
+
+```typescript
+let lastId = 0;
+const BATCH_SIZE = 1000;
+
+while (true) {
+  const rows = await db.all(
+    'SELECT * FROM entries WHERE id > ? ORDER BY id LIMIT ?',
+    [lastId, BATCH_SIZE]
+  );
+  if (rows.length === 0) break;
+
+  for (const row of rows) {
+    await processRow(row);
+  }
+  lastId = rows[rows.length - 1].id;
+}
+```
+
+**Why not offset pagination?** `LIMIT N OFFSET M` scans from the start on every batch (O(M) cost), accumulates memory across large offsets, and silently skips or re-processes rows when data changes between batches.
+
+**Why ID-based works:** Each batch uses a WHERE clause on the indexed `id` column (`id > lastId`), giving O(1) lookup cost. The cursor state (`lastId`) is trivially resumable on crash/restart. No rows are skipped regardless of concurrent inserts.
+
+**Batch sizing:** Keep batches small enough that peak per-batch memory stays under ~50–100 MB. The activity-tracker uses 1000 rows/batch for its entries table; very wide rows (BLOBs, large text columns) need smaller batches.
+
+**Source:** activity-tracker commit `0a8e4a9` (2026-06-13) — OOM crash loop fixed by switching the summarizer from unbounded queries to ID-based iteration with 1000-row batches.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
@@ -584,3 +853,976 @@ When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes
 Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
 
 How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
+
+### Gemini CLI `-p` does NOT support multimodal (video/image) input (2026-06-05)
+
+`gemini -p` (headless CLI mode with `GOOGLE_GENAI_USE_GCA=true`) treats `@filepath` references as **text only**. Binary attachments (mp4, jpg, png, etc.) are not passed as multimodal Parts — Gemini responds with "I cannot view image/video files." This is true even with `--skip-trust` and even though the Gemini API itself supports native video/image input.
+
+**Do not plan VLM (vision/video) tasks to route through `gemini -p`.** The CLI silently fails without a clear error at the planning stage.
+
+**Alternatives:**
+- For free local image understanding: `claude -p --model haiku` natively reads images via the Read tool. ~20-30s per image batch, $0 on host auth.
+- For paid native video: use the Gemini Files API directly (Node SDK or REST) with `GEMINI_API_KEY` from AI Studio. ~$0.0015/min on Flash.
+- For text-only Gemini work: `gemini -p` works fine.
+
+Source: audio-description-creator build 2026-06-05 — original architecture routed visual-understanding step through Gemini CLI (free GCA tier) but it silently produced no useful output.
+
+### Chokidar file-watcher: denylist segment vs. substring matching (2026-06-09)
+
+Chokidar's `ignored` function receives the **full file path**. Two types of denylist entries need different matching logic:
+
+- **Single-segment entries** (e.g., `.state`, `node_modules`): match by checking if any path segment equals the entry → `filePath.split('/').includes(d)`
+- **Multi-segment entries** (e.g., `.state/tunnel-health-state.json`): match by substring presence → `filePath.includes(d)`
+
+Using only segment matching for all entries causes multi-segment entries to be silently skipped. If a service's own state/log files aren't excluded, the watcher creates a feedback loop: service writes state → chokidar event fires → service processes event → writes more state → repeat → OOM.
+
+```js
+const ignored = (filePath) => {
+  return denylist.some(d =>
+    d.includes('/') ? filePath.includes(d) : filePath.split('/').includes(d)
+  );
+};
+```
+
+Also always extend the default denylist to include heavy/noisy directories (`.local`, `.rustup`, `.cache`, `node_modules`) and the service's own state/DB paths. Set `kill_timeout` high enough (≥5000ms) for chokidar to close cleanly on PM2 restart — default 1.6s may cause EADDRINUSE loops.
+
+Source: activity-tracker commits 787a863, 42f1ade, 343596d, cd920d6 (2026-06-09) — 4 commits required to resolve an OOM crash loop caused by the service watching its own `.state/` files.
+
+### Bash `$HOSTNAME` is always set — never use `${HOSTNAME:-default}` as a bind-address guard (2026-06-06)
+
+Bash **auto-populates `$HOSTNAME`** with the system hostname (e.g., `wordpress-7-vm` on the GCP VM). The `${HOSTNAME:-default}` substitution **never falls back** because `$HOSTNAME` is always non-empty.
+
+**Why this matters for Node.js servers:** Next.js standalone, Vite preview, and several other Node servers read `process.env.HOSTNAME` to decide their bind address. If `$HOSTNAME` is the VM's external hostname, the server binds to the VM's IP instead of loopback, and Apache's `localhost` proxy gets connection-refused (public URL returns 503 with no useful error in app logs — server says "Ready in 0ms").
+
+**Fix:** Force-set the bind address explicitly:
+```bash
+export HOSTNAME="127.0.0.1"   # GOOD — force-set, always wins
+# NOT this:
+export HOSTNAME=${HOSTNAME:-"0.0.0.0"}  # BAD — bash pre-fills $HOSTNAME, fallback never triggers
+```
+
+Other bash builtins similarly always populated (must not be used as `:-` defaults): `BASH_VERSION`, `PWD`, `OLDPWD`, `EUID`, `UID`, `PATH`, `SHELL`.
+
+**Diagnostic:** If a Node service logs "listening" but Apache/curl-from-localhost gets connection-refused, run `ss -ltnp | grep <port>` and check the bind address before assuming the proxy is broken.
+
+Source: foodie debugging 2026-06-06 — 409 historical PM2 restarts before diagnosis; `humans/start.sh` already used the correct force-set pattern.
+
+### SQLite `.iterate()` Cleanup and File-Watcher Depth Limiting (2026-06-10)
+
+**SQLite iterator cleanup:** Always wrap `.iterate()` in try/finally to ensure the cursor is closed even on error. An unclosed iterator holds a read transaction open, preventing WAL checkpoints and causing memory growth under high load:
+
+```js
+const iter = stmt.iterate(params);
+try {
+  for (const row of iter) { /* process */ }
+} finally {
+  try { iter.return(); } catch (_) {}
+}
+```
+
+Also tune `PRAGMA cache_size` to cap SQLite's memory footprint (`PRAGMA cache_size = -32000` sets a 32 MB cap).
+
+**File-watcher depth limiting:** Always set an explicit `depth` cap on chokidar watchers. The default (unbounded) can traverse large trees (home dir, deep node_modules) and OOM the process:
+
+```js
+chokidar.watch(paths, { depth: 2, usePolling: false })
+```
+
+`depth: 2` is usually sufficient for project file-watching. Combine with the denylist segment/substring pattern (see above) to prevent feedback loops.
+
+Source: activity-tracker commits f455135, 9e3e3d1 (2026-06-10) — OOM crash loop resolved by adding try/finally to DB iterators, tuning cache_size, and fixing depth fallback (using `?? 2` instead of `|| 2`, since `0` is a valid depth).
+
+### Background Queue Saturation Guards for Webhook Handlers (2026-06-10)
+
+When a route handler spawns fire-and-forget background work (webhook processors, job dispatchers), track pending task count and return HTTP 503 when a cap is exceeded. Without this guard, burst traffic creates unbounded task queues that OOM the process:
+
+```js
+let pendingTasks = 0;
+const MAX_PENDING_TASKS = 100;
+
+app.post('/webhook', (req, res) => {
+  if (pendingTasks >= MAX_PENDING_TASKS) {
+    return res.status(503).json({ error: 'Queue full, retry later' });
+  }
+  pendingTasks++;
+  processInBackground(req.body)
+    .finally(() => pendingTasks--);  // MUST use .finally(), not .then()
+  res.status(202).send();
+});
+```
+
+Always decrement with `.finally()`, not `.then()` alone — rejected promises skip `.then()` and the count never decrements.
+
+Source: health-hub commit 3709cf0 (2026-06-10) — background queue grew unbounded during Garmin webhook bursts, eventually crashing the process.
+
+### SQLite `createMany` Variable Limit and Webhook Timestamp Validation (2026-06-11)
+
+**SQLite `createMany` variable limit:** SQLite limits bind parameters per statement (~999 for older builds, up to 32766 in recent ones). Prisma's `createMany` maps each field of each record to a bind variable — for large arrays this can silently fail or throw. Chunk `createMany` calls for tables with more than a handful of fields:
+
+```js
+const CHUNK_SIZE = 100;
+for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+  await prisma.someTable.createMany({ data: records.slice(i, i + CHUNK_SIZE) });
+}
+```
+
+**Timestamp Date validation before Prisma insert:** Converting webhook numeric timestamps with `new Date(Number(raw.ts) * 1000)` produces `Invalid Date` when the value is non-numeric, null, or NaN. Prisma/LibSQL crashes on `Invalid Date` being inserted into a DateTime column. Always validate after construction:
+
+```js
+let startTime = new Date(Number(raw.startTimeInSeconds) * 1000);
+if (Number.isNaN(startTime.getTime())) {
+  startTime = new Date(); // fallback to current time
+}
+```
+
+Source: health-hub commit c5162e6 (2026-06-11) — 20 PM2 restarts traced to these two issues during Garmin webhook bursts.
+
+### PrismaClient Global Singleton in Next.js
+
+Next.js can re-evaluate modules multiple times — during development hot reload and in production when bundler chunks each re-evaluate their imports. Each re-evaluation creates a new `PrismaClient` instance, exhausting DB connection pools and causing `Too many connections` or `Connection timeout` errors.
+
+**Fix:** Always guard PrismaClient instantiation with a global variable:
+
+```ts
+declare global {
+  var __prisma: PrismaClient | undefined;
+}
+
+export const prisma =
+  global.__prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
+
+global.__prisma = prisma;
+```
+
+This is the canonical pattern. `global.__prisma` persists across module re-evaluations; the `??` means only one instance is ever created per process lifetime.
+
+**Pair with startup connection retry in production:**
+
+```ts
+if (process.env.NODE_ENV === "production") {
+  const connectWithRetry = async (retries = 5, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await prisma.$connect();
+        console.log("[db] Prisma connected successfully");
+        return;
+      } catch (err) {
+        console.error(`[db] Connection failed (attempt ${i + 1}/${retries}):`, (err as Error).message);
+        if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    console.error("[db] All Prisma connection attempts failed. App may be unstable.");
+  };
+  connectWithRetry();
+}
+```
+
+**Why:** humans commit `1b9df8d` (2026-06-11) — crash loop resolved by adding the global singleton guard + retry logic. All Next.js + Prisma apps in this ecosystem (humans, finance-tracker, health-hub) should use this pattern.
+
+**Apply to:** any Next.js app that imports PrismaClient in `src/lib/db.ts` (or equivalent). If you see `warn(prisma-client) There are already 10 instances of Prisma Client actively running` in logs, the singleton is missing.
+
+### `PrismaLibSql` Takes a Config Object, NOT a `@libsql/client` Instance
+
+`PrismaLibSql` from `@prisma/adapter-libsql` expects a **Config object** `{ url, authToken? }` — it does NOT accept a pre-constructed `@libsql/client` instance.
+
+```ts
+// CORRECT — Config object
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+const adapter = new PrismaLibSql({ url, authToken });
+
+// WRONG — @libsql/client instance (causes connection errors)
+import { createClient } from "@libsql/client";
+const client = createClient({ url, authToken });
+const adapter = new PrismaLibSql(client);  // ❌ wrong constructor signature
+```
+
+**Why this trips AI agents:** The `@libsql/client` package and `@prisma/adapter-libsql` are often imported together in docs and examples, making the instance-passing form look natural. The error message from passing an instance is not always obvious — it may manifest as a connection failure or unexpected adapter state rather than a type error.
+
+## Express API Routes: Null-Check After DB Insert and Full try-catch Audit
+
+### DB Write → DB Read Can Return Null
+
+In Express routes using `better-sqlite3`, a read immediately after a write in the same handler can return `null` even after the write reports success:
+
+```js
+db.prepare('INSERT INTO instances ...').run(instanceKey, ...);
+const instance = db.prepare('SELECT * FROM instances WHERE instance_key = ?').get(instanceKey);
+// instance can be null (race/rollback edge case)
+if (!instance) {
+  return res.status(500).json({ error: 'Failed to retrieve instance after insert' });
+}
+res.json({ ok: true, instanceId: instance.id }); // crashes without null check above
+```
+
+Without the null guard, `instance.id` throws a TypeError and Express returns a 500 with no diagnostic — the client sees a generic error and the root cause is invisible.
+
+**Fix:** Always null-check DB reads, even when they immediately follow a write.
+
+### try-catch in Every Route Handler
+
+Express 4.x does NOT automatically catch synchronous exceptions thrown inside route handlers — they bubble up as unhandled exceptions, not to the registered error handler. Every route that touches the DB, calls JSON.parse, or formats data needs an explicit try-catch:
+
+```js
+router.get('/threads/:threadId/messages', requireAuth, (req, res) => {
+  try {
+    const messages = db.prepare(sql).all(...params);
+    res.json({ messages });
+  } catch (err) {
+    console.error('GET /messages error:', err);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+```
+
+**The cascade trigger:** once a single missing null-check or missing try-catch is found, audit ALL routes in the file — the pattern is always systemic (every route was written with the same unchecked assumptions). A partial fix leaves silent 500s in remaining routes.
+
+Source: claudeNet commits d96d78d → 466e73f → 070ad9b (2026-06-12/13) — a single missing null-check in `formatMessage` revealed missing try-catch in 145 lines across `lib/routes-api.js`.
+
+**Source:** health-hub commits c7681b4 → c0995b6 (2026-06-13) — a Gemini-generated fix swapped to the instance form, causing connection errors; reverted to Config object within 1 minute.
+
+### Nullable Column Guard: `!== undefined` Instead of `||`
+
+When a DB column can legitimately be stored as `null` (e.g. "no target linked"), using `|| default` silently clobbers stored nulls:
+
+```js
+// WRONG — clobbers stored null with the default; "row missing" and "row has null" are indistinguishable
+const targetId = settings ? settings.target_instance_id || null : null;
+
+// CORRECT — preserves stored null; only defaults when the row itself is absent
+const targetId = (settings && settings.target_instance_id) !== undefined
+  ? settings.target_instance_id
+  : null;
+```
+
+**When it matters:** foreign-key columns, optional config values, and any "unlinked" state where `null` is a valid stored value that must round-trip correctly through the GET response.
+
+Source: claudeNet commit 0729414 (2026-06-13) — `target_instance_id` in thread settings is legitimately `null` when no target is set; `|| null` would silently return `null` even when a non-null value was stored.
+
+## Claude CLI `--model` Alias vs. SDK Model ID
+
+The Claude CLI's `--model` flag takes **short aliases**, not API model IDs:
+
+| CLI alias (correct) | API model ID (wrong for CLI) |
+|---|---|
+| `sonnet` | `claude-sonnet-4-6` |
+| `opus` | `claude-opus-4-8` |
+| `haiku` | `claude-haiku-4-5-20251001` |
+
+Using the API ID string causes the CLI call to fail or be silently ignored:
+
+```bash
+# CORRECT
+claude --print --model sonnet "your prompt"
+
+# WRONG — claude-sonnet-4-6 is an SDK model ID, not a CLI alias
+claude --print --model claude-sonnet-4-6 "your prompt"
+```
+
+**Why agents get this wrong:** the `claude-api` skill and SDK docs use full API model IDs. When an agent generates shell commands invoking `claude`, it copies the API ID format instead of the CLI short-form alias.
+
+**When to check:** any code that calls `claude --model <name>` in a shell script or `execSync`/`spawn` call. Aliases (`sonnet`, `opus`, `haiku`) are stable; API IDs are version-suffixed and only valid for the SDK.
+
+Source: deal-scout commit 69af5c4 (2026-06-13) — scout.js failing because `claude-sonnet-4-6` is not a valid CLI alias.
+
+## Health Endpoint: Data Pipeline Freshness Gate
+
+A `/health` or `/api/health` endpoint should check not only DB connectivity but whether background sync jobs have recently written. An app that is "up" but serving stale data is silently broken.
+
+**Pattern (Next.js / TypeScript):**
+
+```typescript
+const STALE_THRESHOLD_MS = 36 * 60 * 60 * 1000; // 1.5× expected sync interval
+
+const staleProviders = (
+  await Promise.all(
+    PROVIDERS.map(async (provider) => {
+      const conn = await db.query.connections.findFirst({
+        where: (c, { eq }) => eq(c.providerName, provider),
+      });
+      const stale = !conn?.lastSyncedAt ||
+        Date.now() - conn.lastSyncedAt.getTime() > STALE_THRESHOLD_MS;
+      return stale ? provider : null;
+    })
+  )
+).filter(Boolean);
+
+if (staleProviders.length > 0) {
+  return NextResponse.json({ status: 'degraded', staleProviders }, { status: 503 });
+}
+```
+
+**Key rules:**
+- Run all provider checks via `Promise.all` (parallel, not serial)
+- Return **503**, not 200 with a warning body — PM2 health checks and load balancers need the status code
+- Include provider names in the response for rapid diagnosis
+- Threshold = ~1.5× expected sync interval (e.g. 36h for a 24h cron)
+- `lastSyncedAt IS NULL` is stale — treat it as "never synced"
+
+Source: finance-tracker commit 7ef5c71 (2026-06-13).
+
+### V8 Object Nullification in Batch Processing Functions (2026-06-13)
+
+V8 does not always garbage-collect large objects that remain in scope until a function returns, even when those objects are no longer accessed. In batch-processing functions that build large aggregation maps (counts by key, duration histograms, parsed rows), explicitly set those objects to `null` after use to reduce peak RSS:
+
+```js
+export function buildSummaryFromIterator(sinceId, limit) {
+  let appDurations = {};   // use `let`, not `const`
+  let fileCounts = {};
+  let shellCommands = [];
+
+  for (let evt of iterateEventsSinceId(sinceId, limit)) {
+    // ... process evt ...
+    evt = null;  // free each row object before the next arrives
+  }
+
+  const summary = buildMarkdown(appDurations, fileCounts, shellCommands);
+
+  // Explicitly clear large accumulators before return
+  appDurations = null;
+  fileCounts = null;
+  shellCommands = null;
+
+  return { summary };
+}
+```
+
+**Two nullification sites:**
+1. **Loop-body:** set `evt = null` after processing each row so the row object can be reclaimed before the next row is fetched.
+2. **Post-accumulation:** set aggregation maps to `null` before `return`. V8 may keep them alive until the caller's frame unwinds; explicit null breaks that hold.
+
+**When to apply:** any function that processes thousands of rows or builds large hash maps, and where the process is memory-constrained (PM2 `max_memory_restart`, containerized Node.js, etc.). Requires `let` declarations, not `const`.
+
+Source: activity-tracker commits 6b5d813 + 18585d1 (2026-06-13) — OOM crash loop on the activity-tracker summarizer fixed by nullifying per-row `evt` references and post-run aggregation maps.
+
+## File-Watcher Feedback Loop: Exclude Files the Service Writes To
+
+Any service that (1) watches a directory with chokidar or a similar inotify-backed watcher AND (2) writes to a file inside that directory must explicitly exclude its own output files from watcher events. Without the exclusion, every write triggers an event, which triggers processing, which writes again — an infinite self-triggering loop that pegs CPU and floods the event log.
+
+**Common write targets that must be excluded:**
+- SQLite database files (`.db`, `.db-wal`, `.db-shm`)
+- Log files (`.log`)
+- Lock / state files (`.json.tmp`, `.lock`)
+- Editor swap / backup files (`~` suffix, `.bak`, `.swp`)
+
+**Chokidar pattern:**
+```js
+const watcher = chokidar.watch(dirs, {
+  ignored: (path) => {
+    if (path.includes('activity.db')) return true;   // DB + WAL + SHM
+    if (path.endsWith('.log'))        return true;
+    if (path.endsWith('~') || path.endsWith('.bak')) return true;
+    return false;
+  },
+  ignorePermissionErrors: true,
+  // ...
+});
+```
+
+**Why substring match, not exact path:** SQLite writes three files simultaneously (`activity.db`, `activity.db-wal`, `activity.db-shm`). A substring check on the base name catches all three without enumerating each suffix.
+
+**When to apply:** Any time a new watcher-based collector or processor is added to a service that already has a database or log file inside the watched tree. Audit the `ignored` function first — the exclusion is easy to miss when the feature is "just add a new watched directory."
+
+Source: activity-tracker CLAUDE.md commit b39a91d (2026-06-14) — documented after summarizer OOM fix revealed the db-exclusion rule was missing from the gotchas section.
+
+## `Promise.race` Timeout Wrapper Leaves a Dangling Timer
+
+When implementing a timeout helper with `Promise.race`, the naïve form leaves the `setTimeout` running even after the main promise resolves. In Node.js every active timer holds a reference that delays event-loop exit and accumulates as timer-slot garbage in long-running servers.
+
+```js
+// BAD: timer fires (and logs) after the main promise already resolved
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
+// GOOD: capture the ID and clear it in .finally()
+function withTimeout(promise, ms) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+```
+
+**When to apply:** Any `withTimeout` / `withDeadline` helper, webhook background-task runners, or any code that uses `Promise.race` with a timeout side channel. The `.finally` guard is zero-cost on the happy path and prevents phantom timer callbacks in high-throughput services.
+
+**Bonus: check backpressure before heavy work.** If the timeout wrapper is used inside a webhook handler that gates on queue depth, perform the 503 backpressure check BEFORE parsing the body or writing to the DB. Rejecting early avoids wasted parse/storage work when the queue is full.
+
+Source: health-hub commit `1623f9b` (2026-06-14) — Gemini-generated fix for the Garmin webhook `withTimeout()` helper; timer leak + backpressure ordering both corrected in the same PR.
+
+### Companion: `Promise.race` Does NOT Cancel the Losing Promise — Use a Cooperative Signal
+
+Fixing the dangling timer with `.finally(() => clearTimeout(timeoutId))` stops the *timer* from leaking, but the *losing promise* itself keeps running. If that promise wraps a `for…of` or `while` loop (common in webhook background-task handlers), the loop continues processing items even after `Promise.race` has already rejected with a timeout error. This wastes CPU and DB connections and can cause corrupted state if the loop writes.
+
+**Fix:** accept a cancellation signal object in the promise factory; check it before each iteration.
+
+```typescript
+// WRONG — loop keeps running after timeout even with .finally cleanup
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> { ... }
+
+// CORRECT — pass a mutable signal the timeout can flip
+function withTimeout<T>(
+  promiseFn: (signal: { aborted: boolean }) => Promise<T>,
+  ms: number,
+): Promise<T> {
+  const signal = { aborted: false };
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      signal.aborted = true;          // ← flip the signal before rejecting
+      reject(new Error(`timeout after ${ms}ms`));
+    }, ms);
+  });
+  return Promise.race([promiseFn(signal), timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+// Caller: check signal.aborted before each expensive unit of work
+await withTimeout(async (signal) => {
+  for (const id of eventIds) {
+    if (signal.aborted) break;        // ← cooperative exit on timeout
+    const event = await db.findById(id);
+    await processEvent(event);
+  }
+}, 30_000);
+```
+
+**Why a plain AbortController isn't used:** `AbortController` requires the inner async ops to accept a `signal` option (e.g., `fetch(..., { signal })`). For DB calls and business logic that don't accept signals natively, a shared mutable object is simpler and works without changing every callsite.
+
+Source: health-hub commit `c6bee11` (2026-06-17) — timeout already had `.finally` cleanup; still leaked because the inner `for…of` loop over webhook event IDs continued after rejection.
+
+## Defensive JSON Parsing in Batch/Summarization Loops
+
+When a batch or summarization function processes DB rows in a loop and advances a cursor or timestamp **after** the loop, a bare `JSON.parse` call will permanently stall the pipeline if any row contains corrupt or missing JSON.
+
+**The failure mode:**
+```js
+// BAD — one corrupt row aborts the whole batch and the cursor never advances
+export function buildSummary(events) {
+  for (const evt of events) {
+    const meta = JSON.parse(evt.metadata_json); // throws SyntaxError on corrupt row
+    // ... build summary using meta
+  }
+  // ← cursor/timestamp advance happens here; never reached after throw
+}
+
+export function runSummarization(config) {
+  setInterval(() => {
+    try {
+      const events = fetchWindow(lastSummarizeTime);
+      buildSummary(events);              // throws → caught below
+      lastSummarizeTime = now();         // ← never runs; same window re-fetched every tick
+    } catch (err) {
+      log.error(err);                    // logs every 60s but does nothing useful
+    }
+  }, 60_000);
+}
+```
+
+Net effect: no output file is ever written again; the error repeats every tick until the corrupt row ages out of retention (up to 30 days in a 30-day window).
+
+**Fix — defensive parse helper:**
+```js
+function parseMetadata(evt) {
+  try {
+    return JSON.parse(evt.metadata_json) ?? {};
+  } catch {
+    console.warn(`[summarizer] Skipping malformed metadata_json (source=${evt.source}, type=${evt.event_type})`);
+    return {};
+  }
+}
+
+// All call sites: meta = parseMetadata(evt);
+// Existing `meta.field || default` guards already handle the empty-object case.
+```
+
+**When to apply:** Any function that:
+- Processes DB rows in a loop using `JSON.parse` on a stored column, AND
+- advances a cursor, timestamp, or counter AFTER the loop body.
+
+One corrupt row in a DB column can arrive from a crashed writer, a schema migration edge case, or a race. Always guard.
+
+Source: activity-tracker commit `a2ff5fb` (2026-06-14) — `buildSummary` stalled daily-context.md generation; fix adds `parseMetadata()` wrapper + 3 regression tests.
+
+**Companion failure mode — list endpoint 500:** The same bare-parse risk applies to consumer GET routes (list/all/feed endpoints) that call `JSON.parse` inside a `.map()` callback on stored blob columns. One corrupt row throws a `SyntaxError` that propagates out of `.map()` and 500s the **entire response** — all healthy sibling rows are lost and the consumer feed goes dark. Degrading the bad row to a fallback while returning healthy siblings is always the better failure mode.
+
+Fix: a `safeJsonParse(raw, fallback, context)` helper that returns a fallback (`null`, `[]`, `{}`) on bad input and logs the failure with row context. Apply anywhere a list endpoint reads a JSON blob column from SQLite.
+
+Source: health-hub `src/lib/json.ts` (PR #66, 2026-06-20) — `/api/activities`, `/api/health`, `/api/streams` were 500ing the whole consumer feed on one corrupt row.
+
+## SQLite `busy_timeout` Alongside WAL Mode
+
+WAL (`journal_mode = WAL`) reduces write-write contention in SQLite, but does not prevent `SQLITE_BUSY` errors when concurrent API requests hit a read-write boundary. Without a `busy_timeout`, the first concurrent access that finds the DB busy returns an immediate error (better-sqlite3 throws synchronously), which bubbles up as a 500 to the API caller.
+
+**Fix — add `busy_timeout` to the initialization pragma block:**
+```js
+function initDb() {
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');  // ← wait up to 5s instead of throwing immediately
+  // ...
+}
+```
+
+**Why 5000ms:** High enough to survive transient request bursts without indefinitely blocking callers. If a write holds the lock for longer than 5s the service has deeper problems.
+
+**When to apply:** Any `better-sqlite3` Express/Node.js server that serves more than one concurrent request. The symptom is sporadic 500 errors under load with no obvious error in the handler — only visible in the DB layer logs as `SQLITE_BUSY`.
+
+Source: claudeNet commit `b7c8efb` (2026-06-13) — 500 errors under concurrent API load resolved by adding `busy_timeout` to the existing WAL pragma block.
+
+## PrismaClient + LibSQL Adapter: Don't Pass `datasourceUrl` in the Constructor
+
+When using `PrismaLibSql` as the Prisma adapter, the adapter already owns the database connection. Passing `datasourceUrl` as an additional constructor option to `PrismaClient` conflicts with the adapter's connection state and causes errors.
+
+```ts
+// WRONG — datasourceUrl conflicts with the adapter
+const adapter = new PrismaLibSql({ url });
+return new PrismaClient({ adapter, datasourceUrl: url });  // ❌
+
+// CORRECT — adapter handles the connection; PrismaClient needs only the adapter
+const adapter = new PrismaLibSql({ url });
+return new PrismaClient({ adapter });  // ✓
+```
+
+**Related:** `PrismaLibSql` itself expects a **Config object** `{ url, authToken? }` — not a pre-constructed `@libsql/client` instance (documented above). These are two separate gotchas that can compound: wrong constructor argument to the adapter AND redundant datasourceUrl to PrismaClient.
+
+## Bash Monitoring Scripts: Alert-Once-Then-Suppress via Marker State
+
+**The problem:** A cron monitoring script that uses a file marker to track failure presence (just `touch $FAIL_MARKER`) will re-post an `@here` Discord ping on every subsequent cron cycle during a persistent failure, creating alert spam.
+
+**The fix:** The marker must encode *whether an alert was already sent*, not just that a failure occurred. Use a two-state protocol:
+
+```bash
+if [ -f "$FAIL_MARKER" ]; then
+  if [ "$(cat "$FAIL_MARKER" 2>/dev/null)" != "alerted" ]; then
+    # Second consecutive failure — alert once and suppress further pings
+    post_alert "Service still failing after restart" "ping"
+    echo "alerted" > "$FAIL_MARKER"
+    # else: already alerted, skip (persistent failure suppressed)
+  fi
+else
+  # First failure — grace period, just mark it
+  touch "$FAIL_MARKER"
+fi
+
+# On recovery, clear the marker so the next failure cycle resets
+rm -f "$FAIL_MARKER"
+```
+
+**Why three states?** First failure (marker absent) = transient blip grace period, no alert. Second failure (marker has no content or empty) = escalate once. Subsequent failures (marker contains "alerted") = suppress. Recovery (service healthy) = rm marker.
+
+**When to apply:** Any bash cron script that sends a Discord/Slack alert on failure and uses a marker file to track state. Without this, a service that stays broken for hours generates hundreds of @here pings.
+
+Source: `scripts/bridge-auth-refresh.sh` commit `8a0436e` (2026-06-14) — fixed bridge auth refresh alerting every 10 minutes during persistent OAuth failure.
+
+## External API 429 Handling: Exponential Backoff + Inter-Request Throttle
+
+When calling an external REST API in a sequential loop (paginating results, fetching per-entity data), two defenses are needed:
+
+**1. Inter-request throttle delay:** Add a fixed sleep between consecutive requests to avoid saturating rate limits before they trigger:
+```js
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// In a fetch loop:
+for (const item of items) {
+  await sleep(200); // 200ms between requests prevents burst triggering 429
+  const res = await fetchItem(item.id);
+}
+```
+
+**2. Exponential backoff on 429:** When a 429 response arrives, back off with jitter and retry:
+```js
+async function apiFetch(path, options, retryCount = 0) {
+  const res = await rawFetch(path, options);
+
+  if (res.status === 429 && retryCount < 5) {
+    const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+    console.warn(`Rate limited on ${path}. Retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1})`);
+    await sleep(delay);
+    return apiFetch(path, options, retryCount + 1);
+  }
+
+  return res;
+}
+```
+
+The `+ Math.random() * 1000` jitter prevents thundering-herd retries when multiple parallel workers all hit the limit simultaneously.
+
+**When to apply:** Any code that calls a third-party API (Teller, Garmin, Google, etc.) in a loop. The inter-request sleep prevents rate-limit hits proactively; the 429 backoff handles them reactively when limits vary by tier or time-of-day.
+
+Source: `finance-tracker/src/lib/teller.ts` commit `67b8ec5` (2026-06-14) — Teller API rate limiting during account sync.
+
+## Express: `URLSearchParams(req.query)` Doesn't Handle Repeated Query Params
+
+`new URLSearchParams(req.query)` appears correct but fails when a query parameter appears more than once in the URL (e.g. `?foo=a&foo=b`). Express parses repeated params as an **array** (`req.query.foo === ['a', 'b']`), but `URLSearchParams` constructor receives a plain object and coerces arrays to a string (`foo=a,b`) instead of two separate entries.
+
+**Fix:** Iterate explicitly and call `.append()` for each value:
+```js
+// WRONG — loses multiple values for the same key
+const params = new URLSearchParams(req.query);
+
+// CORRECT — handles both scalar and array values
+const params = new URLSearchParams();
+for (const [key, value] of Object.entries(req.query)) {
+  if (Array.isArray(value)) {
+    value.forEach(v => params.append(key, v));
+  } else {
+    params.append(key, value);
+  }
+}
+```
+
+**When it matters:** Any Express route that builds a URL from `req.query` to forward to a downstream service (OAuth callbacks, search proxies, redirect handlers). A missing value here can silently break the OAuth state parameter, causing auth failures that are hard to trace.
+
+Source: `auth-proxy/server.js` commit `47062dd` (2026-06-14) — OAuth callback proxy was corrupting state param when Google included repeated query params.
+
+Source: health-hub commit `c09d9d0` (2026-06-14) — three-commit fix sequence (`90ec8f7` added datasourceUrl explicitly, `3796db2` corrected Config object gotcha, `c09d9d0` removed the now-exposed datasourceUrl conflict).
+
+## OAuth Bootstrap: Copied Token Gets Revoked on Source Rotation
+
+When bootstrapping a bridge container's auth by **copying a token from a source container**, the target is now sharing the source's OAuth refresh token. When the source rotates (via its nightly relogin cron or any `claude auth` refresh), the old token value is invalidated and the target immediately 401s ("Invalid authentication credentials").
+
+**The bootstrap is a stopgap only.** Immediately after bootstrapping, give the target its own independent login:
+
+```bash
+set -a; . $HOME/.env; set +a   # export BROWSER_AGENT_KEY (bare `. ~/.env` does NOT export it)
+ALT_ACCOUNT_TAG=<app> POST_RESTART=true \
+  ~/repos/scripts/claude-auto-relogin-container.sh <target>
+```
+
+Verify `health: auth:ok` again after this step. Once the target has its own token, it self-refreshes normally like every other sibling container and survives future source rotations.
+
+**Add to nightly cron:** Also add a relogin entry and use `set -a; . $HOME/.env; set +a` (not `. $HOME/.env &&`):
+- `. $HOME/.env && cmd` — sources variables but does NOT export them; downstream scripts that reference `$BROWSER_AGENT_KEY` as an env var get an empty value.
+- `set -a; . $HOME/.env; set +a; cmd` — `set -a` forces all sourced variables to be automatically exported, so `BROWSER_AGENT_KEY` is visible to child processes.
+
+Source: `bootstrap-bridge-auth` skill update (commit `0b6c420`, 2026-06-14) — the issue was found when an employ-bridge bootstrapped from employ's token and expired ~12h later.
+
+## SQLite UPSERT with Optional Columns: Branch by Presence to Avoid Null Overwrite
+
+When a PATCH-style endpoint has optional fields, a single SQLite `ON CONFLICT DO UPDATE SET` that lists all columns will overwrite existing values with `null` whenever those fields are absent from the request body.
+
+**The problem:** `target_instance_id = excluded.target_instance_id` in an UPSERT means "set to whatever was passed in." If the client omits `instanceId`, the bound value is `null`, and the UPSERT silently clears the stored value.
+
+**The fix:** Branch on whether the optional field was provided, and use a separate prepared statement for each case:
+
+```js
+if (instanceId !== undefined) {
+  // Full UPSERT — includes target_instance_id
+  db.prepare(`
+    INSERT INTO thread_settings (thread_id, user_id, mode, target_instance_id, updated_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(thread_id, user_id) DO UPDATE SET
+      mode = COALESCE(excluded.mode, thread_settings.mode),
+      target_instance_id = excluded.target_instance_id,
+      updated_at = excluded.updated_at
+  `).run(threadId, userId, mode, instanceId || null);
+} else {
+  // Reduced UPSERT — leaves target_instance_id untouched
+  db.prepare(`
+    INSERT INTO thread_settings (thread_id, user_id, mode, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(thread_id, user_id) DO UPDATE SET
+      mode = COALESCE(excluded.mode, thread_settings.mode),
+      updated_at = excluded.updated_at
+  `).run(threadId, userId, mode);
+}
+```
+
+**Why COALESCE isn't enough:** `COALESCE(excluded.col, table.col)` works for non-null fallback, but the column still appears in the UPDATE SET list — if you want to leave it completely untouched when absent from the payload, you must omit it from the query.
+
+**When to apply:** Any SQLite UPSERT backing a PATCH endpoint where some columns are optional. Check for `= excluded.<col>` assignments in UPDATE SET clauses — each one is a potential silent null overwrite.
+
+Source: claudeNet `lib/routes-api.js` commit `86b35b6` (2026-06-14) — PATCH `/thread/:id/settings` was clearing `target_instance_id` whenever the request body included only `mode`.
+
+## SQLite Corruption Auto-Detect and Restore
+
+**Run `PRAGMA quick_check` at startup and auto-restore from backup when corruption is detected.** SQLite corruption can occur from power loss, OOM kills mid-write, or disk I/O errors. Without a startup check the app silently serves stale or incorrect data. The pattern:
+
+```typescript
+// In getDb() — before enabling WAL mode or running migrations:
+const db = new Database(dbPath);
+const result = db.pragma("quick_check") as { quick_check: string }[];
+if (!(result.length === 1 && result[0].quick_check === "ok")) {
+  db.close();
+  // 1. Find latest valid backup: iterate backups/ newest-first, open each readonly, run quick_check
+  // 2. Rename corrupted db to <name>.corrupted.<timestamp> (preserved for investigation)
+  // 3. Remove WAL/SHM sidecar files from the corrupted DB path
+  // 4. Copy backup to the DB path
+  // 5. Reopen and verify the restored DB passes quick_check
+  // 6. Alert Discord — do NOT silently swallow the event
+  const restored = restoreFromBackup(dbPath);
+  db = new Database(dbPath);
+}
+db.pragma("journal_mode = WAL");
+```
+
+**Companion: proactive cron between restarts.** `getDb()` only runs on process start; corruption that occurs mid-run is undetected until the next restart. Add a standalone integrity-check cron script (e.g., `scripts/check-db-integrity.js`, every 30 min) that opens the DB, runs `PRAGMA quick_check`, restores from backup if needed, and restarts the PM2 process via `pm2 restart <name>` so the app reconnects to the clean file.
+
+**Key implementation details:**
+- Iterate backups newest-first and open each readonly before trusting it — a backup may itself be corrupted.
+- Remove `.db-wal` and `.db-shm` sidecar files from the corrupted path before copying the backup, or SQLite may try to replay a stale WAL on top of the fresh backup.
+- Always send a Discord alert (not just a log line) on both detected corruption and restore failure — this is a production data-loss event.
+- `checkDbHealth()` should also call `quick_check` so the `/api/health` endpoint reflects DB integrity, not just app liveness.
+
+**When to apply:** Any `better-sqlite3` or `sqlite3` app with an existing backup cron (daily `.backup` command is the standard). The check adds <5ms to cold start. Source: shopper `src/lib/db.ts` + `scripts/check-db-integrity.js` commit `563d6a4` (2026-06-16).
+
+## Multi-Pass AI Content Generation: Editor Commentary Placement
+
+When a pipeline uses a refinement/editing pass (a second LLM call that reviews and improves the initial output), the editor model defaults to starting its response with meta-commentary about what it changed: "I noticed the price was missing, so I added it..." This pushes the actual content — the TLDR, the recommendations — below the fold, which creates a poor UX.
+
+**Fix:** Add an explicit instruction to the refinement prompt:
+
+```
+IMPORTANT: If you include any editor notes about what was changed, updated, or verified,
+place them at the BOTTOM of the output after the Sources section (e.g., under a "---"
+divider with a heading like "Editor Notes"). NEVER put change notes, commentary, or
+preamble before the content. The first thing in your response must be the content
+itself, starting with the TLDR / top-line summary.
+```
+
+**Why it needs to be explicit:** Without this instruction the model's default is to "show its work" by leading with a reasoning preamble. The model treats the refinement task as a review task, not a pass-through task, and naturally opens with observations before restating the guide.
+
+**Scope:** Applies to any pipeline where a second LLM call edits, expands, or annotates the output of a first call and the result is shown directly to a user. Examples: buying-guide refinement pass, foodie second-pass review, any "improve this draft" agent step.
+
+Source: shopper `docker/bridge-server.js` commit `93ab08b` (2026-06-14) — users saw the editor's internal change notes before the TLDR on every shopper guide that triggered the refinement pass.
+
+## Webhook Queue: Array-Based Queue Over Promise Chains
+
+When a server handler receives bursty events (webhooks, sensor streams, message queues) and must process them sequentially with I/O work (DB writes, API calls), avoid the "growing promise chain" anti-pattern:
+
+```js
+// ANTI-PATTERN: unbounded heap growth
+let queue = Promise.resolve();
+queue = queue.then(async () => { /* process event */ });
+```
+
+Under sustained high-volume traffic, each `.then()` link retains closure references to the event payload, request ID, and intermediate state — the chain grows indefinitely, causing slow heap exhaustion over hours to days.
+
+**Use an explicit array-based queue with a single-instance processor:**
+
+```js
+const queue = [];         // functions, not promises — lightweight
+let isProcessing = false;
+
+async function processQueue() {
+  if (isProcessing) return;    // prevent re-entrancy
+  isProcessing = true;
+  while (queue.length > 0) {
+    const task = queue.shift(); // shift() lets GC reclaim immediately
+    try { await task(); } catch (e) { console.error('queue task failed', e); }
+    // error in one task does NOT stop remaining tasks
+  }
+  isProcessing = false;
+}
+
+// Enqueue from the request handler (fire-and-forget):
+queue.push(async () => { /* process webhook body */ });
+processQueue();  // idempotent: no-op if already draining
+```
+
+**Key properties:**
+- Tasks are stored as functions (cheap), not pending promises (retain scope until GC)
+- `shift()` lets the GC reclaim each completed task immediately
+- `isProcessing` flag prevents concurrent drain starts — at most one drain loop active
+- Per-task try/catch: one failure doesn't break the rest of the queue
+
+**Also guard nullable items in event payloads** before property access — external services sometimes send null entries in array fields:
+
+```js
+for (const sample of samples) {
+  if (!sample || typeof sample !== 'object') continue; // null guard
+  if (sample.heartRate) { /* safe to access */ }
+}
+```
+
+Source: health-hub `src/app/api/garmin/webhook/route.ts` commit `d5fda69` (2026-06-15) — Garmin webhook handler caused heap exhaustion on sustained sensor traffic; the promise-chain anti-pattern was the root cause.
+
+**Refinement for large payloads: Queue IDs, not bodies.** When webhook payloads are large (batch activity dumps, sensor summaries), even the array-based queue can OOM because function closures still capture the full payload. Pattern: persist the raw event to the DB first, queue only the returned ID, then fetch from DB one-by-one during background drain:
+
+```js
+// Phase 1 — request handler: sync DB write, return IDs to caller
+const [eventId] = await storeRawEvent(payload);  // returns array of IDs
+res.json({ stored: 1 });
+
+// Enqueue only the ID (not the body):
+queue.push(eventId);
+processQueue();
+
+// Phase 2 — drain loop re-fetches from DB per event:
+async function processQueue() {
+  if (isProcessing) return;
+  isProcessing = true;
+  try {
+    while (queue.length > 0) {
+      const id = queue.shift();
+      const event = await db.webhookEvent.findUnique({ where: { id } });
+      if (!event || event.processed) continue;
+      try { await handleEvent(event); }
+      catch (e) { console.error('webhook event failed', id, e); }
+      await db.webhookEvent.update({ where: { id }, data: { processed: true } });
+    }
+  } finally {
+    isProcessing = false;   // always reset — even if an error escapes the loop
+  }
+}
+```
+
+**Why `try...finally` on the while loop:** Per-task try/catch handles expected errors, but an unhandled rejection escaping the loop leaves `isProcessing = true` permanently, blocking all future processing. The `finally` guarantees reset regardless of how the loop exits.
+
+Source: health-hub commit `40355f3` (2026-06-16) — Garmin activity batch payloads (60+ activities) held in queue closures caused OOM; switching to ID-based queue + DB-refetch eliminated the memory spike.
+
+## Multi-Phase AI Research Pipeline with Disqualification Gates
+
+When building an AI agent that researches and recommends (restaurants, vendors, candidates, etc.), structure the bridge prompt as sequential phases that narrow candidates and deepen verification — rather than one long monolithic research pass.
+
+**Phase 1 — Initial Shortlist:** Broad search across sources. Output: ranked list of N candidates.
+
+**Phase 2 — Deep Review (highest value):** For each shortlisted candidate, extract **verbatim quotes** (2-4 per source: Google Maps, Yelp, Reddit, editorial). Do NOT paraphrase — exact quotes are the trust signal. Apply explicit **Disqualification Triggers**:
+- Declining quality trend (reviews mentioning "used to be good")
+- Hygiene or service red flags in recent reviews
+- Rating trend reversal in last 6 months
+- Hard criteria mismatch (permanently closed, no matching menu items, out of price range)
+
+Output two sections: **What people are saying** (quoted snippets with attribution) and **Disqualified** (removed candidates with reason). Transparency in rejection demonstrates the agent applied real judgment — it is UX-critical, not optional.
+
+**Phase 3 — Specialty Verification:** For each surviving candidate, answer the specific expertise question (signature dishes, pricing, key differentiators) by consulting menus, official sites, or authoritative sources.
+
+**Implementation notes:**
+- Increase bridge/LLM timeout for each additional phase — each substantive phase adds 3-5 minutes; set timeout to `(N_phases × 5 min) + buffer`
+- Verbatim quote extraction is non-negotiable: paraphrasing erodes trust; exact quotes build it
+- Disqualification criteria must be **explicit and checkable**, not vague sentiment
+- Disqualification is UX-critical: it shows verification was real, not just a shortlist
+
+**When to apply:** Any structured research task with candidate evaluation: restaurants, vendors, purchasing decisions, service providers. Not needed for simple single-answer lookups.
+
+Source: foodie `docker/bridge-server.js` commits `0d7064c` (deep review + verbatim extraction + disqualification gates) and `1aac025` (signature dishes phase) — 2026-06-14.
+
+## `for…of` Loop: Don't Assign to `const` Loop Variable (Crash Loop Gotcha)
+
+Trying to reassign a `for…of` loop variable declared with `const` (or from destructuring with `const`) throws `TypeError: Assignment to constant variable` and crashes the loop — turning the crash into a crash loop if PM2 auto-restarts:
+
+```javascript
+// WRONG — crashes every iteration
+for (const evt of db.prepare('SELECT * FROM events').iterate()) {
+  process(evt);
+  evt = null; // TypeError: Assignment to constant variable
+}
+```
+
+**Fix:** Use `let`. Also: nulling a loop variable to "help GC" is cargo-cult code — modern JS releases the reference when the block exits. Drop the null assignment.
+
+```javascript
+// CORRECT
+for (const evt of db.prepare('SELECT * FROM events').iterate()) {
+  process(evt);
+}
+```
+
+**Destructured variables from function returns are also `const` by default:**
+
+```javascript
+// WRONG — lastId is const, can't be updated in a loop
+const { summary, lastId, count } = buildSummaryFromIterator(sinceId, MAX);
+// … later trying to re-use lastId fails at assignment
+```
+
+Use `let` for any variable you intend to update after the initial binding.
+
+**Why:** This caused an activity-tracker crash loop (`e1dd9fc`, 2026-06-15): `buildSummaryFromIterator` destructured with `const`, and loop body tried `evt = null` to release memory. Every summarizer invocation crashed before advancing `lastSummarizeTime`, causing PM2 to restart and re-attempt indefinitely.
+
+**Same applies to function-scope `const` null-for-GC patterns.** After a function body finishes, "help GC" null assignments on `const`-declared accumulators throw the same error:
+```javascript
+// WRONG — cargo-cult GC hint on const variables crashes the function
+const appDurations = {};
+const fileCounts   = {};
+// ... populate them ...
+appDurations = null; // TypeError: Assignment to constant variable
+fileCounts   = null;
+```
+**Fix:** Remove the null assignments entirely. Modern JS GC reclaims function-scope variables when the call frame exits. Source: activity-tracker commit `1359a8c` (2026-06-17).
+
+Source: activity-tracker `e1dd9fc` (2026-06-15).
+
+### Slug Guard: Always Return `[]` on Empty Derived Slug (2026-06-16)
+
+When converting a string to a slug for use as a URL path segment, guard against returning an empty string. A slug-generation function that strips all non-alphanumeric characters from an empty or special-character-only input (e.g., `""`, `"!!!"`, `"   "`) produces `""` — which, if not caught, gets used as a URL path segment and probes a root endpoint (e.g., `https://job-boards.greenhouse.io/`). Root ATS endpoints return HTTP 200, causing a false-positive "board found" match.
+
+```javascript
+// WRONG — empty/whitespace input returns [''] which probes root URLs
+function slugify(name) {
+  const clean = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim();
+  return [clean.replace(/\s+/g, '-')]; // returns [''] if clean is ''
+}
+
+// CORRECT — guard immediately after cleaning
+function slugify(name) {
+  const clean = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim();
+  if (!clean) return []; // never use a blank slug as a URL path segment
+  return [clean.replace(/\s+/g, '-')];
+}
+```
+
+This applies to any pattern where a derived identifier is used to construct a URL (ATS slugs, API org names, subdomain components). An empty slug probing root URLs causes false positives that waste probes and may return wrong results.
+
+Source: job-scraper `09f9018` (2026-06-16).
+
+### Shell Script Network Calls: Always Set Timeouts on `curl` and `ssh` (2026-06-16)
+
+Unattended shell scripts (cron jobs, PM2 start scripts, push-metrics workers) that call `curl` or `ssh` without timeouts will hang indefinitely if the remote host is slow or unreachable. This stalls the PM2 process, blocks the flock, and causes the next cron tick to queue behind it.
+
+**curl:** always pass `--max-time <seconds>` (total) and `--connect-timeout <seconds>` (TCP handshake only):
+
+```bash
+curl --max-time 10 --connect-timeout 5 -s "https://api.example.com/data"
+```
+
+**ssh:** always pass `ConnectTimeout` and `ServerAliveInterval` (detect dead connections mid-transfer):
+
+```bash
+ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 user@host "command"
+```
+
+Without these, a single hung SSH or curl stalls the whole PM2 process indefinitely — no alert fires, and the cron is silently blocked until the process is killed manually.
+
+Source: pezantTools `3d26bae` (2026-06-16) — dashboard-push was hanging on SSH and curl calls to the VM.
+
+## Client-Side Storage Schema Validation
+
+### `localStorage` / `sessionStorage`: Validate Schema on Load
+
+`JSON.parse()` succeeds on structurally-valid JSON that violates the current app schema — an older object missing required fields, a manually-edited value, or a truncated write. Reading undefined properties on the result throws silently downstream or crashes components.
+
+**Pattern:** Always normalize parsed client-side storage data back to the known-good schema:
+
+```ts
+function normalizeState(raw: unknown): AppState {
+  const defaults = getDefaultState();
+  if (!raw || typeof raw !== 'object') return defaults;
+  const parsed = raw as Partial<AppState>;
+  return {
+    phase: parsed.phase ?? defaults.phase,
+    items: Array.isArray(parsed.items) ? parsed.items : defaults.items,
+    // ...all required fields with explicit defaults
+  };
+}
+
+function loadState(): AppState {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? normalizeState(JSON.parse(stored)) : getDefaultState();
+  } catch {
+    return getDefaultState();
+  }
+}
+```
+
+**Why `try/catch` alone is not enough:** `JSON.parse` throws only on invalid JSON syntax. A well-formed but schema-mismatched object (e.g. `{phase: "done"}` when the current schema requires `{phase: "done", categories: [...]}`) parses without error and passes silently until a component reads `state.categories.length` and crashes with "Cannot read properties of undefined".
+
+Source: valueSortify PR #141 (2026-06-21) — stored session from an older schema was missing category arrays; `useLocalStorage` returned the parse result verbatim and crashed on load.

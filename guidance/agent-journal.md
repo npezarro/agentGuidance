@@ -51,6 +51,23 @@ Write entries that contain a delta: a state change, a new fact, or a decision. "
 ~/repos/privateContext/journal-post.sh "discovery" "discord-bot personas.js has an unused 'data' persona defined but no matching channel — can be removed"
 ```
 
+## Critical Gotcha: `journal-post.sh` Takes Exactly Two Arguments
+
+The script signature is `journal-post.sh "<category>" "<entry text>"` — exactly two positional arguments. Passing three arguments silently corrupts both the category and the body:
+
+```bash
+# WRONG — three args: category gets validated as "trading-agent" (invalid → defaults to "observation"),
+# body becomes "discovery", and the actual summary (arg 3) is silently dropped
+"$JOURNAL_SCRIPT" "trading-agent" "discovery" "Trading run summary..."
+
+# CORRECT — two args: category first, full body second
+"$JOURNAL_SCRIPT" "discovery" "Trading run summary..."
+```
+
+**Why:** `journal-post.sh` validates arg 1 against `VALID_CATEGORIES`. An invalid category silently defaults to `"observation"`, arg 2 becomes the entire body, and arg 3 is ignored. No error is emitted (`stderr 2>/dev/null`), so the corrupt entry appears normal in session context. This caused trading-agent to emit 10+ blank journal entries (`"observation\ndiscovery"`) over several weeks before the bug was traced to the call site (`trading-agent cfccf16`, 2026-06-01).
+
+**How to verify:** If your script always emits journal entries with body `"discovery"` or another category name as the text, count the arguments being passed.
+
 ## When to Journal
 
 - Cross-cutting observations that affect other projects or future work

@@ -5,6 +5,8 @@ These are the most-violated rules across the agent system. They are injected at 
 ## 1. Multi-Destination Learning Capture
 When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
 
+**Mandatory trigger events (call propagate-learning.sh even if no explicit correction occurred):** any error you had to work around, any assumption that proved wrong, any PR that needed rework, any service restart or config change. If you completed a fix-checker or autonomousDev run, run propagate-learning.sh once at the end regardless — the script is idempotent and the cost of a redundant call is zero.
+
 ## 2. Guidance Updates Go to Repo Files, Not Just Memory
 "Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
 
@@ -12,6 +14,8 @@ When you learn something new or receive a correction, save it to ALL relevant de
 Never assert user actions (e.g., "you applied for X") without checking the actual source (Gmail, Drive, git). Prep materials don't mean the action was taken.
 
 **Autonomous sessions:** Before claiming a bug is fixed, a test passes, a service is responding, or a check succeeded — run the verification yourself and show the output. A fix applied ≠ a fix confirmed. "The error no longer appears in the code" ≠ "the error no longer occurs at runtime." Every system-state claim requires observed evidence, not logical inference from the change you made.
+
+**Email evidence requires full threads, not snippets.** Search-result snippets truncate threads (a 5-message preview can hide later messages that reverse the conclusion) and forwarded mail misattributes ownership. Before classifying an email as the user's action or obligation: (1) fetch the full thread, (2) on forwarded content, check who the original To/From is (a forwarded interview invite may belong to the forwarder, not the user), (3) check the last message's sender and date to see whose move it is. Violation example (2026-06-09): a job-search plan told the user to send a list a contact had already moved past (the full thread showed the contact's later, more specific ask was the real open item) and assigned the user a friend's interview case study from forwarded mail.
 
 ## 4. Gather Context Before Diving In
 Before starting any task in a documented domain, read your own context: relevant memory files, the repo's CLAUDE.md, guidance files for the domain, and wiki pages. The answer is often already documented. Skipping this step is the #1 cause of multi-hour debugging loops that end with applying a fix that was already in memory. For creation tasks (docs, features, integrations), it prevents violations of existing rules (formatting, auth patterns, deploy procedures) that the agent would have seen if it checked first. This applies doubly when the domain has known complexity (auth, deployment, cross-repo flows).

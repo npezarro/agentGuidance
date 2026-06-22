@@ -110,6 +110,24 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 
 Tests set `DATA_DIR` to a `tmp` directory and clean up after each run.
 
+#### Vitest: dummy env vars for import-time DB checks
+
+When a module runs a DB initialization check at **import time** (not call time), vitest fails to import it unless the env var is set — even if tests never open a real connection. Set a dummy value in `vitest.config.ts`:
+
+```typescript
+export default defineConfig({
+  test: {
+    env: {
+      // Dummy URL — db.ts throws at import time if DATABASE_URL is unset.
+      // Tests only exercise pure functions and never open a connection.
+      DATABASE_URL: "postgresql://test:test@localhost:5432/test",
+    },
+  },
+});
+```
+
+**Why it matters:** Without this, CI stays red indefinitely even though the test logic is correct — the failure is at the import layer, not test execution. finance-tracker CI was red for 2+ weeks (May 27–Jun 10 2026) for exactly this reason.
+
 ### Factory Pattern for Dependency Injection
 
 For servers with external dependencies (GitHub API, webhooks), export a factory:
@@ -329,6 +347,7 @@ These invariants recur in every full-stack project:
 3. **Serialization roundtrip:** Data written to localStorage/database must survive JSON.parse(JSON.stringify(data)) without losing fields.
 4. **Auth-gated endpoints:** Every endpoint behind `requireAuth` must return 401 for unauthenticated requests, not 500.
 5. **Unit/format consistency:** If prices are stored as strings (`"2.99"`) but displayed as numbers (`2.99`), test the parseFloat boundary.
+6. **LocalStorage hydration schema tolerance:** Any hook or util that reads state from localStorage must normalize/validate the parsed result — `JSON.parse` succeeds on structurally invalid values (older schema missing required fields, manual edits, truncated writes, non-object values like `null`). A try/catch only guards parse *throws*, not malformed-but-valid JSON that crashes later on `.length` or `.filter` access. Always normalize after parse: guarantee required fields exist and have correct types, fall back to defaults otherwise. Test with partial/stale schemas from a prior app version, not just the current structure. Source: valueSortify `9ce7120` (2026-06-17).
 
 ## Zod Validation in API Routes
 
@@ -373,6 +392,28 @@ browser-cli console                       # check for errors
 
 **Prefer this over Playwright/headless** for testing on the user's machine — it runs in the real browser with real cookies/session, bypasses CAPTCHA, and tests exactly what the user sees.
 
+## Don't Grep Test Output to Detect Pass/Fail
+
+Parsing test runner output with `grep` to determine pass/fail is fragile. A test suite that passes but has a test _named_ "handles errors" or prints "0 failed" will match the wrong pattern and flip your result.
+
+```bash
+# WRONG — a passing test named "handles errors" matches the grep and RESULT=FAIL
+if npm test 2>&1 | grep -qi "error\|fail"; then
+  RESULT="FAIL"
+fi
+
+# RIGHT — use the actual exit code; output is only for human-readable detail
+TEST_EXIT=0
+TEST_OUTPUT=$(npm test 2>&1) || TEST_EXIT=$?
+if [ "$TEST_EXIT" -ne 0 ]; then
+  RESULT="FAIL"
+fi
+```
+
+**Why:** autonomousDev-private's `verify.sh` originally grepped test output for "FAIL" to detect failures. A refactor added error-handling tests with names containing "error", causing every subsequent verification run to false-positive as a build failure regardless of actual test results. Fixed in f6e304e (2026-06-09) to use the real exit code via `npm test 2>&1 || TEST_EXIT=$?`.
+
+**Exception:** You can still grep output for metadata extraction (e.g., `grep -oP '\d+ passed'` to surface a human-friendly count in a log line), but never use output grep as the pass/fail gate.
+
 ## CI Workflow Gotchas
 
 Two patterns have caused repeated CI failures across 5+ repos (nll-hunter, page-reader, pm-interview-practice, phone-agent, browser-agent, markdownMakerBookmarklet):
@@ -398,6 +439,64 @@ run: npx jest
 GitHub Actions `cache: npm` with `npm ci` requires `package-lock.json` in the repo. If it's in `.gitignore`, the CI cache step fails and `npm ci` refuses to run (it requires a lockfile).
 
 **Fix:** Remove `package-lock.json` from `.gitignore` and commit it. This also ensures deterministic installs across environments.
+
+### Vitest Fails When Any Imported Module Throws at Import Time
+
+If a module (e.g., `db.ts`, `prisma.ts`) runs `new PrismaClient()` or reads a required env var **at module load time**, any test file that imports it will crash the entire vitest runner before any test executes. CI shows a cryptic initialization error rather than a test failure, and the repo CI can stay red for weeks with no obvious cause.
+
+**Example:** `card-automapper.test.ts` imports `db.ts`; `db.ts` calls `new PrismaClient()` at the top level; Prisma throws when `DATABASE_URL` is unset. finance-tracker CI was broken May 27 to Jun 10 for this reason.
+
+**Fix:** Set a dummy value in `vitest.config.ts`:
+```typescript
+// vitest.config.ts
+export default defineConfig({
+  test: {
+    env: {
+      DATABASE_URL: 'file:./test.db',  // keeps Prisma happy at import time
+    },
+  },
+});
+```
+
+Or in a `setupFiles` entry:
+```typescript
+process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'file:./test.db';
+```
+
+The error stack shows `PrismaClientInitializationError` (or similar) before the first `describe()`, so it reads as a build or config problem rather than a missing env var.
+
+## Accessibility: Focus Management After Modal Close
+
+When a modal, dialog, or lightbox closes (Escape, close button, backdrop click), focus must return to the element that opened it. Leaving focus on `document.body` is a WCAG 2.4.3 (Focus Order) violation — keyboard users lose their place in the tab order after every modal interaction.
+
+**Implementation (React):** capture the trigger element's ref before opening; restore it in the close handler or `useEffect` cleanup.
+
+```tsx
+const triggerRef = useRef<HTMLElement | null>(null);
+
+const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
+  triggerRef.current = e.currentTarget;
+  setOpen(true);
+};
+
+// in useEffect cleanup or close handler:
+triggerRef.current?.focus();
+```
+
+**Write 3 tests — one per close path:** Escape key, close button, backdrop click. Each must assert `document.activeElement === trigger`:
+
+```tsx
+it('returns focus to trigger on Escape', async () => {
+  const user = userEvent.setup();
+  render(<MyModal />);
+  const trigger = screen.getByRole('button', { name: /open/i });
+  await user.click(trigger);
+  await user.keyboard('{Escape}');
+  expect(document.activeElement).toBe(trigger);
+});
+```
+
+**Why:** An image lightbox component left focus on `document.body` after every close, silently breaking keyboard traversal of all surrounding cards. The bug went unnoticed until explicit close-path tests were written — none of the visual tests caught it.
 
 ## What NOT to Build
 

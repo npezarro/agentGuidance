@@ -74,8 +74,10 @@ Each app needs:
 - **Matcher excludes auth paths**: If the middleware matcher excludes `api/auth` (common for auth-protected apps), add `/api/auth/signin/:path*` as a separate matcher entry so the cookie-setting code runs.
 - **NextAuth `basePath` must always be `"/api/auth"`, never `"/<app>/api/auth"`**: In Next.js standalone output (`output: 'standalone'`), the basePath is stripped from `req.url` before reaching server code. NextAuth always receives `/api/auth/...` regardless of the Next.js basePath. Setting `basePath: "/<app>/api/auth"` in `auth.ts` prevents NextAuth from matching action routes and silently breaks auth. Source: shopper debugging loop (2026-05-18, commit 832c47b).
 - **Middleware/proxy matcher must NOT include basePath prefix** (Next.js 16 standalone, re-verified 2026-06-05): The basePath is stripped from `req.nextUrl.pathname` before middleware/proxy fires (same behavior as Route Handlers, just above). Both `config.matcher` and any `req.nextUrl.pathname.startsWith()` body check must use the UNPREFIXED path, e.g., `matcher: ["/api/auth/signin/:path*"]`. Verified against shopper (`src/middleware.ts`), humans (`src/proxy.ts`), and foodie (`src/proxy.ts`, fix commit f27c340) -- all Next.js 16.2.6, all unprefixed, all working. *Earlier revision of this note (2026-05-17) claimed Next.js 16 needed the prefix after a shopper debugging loop; that was a misattribution and broke foodie auth for ~2 weeks before this 2026-06-05 fix.*
+- **Local-dev vs. standalone middleware path divergence**: Standalone mode strips the Next.js basePath from `req.nextUrl.pathname` before middleware fires; local dev does NOT. This means `matcher: ["/api/auth/signin/:path*"]` works in standalone but misses signin requests in local dev (cookie is never set, auth loop). For cross-environment compatibility include both variants: `matcher: ["/api/auth/signin/:path*", "/<app>/api/auth/signin/:path*"]` and check both in the body (`pathname.startsWith("/api/auth/signin/") || pathname.startsWith("/<app>/api/auth/signin/")`). Source: humans commit `a879347` (2026-06-10).
 - **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
+- **`router.push()` (useRouter) also auto-prepends basePath**: Client-side `useRouter().push("/search")` behaves identically -- it becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in `router.push` paths either (e.g., `router.push("/shopper/search")` becomes `/shopper/shopper/search`, a 404). Source: shopper/foodie/travel-assistant SharedJobView fix 2026-06-15 -- same double-prefix crash as `redirect()` but on client-side navigation.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
 
 ### Apps using the proxy
@@ -287,15 +289,16 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **Standalone mode changes basePath behavior.** In `next dev`, Next.js strips the basePath from `req.url` before the route handler sees it. In standalone mode (`node server.js`), it does NOT strip it — `@auth/core` sees the full URL including the basePath prefix. So the NextAuth `basePath` must include the Next.js basePath:
+8. **⚠️ CORRECTED (2026-06-17): Standalone DOES strip basePath — do NOT use dynamic basePath in NextAuth config.** Item 8 previously stated the opposite and was wrong. Both `next dev` and `node server.js` (standalone) strip the Next.js `basePath` from `req.url` before Route Handlers see it. NextAuth always receives `/api/auth/...` regardless of the app's basePath. Correct config:
    ```typescript
-   // next dev: handler sees /api/auth/signin/google → basePath: "/api/auth"
-   // standalone: handler sees /finance/api/auth/signin/google → basePath: "/finance/api/auth"
+   // CORRECT — always unprefixed. Standalone strips /finance, dev strips /finance.
+   basePath: "/api/auth",
 
-   // Dynamic config that works in both modes:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,
+   // WRONG — will break auth in standalone. Gemini/AI agents frequently suggest this:
+   basePath: `${process.env.BASE_PATH || ""}/api/auth`,  // produces "/finance/api/auth"
+   // NextAuth can't match "/api/auth/providers" against "/finance/api/auth" → 404 or silent failure
    ```
-   **Why this trips people up:** The runeval fix (above) uses a hardcoded `"/api/auth"` because runeval's Apache proxy rewrites the URL. Apps without that rewrite need the dynamic basePath.
+   **Why this was confusing:** The runeval proxy does its own URL rewriting before reaching the Next.js server, which is why runeval's own config looks different. Apps behind a standard Apache `ProxyPass` (no URL rewrite) all behave identically: standalone strips basePath. Verified live 2026-06-17: shopper (`basePath: "/api/auth"`, 200 OK) and finance-tracker master (`basePath: "/api/auth"`, 400 from NextAuth's own validation) both confirm routing works correctly. The 400 on finance-tracker is an unrelated NextAuth config issue, not a basePath issue.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
@@ -314,6 +317,83 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    Also exclude static assets from the middleware matcher (`.*\\.png$|.*\\.svg$`) — auth middleware blocking images causes broken layouts.
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
+
+12. **Guard the NextAuth route handler with a VALID_ACTIONS allowlist to prevent UnknownAction crashes.** Bots and crawlers frequently probe `/api/auth/<random-slug>`, causing Auth.js v5 to throw `UnknownAction` (fills logs, can crash non-resilient setups). Only forward requests with known action slugs:
+   ```typescript
+   const VALID_ACTIONS = ["signin", "signout", "callback", "session", "csrf", "providers", "error"];
+
+   export const GET = async (req: NextRequest) => {
+     const action = req.nextUrl.pathname.split("/").pop();
+     if (req.method !== "GET" || !action || !VALID_ACTIONS.includes(action)) {
+       return new Response(null, { status: 200 });
+     }
+     try {
+       return await handlers.GET(req);
+     } catch (e) {
+       console.error("[auth] GET error:", e);
+       return new Response(null, { status: 500 });
+     }
+   };
+   // Mirror for POST handler with req.method !== "POST"
+   ```
+   Apply to both GET and POST handlers in `app/api/auth/[...nextauth]/route.ts`. Source: humans commit `314a5ca` (2026-06-08).
+
+13. **Add a stale-session-cookie guard in proxy.ts to prevent broken auth state.** If a user has a session cookie but the session has expired or been invalidated, the default behavior is to render the dashboard (cookie present) but fail all API calls (session missing). Fix: in `proxy.ts`, check `auth()` on page navigations when the session cookie is present, and redirect + clear the cookie if the session is invalid:
+   ```typescript
+   const SESSION_COOKIE = "__Secure-<appname>.session-token";
+
+   export async function proxy(req: NextRequest) {
+     // ... existing signin handler ...
+
+     // Stale-cookie guard: if a session cookie is present but session is
+     // invalid/expired, clear it so the user reaches sign-in, not a broken UI.
+     // Only check on page navigations (not API/asset paths).
+     if (
+       !req.nextUrl.pathname.startsWith("/api/") &&
+       req.cookies.has(SESSION_COOKIE)
+     ) {
+       const session = await auth();
+       if (!session?.user) {
+         const response = NextResponse.redirect(new URL("/", req.url));
+         response.cookies.delete(SESSION_COOKIE);
+         return response;
+       }
+     }
+     return NextResponse.next();
+   }
+
+   export const config = {
+     matcher: ["/api/auth/signin/:path*", "/dashboard/:path*", "/dashboard"],
+   };
+   ```
+   Extend the `matcher` to include all authenticated page paths (`/dashboard/:path*` etc.) so the guard runs on navigation. Source: employ commit `986b4e5` (2026-06-14).
+
+14. **Strip `NEXTAUTH_URL` to bare origin in auth.ts to prevent `UnknownAction` errors.** When `NEXTAUTH_URL` is set to a value that includes a path (e.g., `https://example.com/myapp`), Auth.js v5 may misparse the action segment from the URL and throw `UnknownAction`. Fix: in `auth.ts`, overwrite `NEXTAUTH_URL` with just the origin before `NextAuth()` initializes, then set `AUTH_URL` explicitly:
+   ```typescript
+   if (process.env.NEXTAUTH_URL) {
+     try {
+       const origin = new URL(process.env.NEXTAUTH_URL).origin;
+       process.env.NEXTAUTH_URL = origin;           // bare origin only
+       process.env.AUTH_URL = `${origin}/api/auth`; // explicit auth base
+     } catch { /* ignore invalid URL */ }
+   }
+   ```
+   The existing guidance (item 1 checklist: `AUTH_URL=https://example.com`) covers setting `AUTH_URL` to a bare origin, but NEXTAUTH_URL also needs to be stripped — leaving it with a path causes Auth.js to derive incorrect action slugs. Source: finance-tracker commit `4c4aeab` (2026-06-17).
+
+15. **Add `import 'dotenv/config'` to auth.ts and db.ts in Next.js standalone apps.** In some deployment contexts (standalone `node server.js`, Prisma adapter, or when modules are imported before Next.js's own env loading runs), `.env` variables may not be available when `auth.ts` or `db.ts` initialize. Explicitly importing dotenv at the top of both files guarantees env vars are present regardless of import order:
+   ```typescript
+   // auth.ts — first line
+   import "dotenv/config";
+   import NextAuth from "next-auth";
+   // ...
+   ```
+   ```typescript
+   // lib/db.ts — first line
+   import "dotenv/config";
+   import { PrismaClient } from "@/generated/prisma/client";
+   // ...
+   ```
+   Source: finance-tracker commit `4448d3b` (2026-06-17).
 
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
