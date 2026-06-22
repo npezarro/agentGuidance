@@ -839,6 +839,30 @@ while (true) {
 
 **Source:** activity-tracker commit `0a8e4a9` (2026-06-13) — OOM crash loop fixed by switching the summarizer from unbounded queries to ID-based iteration with 1000-row batches.
 
+### Resilient DB JSON Parsing — Wrap Every `JSON.parse()` in try/catch (2026-06-22)
+
+When reading rows that store serialized JSON (metadata columns, config blobs, event payloads), wrap every `JSON.parse()` call in a `try/catch`. A single corrupt or malformed row should log a warning and be skipped or return a safe default — it must NOT throw uncaught and return a 500 for the entire endpoint/query.
+
+```javascript
+// Bad — one bad row crashes the entire request
+const rows = await db.query('SELECT data FROM events');
+return rows.map(r => JSON.parse(r.data));
+
+// Good — corrupt row logged and skipped
+return rows.flatMap(r => {
+  try {
+    return [JSON.parse(r.data)];
+  } catch (e) {
+    console.error('Corrupt row skipped', { id: r.id, err: e.message });
+    return [];
+  }
+});
+```
+
+**Why:** Production databases accumulate corrupt rows via partial writes, schema migrations, manual edits, or serialization bugs. A single bad row should never take down a live endpoint. Apply this at the DB read layer, not at the caller — callers should not need to guard against parse exceptions from internal data retrieval functions.
+
+**Source:** health-hub API fix (2026-06-22) — one corrupt stored-JSON row was causing 500s on a live endpoint that otherwise had healthy data.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
