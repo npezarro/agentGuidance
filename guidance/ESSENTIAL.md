@@ -13,7 +13,12 @@ When you learn something new or receive a correction, save it to ALL relevant de
 ## 3. Verify Before Asserting
 Never assert user actions (e.g., "you applied for X") without checking the actual source (Gmail, Drive, git). Prep materials don't mean the action was taken.
 
-**Autonomous sessions:** Before claiming a bug is fixed, a test passes, a service is responding, or a check succeeded — run the verification yourself and show the output. A fix applied ≠ a fix confirmed. "The error no longer appears in the code" ≠ "the error no longer occurs at runtime." Every system-state claim requires observed evidence, not logical inference from the change you made.
+**Autonomous session verification gate — pass ALL THREE before any system-state claim:**
+1. Run the verification command (curl, pm2 status, npm test, jest) and capture raw output.
+2. Paste or log the actual output in the transcript — not your interpretation of it.
+3. Only then write "fixed", "working", "passing", or "online".
+
+"The error no longer appears in the code" does NOT pass step 1. "I applied the fix" does not pass it. If the verification tool is unavailable, state that explicitly — do not claim success.
 
 ## 4. Gather Context Before Diving In
 Before starting any task in a documented domain, read your own context: relevant memory files, the repo's CLAUDE.md, guidance files for the domain, and wiki pages. The answer is often already documented. Skipping this step is the #1 cause of multi-hour debugging loops that end with applying a fix that was already in memory. For creation tasks (docs, features, integrations), it prevents violations of existing rules (formatting, auth patterns, deploy procedures) that the agent would have seen if it checked first. This applies doubly when the domain has known complexity (auth, deployment, cross-repo flows).

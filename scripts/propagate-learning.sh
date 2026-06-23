@@ -23,7 +23,7 @@ MEMORY_BASE="$HOME/.claude/projects"
 
 # ── Parse arguments ──────────────────────────────────────────────────
 TYPE="" SUMMARY="" BODY="" REPO="" GUIDANCE_FILE="" CROSS_CUTTING=false
-MEMORY_NAME="" PRIVATE=false DRY_RUN=false
+MEMORY_NAME="" PRIVATE=false DRY_RUN=false NO_OP_OK=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,11 +36,16 @@ while [[ $# -gt 0 ]]; do
     --memory-name) MEMORY_NAME="$2"; shift 2 ;;
     --private)     PRIVATE=true; shift ;;
     --dry-run)     DRY_RUN=true; shift ;;
+    --no-op-ok)    NO_OP_OK=true; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
 if [ -z "$SUMMARY" ] || [ -z "$BODY" ]; then
+  if [ "$NO_OP_OK" = true ]; then
+    # Caller signals zero new patterns this session — satisfies mandatory Rule 1 trigger idempotently
+    exit 0
+  fi
   echo "Error: --summary and --body are required" >&2
   echo "Usage: propagate-learning.sh --type feedback --summary '...' --body '...'" >&2
   exit 1
