@@ -305,6 +305,23 @@ fi
 
 **Where this applies:** Any cron-triggered or PM2-managed process that does `git add`, `git commit`, or `git push` (trading-agent, learning-agent, fix-checker, token-tracker hooks, session-log sync).
 
+## Stale Branch Dedup Lists
+
+Automated agents that gate new work on a dedup list built from `git log` or `git branch -r` can block or act on stale data. If a branch's PR merged but the branch wasn't deleted, it still shows as open in `git branch -r`. The local git log window can also miss merges from before its lookback horizon.
+
+**Real-world impact:** autonomousDev runs #314 and #315 both found 2 already-merged branches listed as open in their dedup context. The `dedup.sh` script uses git log and branch listings — both showed the branches as active, but the PRs had already merged.
+
+**Pattern:** Before acting on any branch in a dedup-gated list, reconcile against actual PR state:
+
+```bash
+gh pr list --head <branch-name> --state all --json state --jq '.[0].state'
+# Returns "MERGED", "CLOSED", or "OPEN"
+```
+
+Any branch returning "MERGED" or "CLOSED" is safe to delete and exclude from the dedup gate.
+
+**Where this applies:** Any automated session (autonomousDev, fix-checker, learning-agent) that uses branch listings or git-log-based merge checks to decide whether to create PRs or skip work.
+
 ## Bash `set -u` with Optional Parameters
 
 When scripts use `set -u` (nounset), referencing an unset positional parameter like `$2` causes an immediate exit. This breaks scripts where positional args are optional.
