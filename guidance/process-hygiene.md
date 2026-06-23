@@ -1890,3 +1890,26 @@ With `_require`: crash becomes `ValueError: Scenario entity #3 is missing requir
 **When this applies:** Any parser that reads user-authored config/YAML where field absence is a user error (not a code bug). All required fields should be validated via context-aware helpers, not trusted to raise `KeyError` through raw indexing.
 
 Source: waymo-sim `scenarios/loader.py` (commit `a8c0791`, 2026-06-23) — ScenarioLoader._parse raised cryptic `KeyError` on any missing required key across entities, goals, roads, and waypoints; fixed with `_require()` + 6 regression tests in TestParseErrorHandling.
+
+## Autonomous Agent Repos: Gitignore Runtime State Files
+
+In repos where cron `claude -p` loops create agent branches (learnings-pass, fix-checker, etc.), any file that the RUNNER writes and the AGENT also touches via git will cause **branch-snowball drift**:
+
+1. Agent creates branch `claude/learnings-N` from `main`.
+2. Runner writes to a tracked runtime state file (dedup JSON, cron log, outcome JSONL).
+3. That file drifts on the branch.
+4. Next agent run branches off the drifted branch instead of `main` (learner reads `HEAD` which is still on the branch after a stale checkout).
+5. The snowball accumulates — 14+ commits pile up on a "learnings" branch that was supposed to stay small.
+
+**Fix:** Gitignore all runtime state written by the autonomous loop itself. Keep only config and intentional human-authored history.
+
+Files to gitignore in an autonomous agent repo:
+- Dedup/error-handler state JSON (`*.error-handler-state.json`, `reviewer-state.json`)
+- Cron and run logs (`logs/*.log`, `logs/run-*.log`, `fix-checker/logs/`)
+- Output data streams (`.outcomes.jsonl`, `claude-comparison.jsonl`)
+- Automated reports/scores generated each cycle (`supervisor/reports/`, `supervisor/scores/`)
+- Runtime lock files (`.running.lock`, `state.json`)
+
+**What to keep tracked:** `config.json` (real config), `logs/progress.md` or similar intentional session journals that agents deliberately commit.
+
+**Reference:** `autonomousDev-private/.gitignore` (commit `7119c88`, 2026-06-23). The comment in that file reads: "these drifting while tracked caused branch-snowball, see loop/subagent audit."
