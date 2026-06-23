@@ -75,6 +75,7 @@ Load on-demand based on the current task:
 - `guidance/ab-testing.md` -- claude-bakeoff A/B testing
 - `guidance/auth-basepath.md` -- authentication and base path patterns
 - `guidance/browser-page-reader.md` -- page-reader CLI for JS-heavy pages
+- `guidance/warehouse-analytics.md` -- Snowflake/warehouse pull → DuckDB analysis → publish; auth ladder + cost gate + publish gotchas
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/tampermonkey.md` -- TM script hosting and CAPTCHA bypass patterns
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
