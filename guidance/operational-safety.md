@@ -429,3 +429,7 @@ logger.info(f"Claude fix complete (cost: ${cost:.4f})")
 ```
 
 Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25).
+
+## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
+
+`ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.

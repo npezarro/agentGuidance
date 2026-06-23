@@ -376,3 +376,16 @@ Without silent refresh, **any automated job that runs daily against a ~24h-lived
 **Source:** health-hub commit `69aa711` (2026-06-07) — Garmin push route switched from 401-on-expiry to silent auto-refresh, fixing the automated daily push-to-watch cron.
 
 **Trade-off:** Simpler (no Apache redirect needed), but couples the callback URL to the env var. The three-part pattern is more robust for complex proxy setups.
+
+## Gating a secret/page to one Google identity: reuse the Apache OIDC gate (2026-06-23)
+
+Before reaching for Cloudflare Access / Zero Trust (which needs first-time onboarding: a team-domain choice + a payment method on file), check the Apache config. The VM already runs `mod_auth_openidc` gating admin surfaces:
+```apache
+<Location /tools>
+    AuthType openid-connect
+    Require user <owner-email>
+</Location>
+```
+Same pattern protects `/tm-scripts` and the auto-shorts admin. To gate a secret behind Google-login-restricted-to-one-email, serve it from a path UNDER `/tools` (e.g. a Node route `/tools/<name>` sourcing the value from env) — it's automatically OIDC-gated, single login, no new infra. Carve-outs use `AuthType None; Require all granted` (e.g. `/tools/downloads`, `/tools/health`, `/api/notify`).
+
+**M2M caveat:** headless pollers and shell hooks CANNOT be interactively OAuth-gated (they'd get an HTML login page instead of JSON). Keep those on a rotated bearer token (`Require all granted` at Apache, token-auth in the app) and gate only the human *retrieval* of the token.
