@@ -367,6 +367,18 @@ fi
 
 Source: employ `start.sh` commit `1d369cc` (2026-06-14) — start.sh was always triggering `npm run build` on the VM because it only checked `.next/standalone/server.js`; flat rsync had placed `server.js` at root.
 
+## Auto-Deploy Wrapper Bootstrap Problem
+
+When you add a `git pull --ff-only` at the top of a cron or automated script to enable self-updating, the **already-deployed copy** on the remote machine does not have that wrapper yet. Since the remote is pinned at the pre-wrapper commit, it cannot self-pull the wrapper and stays stuck indefinitely.
+
+**The trap:** "Fixes will auto-deploy after I push the wrapper" is only true for the NEXT invocation after the wrapper is manually bootstrapped. Until a human runs `git pull` on the remote, the script runs the old version on every cron tick regardless of what you push.
+
+**Arc-prize-2026 incident (2026-06-14 to 06-23):** PC2's overnight runner was pinned at `04f00fa` (an unstable PyTorch config). The auto-pull wrapper and the revert were committed after that pin — so PC2 had no mechanism to receive them. Every overnight run from Jun 14–23 (9 days, 0/60 results each) was wasted. A one-time manual `git pull` on PC2 on 2026-06-23 broke the loop.
+
+**Rule:** When pushing a self-update wrapper to an existing deployed script, immediately follow up with a manual deploy to all remote machines. Add it to your deploy checklist: "verify remote is now running the wrapper version before trusting auto-deploy."
+
+**Corollary:** never claim "future changes will auto-deploy" in handoff docs unless the remote has already received and is running the auto-pull wrapper.
+
 ## `npm install --production=false` in VM Build Scripts
 
 When a VM-side deploy script runs `npm install` inside a directory where `NODE_ENV=production` is set (common in PM2 ecosystem configs), npm skips `devDependencies`. Build tooling (`next`, `typescript`, `esbuild`, etc.) lives in devDeps and is absent after a production install — the subsequent `npm run build` fails.
