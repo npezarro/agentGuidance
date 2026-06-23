@@ -89,3 +89,4 @@ Load on-demand based on the current task:
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
 - `guidance/repo-creation.md` -- checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure
 - `guidance/public-app-isolation.md` -- siloed alt account pattern for public-facing apps with untrusted input
+- `guidance/when-to-fan-out.md` -- when to spawn subagents (Task fan-out / parallel bash / Workflow) vs stay single-agent; concurrency-safe 3-phase pattern
