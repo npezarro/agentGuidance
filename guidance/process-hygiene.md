@@ -1867,3 +1867,26 @@ function loadState(): AppState {
 **Why `try/catch` alone is not enough:** `JSON.parse` throws only on invalid JSON syntax. A well-formed but schema-mismatched object (e.g. `{phase: "done"}` when the current schema requires `{phase: "done", categories: [...]}`) parses without error and passes silently until a component reads `state.categories.length` and crashes with "Cannot read properties of undefined".
 
 Source: valueSortify PR #141 (2026-06-21) — stored session from an older schema was missing category arrays; `useLocalStorage` returned the parse result verbatim and crashed on load.
+
+## Required-Field Validation in User-Authored Config/YAML Parsers
+
+When parsing user-authored YAML, JSON, or dict-based config files, never access required keys via raw dict indexing (`d["type"]` → cryptic `KeyError: 'type'`). Use a helper that raises a descriptive error naming both the missing field and its location in the document.
+
+```python
+def _require(d: dict, key: str, context: str):
+    if key not in d:
+        raise ValueError(f"{context} is missing required '{key}' field.")
+    return d[key]
+
+# Usage:
+entity_type = _require(entity, "type", f"Scenario entity #{i+1}")
+entity_id   = _require(entity, "id",   f"Scenario entity #{i+1}")
+```
+
+Without this: a YAML file missing `type` crashes with `KeyError: 'type'` that names neither the entity index nor the document location. The user must trace the stack through the parser.
+
+With `_require`: crash becomes `ValueError: Scenario entity #3 is missing required 'type' field.` — actionable, testable, no internal trace needed.
+
+**When this applies:** Any parser that reads user-authored config/YAML where field absence is a user error (not a code bug). All required fields should be validated via context-aware helpers, not trusted to raise `KeyError` through raw indexing.
+
+Source: waymo-sim `scenarios/loader.py` (commit `a8c0791`, 2026-06-23) — ScenarioLoader._parse raised cryptic `KeyError` on any missing required key across entities, goals, roads, and waypoints; fixed with `_require()` + 6 regression tests in TestParseErrorHandling.
