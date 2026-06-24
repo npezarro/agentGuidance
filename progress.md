@@ -11,6 +11,8 @@
 
 ## Log
 
+| 2026-06-23 | feat | `dbeea10` post-to-discord hook: extract `message.model` from transcript → `/ingest` payload metadata, so #cli-interactions becomes a model-tagged outcome feed (enables forward model A/B). Pairs with a Discord bot renderer change. |
+
 | Date | Type | Description |
 |------|------|-------------|
 | 2026-06-10 | feat | Section 7 implementation (this repo's share): check-repo-writer.sh PostToolUse hook (writer/canonical-copy declarations; split-brain caught at edit time), load-repo-context.sh SessionStart hook (per-repo context packs), ESSENTIAL.md 16→10 with graduation policy, agent-journal signal-gate rules, code-review.md gains the graduated CLAUDE.md-update rule. settings.json hooks all local now (raw-URL fetches retired). Closeout: privateContext/deliverables/closeouts/2026-06-10-section7-implementation.md |
