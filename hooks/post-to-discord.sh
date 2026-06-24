@@ -237,10 +237,24 @@ def format_tool(tc):
 
 activity_lines = [format_tool(tc) for tc in tool_calls]
 
+# Model that produced this turn's response (last non-empty model among the
+# assistant turns that answered the latest prompt). Enables model-tagged
+# outcome analysis from the #cli-interactions feed, which survives local
+# transcript rotation.
+model = ""
+if last_prompt_idx >= 0:
+    for msg in messages[last_prompt_idx + 1:]:
+        if msg.get('type') != 'assistant':
+            continue
+        m = msg.get('message', {}).get('model')
+        if m:
+            model = m
+
 output = {
     'user_prompt': user_prompt,
     'activity': '\n'.join(activity_lines),
     'tool_count': len(tool_calls),
+    'model': model,
 }
 print(json.dumps(output))
 PYEOF
@@ -252,10 +266,12 @@ fi
 USER_PROMPT=""
 ACTIVITY=""
 TOOL_COUNT=0
+MODEL=""
 if [ -n "$TURN_DATA" ]; then
   USER_PROMPT=$(echo "$TURN_DATA" | jq -r '.user_prompt // empty')
   ACTIVITY=$(echo "$TURN_DATA" | jq -r '.activity // empty')
   TOOL_COUNT=$(echo "$TURN_DATA" | jq -r '.tool_count // 0')
+  MODEL=$(echo "$TURN_DATA" | jq -r '.model // empty')
 fi
 
 # Redact sensitive info
@@ -280,6 +296,7 @@ INGEST_PAYLOAD=$(_EB_PROMPT="$USER_PROMPT" \
   _EB_PROJECT="$PROJECT" \
   _EB_SESSION="$SESSION_ID" \
   _EB_CWD="$CWD" \
+  _EB_MODEL="$MODEL" \
   python3 -c "
 import json, os
 payload = {
@@ -294,7 +311,8 @@ payload = {
     'metadata': {
         'project': os.environ.get('_EB_PROJECT', ''),
         'session_id': os.environ.get('_EB_SESSION', ''),
-        'cwd': os.environ.get('_EB_CWD', '')
+        'cwd': os.environ.get('_EB_CWD', ''),
+        'model': os.environ.get('_EB_MODEL', '')
     }
 }
 print(json.dumps(payload))
