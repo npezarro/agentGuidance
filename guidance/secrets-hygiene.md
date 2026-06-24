@@ -145,6 +145,21 @@ When the automated hook isn't installed, verify before committing to any public 
 4. No private repo names or usernames in test fixtures, docs, or comments (check against the private reference database)
 5. `.gitignore` covers `.env*` files
 6. Config files use environment variables, not hardcoded values
+7. `git remote -v` — no credentials embedded in remote URLs (see "Credentials in Git Remote URLs" below)
+
+## Credentials in Git Remote URLs
+
+Using an HTTPS remote with an embedded PAT (`https://<token>@github.com/user/repo.git`) stores the token in `.git/config` in plaintext — visible in `git remote -v`, shell history, and any process that reads the config.
+
+**Correct approaches:**
+- Use SSH remotes: `git remote set-url origin git@github.com:user/repo.git`
+- Or use the git credential store / helper — no token in the URL
+
+**If already set:** Rotate the PAT immediately (it was already exposed), then re-set the remote: `git remote set-url origin git@github.com:user/repo.git`
+
+**How it happens:** `git clone https://<token>@github.com/...` bakes the token into `.git/config`; CI automation that sets remotes directly does the same. Check all remotes with `git remote -v` before considering a repo "clean."
+
+Root cause of the documented incident (2026-06-23): a pezant-tools VM git remote was set as `https://<token>@github.com/...` — the PAT was live and visible until rotated.
 
 ## Architecture Documentation
 
