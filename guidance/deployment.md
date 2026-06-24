@@ -167,6 +167,20 @@ RedirectMatch ^/app$ /app/
 This pattern affected ClaudeNet, Epic Auth, and other services after adding an OIDC-protected project index page (2026-04-28). The `/manchu` route already had this redirect, which is why it worked while others broke.
 
 **When adding a new ProxyPass directive**, always check whether it uses trailing slashes and add the `RedirectMatch` if so.
+
+## Apache Lowercase Rule Breaks Vite SPA Asset Hashes
+
+The production VM's Apache vhost has a global rule that 301-redirects any URL with uppercase letters to its lowercase form (`RewriteMap lc int:tolower` / `RewriteRule ^(.*)$ ${lc:$1} [R=301,L]`). Vite builds emit mixed-case content hashes (e.g., `index-BqcsSXEO.js`); every JS/CSS asset 301s to a lowercase 404, so the page HTML returns 200 but the app never boots. Next.js `/_next/static/` hashes happen to be lowercase, so Next.js apps deployed on the same server are unaffected — only new Vite-based SPAs hit this.
+
+**Symptom:** New SPA "doesn't load / loads forever" after deploy. Page HTML returns 200 but every JS/CSS asset 301s → 404.
+
+**Fix:** Add an exemption for the new app's subpath before the lowercase rule in the Apache vhost:
+```apache
+RewriteCond %{REQUEST_URI} !^/my-spa-path
+```
+
+**Cloudflare cache gotcha:** The 301 response is cached at the CDN edge (~4h, `max-age=14400`). The CDN API token lacks Cache-Purge scope, so after adding the exemption you must either wait ~4h or force a new asset hash by triggering a rebuild with a minor change. Diagnosed 2026-06-23.
+
 ## .env Protection During rsync Deploys
 
 When using `rsync --delete` to deploy, **always `--exclude '.env'`**. The `--delete` flag removes server-side files not in the source, which will overwrite the production `.env` (with its production-specific values like database ports, API endpoints) with local dev config.
