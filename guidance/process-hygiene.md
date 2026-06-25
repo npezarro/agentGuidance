@@ -657,6 +657,33 @@ if not API_BASE:
 
 Source: auto-shorts-worker transient DNS failures (2026-05).
 
+### Retrying Transient ConnectionError / Timeout on External APIs
+
+WSL2 suffers intermittent DNS blips (especially during cron windows at night), causing `requests.exceptions.ConnectionError` (`NameResolutionError`) on calls to external APIs. One blip drops the entire poll cycle and generates noisy ERROR logs.
+
+**Correct pattern** — wrap the call in a manual retry loop:
+
+```python
+def _api_get(url, params=None, _retries=2):
+    for attempt in range(_retries + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < _retries:
+                logger.debug(f"Request failed (attempt {attempt+1}/{_retries+1}), retrying in 5s: {e}")
+                time.sleep(5)
+            else:
+                raise
+```
+
+**Why not `urllib3.Retry`?** The `retry_on_connection_error=True` parameter crashes the process on import — see the subsection above. The manual loop is the safe cross-platform approach.
+
+**When to apply:** any Python service polling an external API from WSL2 or a cron context. Wrap the raw `requests.get()` in a helper like `_api_get()` and route all calls through it.
+
+Source: trading-agent `edgar.py` commit `ff111bb` (WSL2 midnight DNS blips dropping SEC EDGAR insider-trade poll cycles).
+
 ### Python `logging.basicConfig()` Does Not Override Existing Handlers
 
 `logging.basicConfig()` is a no-op if the root logger already has handlers (e.g., from an imported module that configured logging). The named logger you create with `getLogger(name)` may then inherit a different level than intended.
