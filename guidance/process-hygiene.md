@@ -1913,3 +1913,70 @@ Files to gitignore in an autonomous agent repo:
 **What to keep tracked:** `config.json` (real config), `logs/progress.md` or similar intentional session journals that agents deliberately commit.
 
 **Reference:** `autonomousDev-private/.gitignore` (commit `7119c88`, 2026-06-23). The comment in that file reads: "these drifting while tracked caused branch-snowball, see loop/subagent audit."
+
+## Bare `JSON.parse` Inside `.map()` Over DB Rows Is a Crash Vector
+
+Never call `JSON.parse` directly inside `.map()` on a list of database rows. One corrupt or null stored value throws an uncaught exception, 500s the **entire endpoint**, and drops every other row.
+
+```ts
+// WRONG — one bad row crashes the full response
+const data = rows.map(r => ({
+  id: r.id,
+  raw: JSON.parse(r.storedJson),   // ← throws if storedJson is null/corrupt
+}));
+
+// RIGHT — fail gracefully per-row
+const data = rows.map(r => {
+  try {
+    return { id: r.id, raw: JSON.parse(r.storedJson) };
+  } catch {
+    return { id: r.id, raw: null };  // or omit the row: return null
+  }
+}).filter(Boolean);
+```
+
+**Why:** health-hub PR #66 (2026-06-24) discovered that a single corrupt DB row was causing 500s on the three consumer GET routes (`/api/activities`, `/api/health`, `/api/streams`) and silently dropping all data. The fix wrapped each `JSON.parse` in try/catch with a null fallback.
+
+**Apply:** any time you write `rows.map(r => JSON.parse(r.someJsonColumn))`, wrap it.
+
+## String Normalization Output Guard (slugify, sanitize, etc.)
+
+Functions like `slugify()` that normalize arbitrary input strings can return an **empty string or an array containing only `['']`** when given empty, whitespace-only, or special-character-only input. Validate the output, not just the input.
+
+```js
+// WRONG — slugify('') returns [''] not [] — empty slug slips through
+function getCandidateSlugs(name) {
+  return slugify(name);   // may return ['']
+}
+
+// RIGHT — filter out empty strings after normalization
+function getCandidateSlugs(name) {
+  return slugify(name).filter(s => s.length > 0);
+}
+```
+
+**Why:** job-scraper PR #62 (2026-06-24) found that `slugify('')` and `slugify('!!!')` both returned `['']`. Empty slugs then matched every ATS candidate slug (`includes('')` is always true), causing false-positive ATS detections for every company that had an empty or special-chars-only name.
+
+**Apply:** after any slugify/normalize call that feeds a lookup or comparison, filter out empty strings.
+
+## Gemini CLI Free-Tier Deprecation: Verify Before Depending On It
+
+The Gemini CLI's free **Gemini Code Assist for individuals** tier (`GOOGLE_GENAI_USE_GCA=true`) was deprecated in June 2026. Any invocation now fails immediately with:
+
+```
+IneligibleTierError: This client is no longer supported for Gemini Code Assist
+for individuals. ... migrate to the Antigravity suite
+```
+
+This is **account-level and pre-request** — it fires before the model is even reached. Flags like `--skip-trust`, `--model`, or changing the working directory do not help.
+
+**Ecosystem impact:** every cron script or PM2 service that runs `gemini -p "..."` silently exits non-zero. Because cron scripts often suppress stderr or only log to PM2, these failures may go unnoticed for days.
+
+**How to detect:** run `gemini -p "hello"` in the relevant shell. If it errors in `_doSetupUser`, the tier is gone.
+
+**When it happens:**
+1. Audit every scheduled job that calls `gemini` (`grep -rn "gemini -p" ~/repos/autonomousDev-private`).
+2. Disable or comment out the Gemini paths and fall back to `claude -p` (alt-account bridge) or Codex CLI.
+3. Migration path: Antigravity suite or a paid `GEMINI_API_KEY` (set in the relevant service's `.env`).
+
+**Reference:** `project_gemini_cli.md` memory (2026-06-24); ecosystem impact confirmed across trading-agent, auto-dev, and fix-checker shadow runners, plus the `gemini/fix-*` PR generator.

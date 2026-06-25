@@ -253,6 +253,7 @@ In casual writing, specifics take the form of place names, dates, and references
 
 - **No inline air-quotes in cover letters.** Never use quotation marks around phrases for emphasis or to frame concepts (e.g., don't write: not just "build the feature" but "quantify the tradeoffs"). Just state the idea directly. This applies to all application materials (cover letters, additional info, outreach drafts).
 - **Cover letters always lead with the resume header.** Every cover letter (Google Doc, plain text, application portal text box) begins with Nick's resume header above the salutation. The literal header text and source-of-truth resume doc reference live in `~/repos/privateContext/guidance/cover-letter-header.md` (this is a public repo so the values are not inlined here). The `write-as-nick` skill enforces this as a Quality Gate.
+- **No bold lead sentences in cover letters.** Bold is reserved for the resume-header name and the signature line — nothing else. Do not bold the opening sentence of any body paragraph; it reads as an AI writing tic. Let the prose carry the emphasis. (Source: Waymo PM Growth letter, 2026-06-24 — agent bolded each paragraph's opening sentence; Nick flagged it.)
 - **No buzzwords.** Doesn't say "synergy", "leverage", "paradigm shift."
 - **No throat-clearing.** Never opens with "So I wanted to talk about..." or "In today's post, we'll explore..."
 - **No rhetorical hooks.** Doesn't open with "Have you ever wondered...?"
