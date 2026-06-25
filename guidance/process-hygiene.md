@@ -2028,3 +2028,24 @@ echo "Reply with OK if this works" | codex exec --skip-git-repo-check
 ```
 
 **Apply:** when scripting Codex calls, inspect the full output rather than grepping for a word that also appears in the prompt.
+
+## WSL Overnight Scheduling — Wake Timer Requires Sleep, Not Shutdown
+
+Windows Task Scheduler's `WakeToRun` flag (used by the `wsl-overnight-schedule` skill) can pull the host out of **S3 (sleep) or S4 (hibernate)**. It does **NOT** work when the host is fully **powered off (S5/shutdown)**.
+
+**Symptom:** Overnight WSL jobs don't run — no logs, no errors, no evidence the machine was ever woken. The task is configured correctly but the machine was shut down instead of sleeping.
+
+**Why:** Wake timers rely on standby power maintained during S3/S4. A full S5 shutdown cuts this power; the firmware has nothing to trigger on.
+
+**Fix:** Before an overnight run, put the machine to sleep instead of shutting down. From WSL:
+
+```bash
+# Trigger Windows sleep from WSL (no password prompt)
+/mnt/c/Windows/System32/rundll32.exe powrprof.dll,SetSuspendState 0,1,0
+```
+
+Or from PowerShell: `Start-Sleep` is not a sleep command — use the above `rundll32` invocation, or Win + X → Sleep in the GUI.
+
+**S4 (hibernate) also works** but is slower to wake (~30s vs ~5s from S3). Avoid S5 entirely when scheduled overnight jobs are active.
+
+**Reference:** ARC PC2 overnight run missed 2026-06-25 — PC2 was fully shut down, wake timer never fired. See the `wsl-overnight-schedule` skill for full Task Scheduler setup including WakeToRun and RTCWAKE prerequisites.
