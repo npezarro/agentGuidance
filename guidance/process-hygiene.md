@@ -1980,3 +1980,51 @@ This is **account-level and pre-request** — it fires before the model is even 
 3. Migration path: Antigravity suite or a paid `GEMINI_API_KEY` (set in the relevant service's `.env`).
 
 **Reference:** `project_gemini_cli.md` memory (2026-06-24); ecosystem impact confirmed across trading-agent, auto-dev, and fix-checker shadow runners, plus the `gemini/fix-*` PR generator.
+
+## Codex CLI Gotchas
+
+### Keep the CLI up-to-date — stale versions silently break all models
+
+The Codex CLI can fall far behind the backend and produce 400 errors for every model:
+
+```
+Error: 400 "The '<model>' model is not supported when using Codex with a ChatGPT account"
+```
+
+This happens even for the default model and even after re-login. The fix is **not** re-authentication — it is updating the CLI:
+
+```bash
+sudo npm install -g @openai/codex@latest
+```
+
+Root cause: stale client (e.g. v0.125.0) sends model IDs the backend no longer accepts. After updating, both text and vision calls succeed. Source: 2026-06-24 groceryGenius importer session where every `codex exec` failed with 400 until the CLI was updated from v0.125.0 to v0.142.1.
+
+**Apply:** when `codex exec` returns 400 for all models, update first before debugging auth or model selection.
+
+### Vision `-i` flag is variadic — pass prompt via stdin
+
+The `-i` (image) flag on `codex exec` accepts multiple values (variadic). Providing the prompt as a positional argument after images causes it to be consumed as an additional image path:
+
+```bash
+# WRONG — "Describe the store logo" is treated as an image path
+codex exec --skip-git-repo-check -i receipt.jpg "Describe the store logo"
+
+# RIGHT — pipe the prompt via stdin; -i takes only image paths
+echo "Describe the store logo" | codex exec --skip-git-repo-check -i receipt.jpg
+```
+
+**Apply:** any time you use `-i`, deliver the prompt text via stdin (not positional).
+
+### Testing gotcha: `codex exec` echoes the prompt in output
+
+`codex exec` echoes your input prompt in the response before the model's answer. Grepping the raw output for a keyword you also used in the prompt produces false positives:
+
+```bash
+# WRONG — finds the echoed prompt, not the model's answer
+echo "Reply with OK if this works" | codex exec --skip-git-repo-check | grep "OK"
+
+# RIGHT — read the full output or strip the first line
+echo "Reply with OK if this works" | codex exec --skip-git-repo-check
+```
+
+**Apply:** when scripting Codex calls, inspect the full output rather than grepping for a word that also appears in the prompt.
