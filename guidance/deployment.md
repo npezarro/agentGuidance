@@ -36,7 +36,7 @@ If you intentionally skip deploying (e.g., batching changes), note it in context
 3. `pm2 logs <process> --lines 20` to scan for errors, uncaught exceptions, or crash loops in the first 30 seconds.
 4. If the app has authentication, verify the sign-in flow works end-to-end.
 5. **Test the actual user-facing behavior yourself** before asking the user to verify. Use the browser agent for interactive pages, `curl` for APIs, or direct tool invocation. Never declare "done, try it out" without verifying it works.
-   - For Next.js apps: curl a real page (not just the health endpoint) and check for the error boundary pattern (`This page could not be found` or `couldn't load`). The health API can return 200 while every page is broken due to stale chunks.
+   - For Next.js apps: curl a real page (not just the health endpoint) and check for the error boundary pattern (`couldn't load` or `application error`). The health API can return 200 while every page is broken due to stale chunks. **Do NOT grep for "could not be found"** — Next.js RSC payloads embed the 404 handler template inside `<script>` tags, causing false positives even on healthy pages. Strip script tags first: `curl -sL <url> | sed 's/<script[^>]*>.*<\/script>//g' | grep -qi "couldn't load\|application error"`.
 6. Update `context.md` with deployment status and any issues observed.
 7. If any check fails, **do not move on**. Diagnose and fix before declaring the deploy complete.
 
@@ -65,6 +65,18 @@ Add a `postbuild` script to `package.json`:
 npm runs `postbuild` automatically after `build`. This pattern is used in finance-tracker.
 
 **Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
+
+### Static copy collision on re-deploy
+
+When deploying via `cp -r .next/static .next/standalone/.next/` on the VM, the copy **fails with a "same file" error** if a symlink already exists at `.next/standalone/.next/static` from a previous deploy. Remove the target first:
+
+```bash
+ssh "$VM" "rm -rf $VM_DIR/.next/standalone/.next/static && cp -r $VM_DIR/.next/static $VM_DIR/.next/standalone/.next/"
+```
+
+A symlink at the copy destination (from an earlier postbuild or hand-placed) causes `cp -r` to write into the symlink's target directory, not replace it — or fail outright. `rm -rf` before the copy is idempotent: it harmlessly no-ops if nothing is there.
+
+Source: finance-tracker `dfb291b` (2026-06-26).
 
 ## GitHub Pages Static Export (No-Server Alternative)
 
