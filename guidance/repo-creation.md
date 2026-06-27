@@ -30,8 +30,24 @@ Every CLAUDE.md should include:
 4. **Key files and architecture** (if non-obvious)
 5. **Constraints** (what NOT to do, security considerations)
 
+## .gitignore Requirements
+
+Every new repo must have a `.gitignore`. At minimum it should exclude:
+
+```
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+node_modules/
+```
+
+Add repo-specific patterns on top (e.g., `*.db`, `*.sqlite`, build outputs, log dirs). A security audit of 30 public repos (2026-06-27) found 3 repos entirely missing `.gitignore` and 4 with incomplete patterns — both preventable at creation time.
+
 ## Post-Write: Verify
 
+- [ ] `.gitignore` exists and includes `.env*` + private key patterns (`*.pem`, `*.key`, `*.p12`, `*.pfx`)
 - [ ] No raw markdown syntax in output format rules if output targets Google Docs
 - [ ] No secrets, credentials, or private infrastructure details
 - [ ] Commands section matches `package.json` scripts
