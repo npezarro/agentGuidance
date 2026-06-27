@@ -349,6 +349,27 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 - Some VM app dirs are NON-GIT, artifact-only (`.next`+`node_modules`+`package.json`) — deploy via /staging artifact promotion (rsync `.next`), sync loose scripts via scp.
 - Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
 
+**WSL-to-VM artifact-only deploy sequence (stop → rsync → patch → symlink → start):**
+
+For apps where the VM dir is artifact-only (no git repo), use this sequence to avoid file conflicts, appDir mismatch, and start.sh guard failures:
+
+1. Build locally: `npm run build`
+2. Stop PM2 BEFORE copying: `ssh $VM "pm2 stop <app>"` — avoids file-in-use conflicts during rsync
+3. Rsync standalone and static dirs:
+   ```bash
+   rsync -az .next/standalone/ "$VM:$REMOTE_DIR/.next/standalone/"
+   rsync -az .next/static/ "$VM:$REMOTE_DIR/.next/static/"
+   ```
+4. Patch `appDir` in `required-server-files.json` to the production path (both root-level copy and the copy inside `.next/standalone/`). Failure causes Next.js to detect a build-dir mismatch and trigger an unwanted on-VM rebuild at next start.
+5. Create a `node_modules` symlink to satisfy `start.sh`'s npm-install guard:
+   ```bash
+   ssh $VM "ln -sfn $REMOTE_DIR/.next/standalone/node_modules $REMOTE_DIR/node_modules"
+   ```
+   Without this, `start.sh` finds no `node_modules/` at `$REMOTE_DIR/` and attempts `npm install` — which fails (no `package-lock.json` in an artifact-only dir). The symlink points to the already-bundled modules inside `.next/standalone/`.
+6. Start with `pm2 start` (NOT `pm2 restart`): after `pm2 stop`, the process is in `stopped` state; `pm2 restart` on a stopped process may not bring it online.
+
+Source: travel-assistant standalone deploy script (commit 1122624, 2026-06-27).
+
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
 
 ## Next.js Standalone: Flat VM Layout vs Nested Dev Layout in start.sh

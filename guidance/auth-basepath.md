@@ -79,6 +79,31 @@ Each app needs:
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
 - **`router.push()` (useRouter) also auto-prepends basePath**: Client-side `useRouter().push("/search")` behaves identically -- it becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in `router.push` paths either (e.g., `router.push("/shopper/search")` becomes `/shopper/shopper/search`, a 404). Source: shopper/foodie/travel-assistant SharedJobView fix 2026-06-15 -- same double-prefix crash as `redirect()` but on client-side navigation.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
+- **Session cookie `path` must be the app subpath, not `"/"`**: When an app runs under a basePath (e.g., `/travel`), set the session cookie's path to match that subpath. A `path: "/"` cookie is readable by every other subpath app on the same domain, causing cross-app cookie contamination and CSRF validation failures (the CSRF token and session cookie must match paths). Correct config in `auth.ts`:
+  ```typescript
+  cookies: {
+    sessionToken: {
+      name: "__Secure-<appname>.session-token",
+      options: { httpOnly: true, sameSite: "lax", path: "/<appname>", secure: true },
+    },
+  },
+  ```
+  Note: the unique `name` per app (see "Session Cookie Isolation" section) prevents cross-read, but `path` scoping is also required to prevent CSRF mismatch. Source: travel-assistant (commit b56aa27, 2026-06-27).
+- **JWT decode must be wrapped in try/catch to prevent crash spirals**: After a secret rotation, stale JWTs throw during decode. If the `decode` function is unwrapped, every authenticated request to the auth handler crashes, causing a restart loop. Wrap it to return `null` (treat as anonymous) instead:
+  ```typescript
+  jwt: {
+    encode,
+    decode: async (params) => {
+      try {
+        return await decode(params);
+      } catch (err: any) {
+        console.warn("[auth] JWT decode failed; treating as anonymous:", err?.message || String(err));
+        return null;
+      }
+    },
+  },
+  ```
+  Source: travel-assistant (commit b56aa27, 2026-06-27).
 
 ### Apps using the proxy
 
@@ -92,6 +117,15 @@ Each app needs:
 ### AUTH_URL origin-only pattern for tunneled apps
 
 When an app is tunneled (e.g., WSL -> VM via SSH), Apache's `ProxyPreserveHost On` and `X-Forwarded-Host` may not correctly reach the Next.js standalone server. NextAuth then uses `localhost:PORT` as the origin, producing wrong callback URLs. Fix: set `AUTH_URL=https://example.com` (bare origin, no path). With pathname="/", `setEnvDefaults()` won't override the explicit `basePath: "/api/auth"`, but origin is set correctly. This is simpler than debugging header forwarding through SSH tunnels.
+
+**Defensive code guard for misconfigured AUTH_URL:** If the env var might arrive with a subpath (e.g., copy-pasted from another app), strip the pathname at module load time before NextAuth processes it:
+```typescript
+// auth.ts — top of file, before NextAuth() call
+if (process.env.AUTH_URL) {
+  process.env.AUTH_URL = new URL(process.env.AUTH_URL).origin;
+}
+```
+This prevents `setEnvDefaults()` from extracting the pathname as `basePath` and silently overriding the explicit `basePath: "/api/auth"` setting. The `.env` should still use bare origin (this is a belt-and-suspenders guard). Source: travel-assistant (commit b56aa27, 2026-06-27).
 
 ### Why this replaced per-app workarounds
 
