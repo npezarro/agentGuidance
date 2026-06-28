@@ -490,3 +490,26 @@ Without silent refresh, **any automated job that runs daily against a ~24h-lived
 **Source:** health-hub commit `69aa711` (2026-06-07) — Garmin push route switched from 401-on-expiry to silent auto-refresh, fixing the automated daily push-to-watch cron.
 
 **Trade-off:** Simpler (no Apache redirect needed), but couples the callback URL to the env var. The three-part pattern is more robust for complex proxy setups.
+
+## User-Facing URL Construction: Use Request Origin, Not AUTH_URL
+
+When building share links, email links, or any URL that the browser will open, derive the origin from the **actual HTTP request** (`req.nextUrl.origin`), not from `AUTH_URL` or `NEXTAUTH_URL`.
+
+```typescript
+// route.ts — share link generation (shopper, foodie, travel-assistant)
+const origin = req.nextUrl.origin;
+const shareUrl = `${origin}/<basePath>/share/${token}`;
+```
+
+**Why:** `AUTH_URL` / `NEXTAUTH_URL` are set at deploy time and often point to a specific host (e.g., `https://example.com` or `http://localhost:3090`). Share links generated from these env vars break when:
+- The user hits the app from a different hostname (staging, Tailscale, local dev tunneled to VM)
+- The app is behind a proxy that changes the visible origin
+- The env var is set for OAuth callback purposes only and doesn't include the basePath correctly
+
+`req.nextUrl.origin` resolves dynamically to whatever domain+port the browser used, so the link always works from the user's current context.
+
+**When NOT to use request origin:**
+- OAuth callback URLs → use `AUTH_URL` / `NEXTAUTH_URL` (must be pre-registered with provider)
+- Internal service-to-service API calls → use env vars (more stable, no user context)
+
+**Source:** shopper, foodie, and travel-assistant all received the same fix (2026-06-28) — share route handlers were building share URLs from `AUTH_URL`, which broke when the app was accessed from Tailscale or a staging hostname.
