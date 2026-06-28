@@ -2076,3 +2076,13 @@ Or from PowerShell: `Start-Sleep` is not a sleep command — use the above `rund
 **S4 (hibernate) also works** but is slower to wake (~30s vs ~5s from S3). Avoid S5 entirely when scheduled overnight jobs are active.
 
 **Reference:** ARC PC2 overnight run missed 2026-06-25 — PC2 was fully shut down, wake timer never fired. See the `wsl-overnight-schedule` skill for full Task Scheduler setup including WakeToRun and RTCWAKE prerequisites.
+
+## Custom Skill Source-of-Truth: Repo Before Live Copy
+
+`~/repos/claude-skills` is the source of truth for all custom skills. `~/.claude/skills/` is a deployed copy. The intended sync direction is: **edit in repo → copy to live**.
+
+**Never edit `~/.claude/skills/<skill>/` directly.** If you improve a skill in-session (add a step, fix a gotcha, update a command), edit `~/repos/claude-skills/<skill>/SKILL.md` instead, then copy the updated file to `~/.claude/skills/<skill>/SKILL.md`. Commit and push.
+
+**If you discover drift** (live copy is ahead of the repo), reconcile immediately: diff the two files, apply the improvements to the repo file, commit, and push. Don't close the session with the repo behind.
+
+**Why this matters:** The VM syncs skills from the repo (`preJobSync()` in `executor.js`). A live-copy improvement that isn't committed to the repo will be silently overwritten the next time the VM pulls and will never reach Discord-dispatched jobs. Source: staging skill drift discovered 2026-06-28 — a flat-layout note and `start.sh`/`backup-db.sh`/`ecosystem.config.cjs` copy step were present in the live skill but absent from the repo for an unknown number of sessions (commit `a2d5c7c`).
