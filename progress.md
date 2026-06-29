@@ -11,6 +11,7 @@
 
 ## Log
 
+| 2026-06-29 | docs | `a34adbb` wired the page-access waterfall into `guidance/browser-page-reader.md` (WebFetch → page-reader → feed/transcript tricks → authenticated browser-agent → WebSearch + sub-agent rule) and `guidance/deep-research.md` (2 anti-patterns: don't surrender at first block; don't let WebFetch-only sub-agents launder search summaries). Companion `page-access` skill in claude-skills. |
 | 2026-06-23 | feat | `dbeea10` post-to-discord hook: extract `message.model` from transcript → `/ingest` payload metadata, so #cli-interactions becomes a model-tagged outcome feed (enables forward model A/B). Pairs with a Discord bot renderer change. |
 
 | Date | Type | Description |

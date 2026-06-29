@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-06-29 | Wired the page-access waterfall into research guidance (commit `a34adbb`, pushed). `guidance/browser-page-reader.md` gained a "Page-Access Waterfall" section (WebFetch → page-reader → feed/transcript tricks → **authenticated browser-agent** → WebSearch) + the sub-agent rule (never delegate auth-gated/SPA retrieval to a WebFetch-only sub-agent). `guidance/deep-research.md` gained two anti-patterns: don't give up at the first empty/blocked fetch, and don't let WebFetch-only research sub-agents launder a search summary into a deliverable. Companion `page-access` skill lives in claude-skills. Origin: Figma interview prep where gated sources (LinkedIn, paywalled newsletter) blocked sub-agents until browser-agent + Medium RSS filled them first-hand. Closeout: `privateContext/deliverables/closeouts/2026-06-29-figma-ben-stern-prep-and-page-access-skill.md`.
+
+### Previous
 2026-06-10 | Section 7 proposals implemented (all eight). In this repo: `hooks/check-repo-writer.sh` (PostToolUse warning when edits land in repos declaring `canonical-copy:`/`writer:` in CLAUDE.md), `hooks/load-repo-context.sh` (SessionStart per-repo context packs), ESSENTIAL.md capped at 10 rules with a graduation policy (6 demoted to hook-enforced/guidance homes; CLAUDE.md-update rule homed in code-review.md), agent-journal.md signal-gate rules. settings.json (user-level) now invokes ALL hooks from the local clone — zero GitHub-raw fetches remain. NOTE: this repo now rests on main (hooks execute from the working copy); a stranded April stash was recovered, 2 old stashes remain untriaged. Full closeout: `privateContext/deliverables/closeouts/2026-06-10-section7-implementation.md`.
 
 ### Previous
