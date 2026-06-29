@@ -474,3 +474,22 @@ Check the exit code (`$?`) after the `node -e` call: exit 1 means the file was m
 **When to use:** Any bash script that reads a JSON build artifact (`.next/required-server-files.json`, `package.json`, health endpoint response) to make a branching decision. `sed`/`grep` on JSON is fragile and fails silently on minor format differences.
 
 Source: employ commit `207d378` (2026-06-14).
+
+## Next.js Flat Layout — Employ Deploy Model Exception
+
+Most VM-hosted Next.js apps use the standard **nested standalone layout**: PM2 runs `node .next/standalone/server.js` from inside `.next/standalone/` (or equivalent `start.sh`).
+
+**Employ uses a flat layout:** PM2 runs `node server.js` from the app root. `server.js` and `start.sh` live at the root alongside `.next/`. The repo's deploy script copies standalone artifacts flat to the app root rather than into a `standalone/` subdir.
+
+**Staging-to-prod promotion gotcha:** When the `/staging` skill promotes employ to production, the rsync must include root-level `server.js` and `start.sh` in addition to `.next/`. Promoting only `.next/` leaves stale root files, causing PM2 to run outdated code silently. Source: employ `claude-skills` staging updates (commits `1a20372`, `a2d5c7c`, 2026-06-28).
+
+**Staging port assignments — do not reuse ports already bound by running services:**
+
+| App | Staging Port | Conflict to avoid |
+|-----|-------------|-------------------|
+| shopper | 3090 | — |
+| foodie | 3094 | — |
+| travel | 3116 | 3112 is browser-logs |
+| employ | 3116 | 3112 is browser-logs |
+
+Before assigning a new staging port, check existing PM2 processes and `~/repos/scripts/` for bound ports.

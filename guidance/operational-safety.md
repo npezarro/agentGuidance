@@ -429,3 +429,24 @@ logger.info(f"Claude fix complete (cost: ${cost:.4f})")
 ```
 
 Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25).
+
+## Gemini CLI Free GCA Tier Deprecated — `gemini -p` IneligibleTierError (2026-06-24)
+
+The free Gemini Code Assist for individuals auth (`GOOGLE_GENAI_USE_GCA=true`) is dead as of 2026-06-24. Any `gemini` CLI invocation on this account now throws:
+
+```
+IneligibleTierError: This client is no longer supported for Gemini Code Assist
+for individuals. To continue using Gemini, please migrate to the Antigravity
+suite of products: https://antigravity.google
+```
+
+This failure occurs in `_doSetupUser` before the first request — it cannot be suppressed with `--skip-trust`, `--model`, or cwd changes. It is account-wide.
+
+**Silent impact on automated runners:** Every consumer that shells out to `gemini -p` now silently errors (the process exits non-zero, but cron wrappers that ignore exit codes never alert):
+- trading-agent / auto-dev / fix-checker Gemini shadow runners
+- `gemini/fix-*` PR generator in autonomousDev-private
+- any `gemini --approval-mode yolo` offload task
+
+The "direct Gemini fix" fallback path referenced in this file (line 183) is also broken under the free GCA account.
+
+**Mitigation:** Until migrated to a paid `GEMINI_API_KEY` or the Antigravity product, treat `gemini` CLI as unavailable. Fall back to Claude (alt-account bridge) or Codex CLI for shadow runners. Before relying on any `gemini -p` call in automation, probe with `gemini -p "ok?" 2>&1` — `IneligibleTierError` confirms the path is dead.
