@@ -144,4 +144,17 @@ For deeply nested transitive deps, scope the override to the parent:
 3. Run `npm test` and `npm run build` to verify no breakage from the version bump.
 4. Commit both `package.json` and `package-lock.json`.
 
+## Dependabot Major Version PRs — Do Not Merge Autonomously
+
+Dependabot's `groups` config bundles minor+patch updates but opens individual PRs for major bumps. **Do not merge major-version Dependabot PRs autonomously, even if CI passes.**
+
+CI passing (`npm ci + npm test + npm run build`) does not guarantee the app behaves correctly with a new major version. Major bumps frequently have runtime behavior changes that tests don't catch:
+- **Tailwind v4**: drops `tailwind.config.js` in favor of CSS-based config; existing class names may break silently
+- **TypeScript 6**: tighter inference; stricter type narrowing catches things 5.x allowed at runtime
+- **ESLint 10**: drops legacy `.eslintrc` config format; rules and plugins may behave differently
+- **Vitest 4**: changed browser mode APIs; parallel test defaults changed
+- **marked v18**: breaking AST/parser changes for custom renderers
+
+**Pattern:** Dependabot major PRs are opened individually (not grouped). When reviewing the PR queue, flag these to the user rather than merging silently. The review process: read the release notes/migration guide, check for config format changes, run a local smoke test of the actual app (not just `npm test`). Source: runeval/youtubeSpeedSetAndRemember/promptlibrary Dependabot PRs (2026-06-28/29).
+
 **When to use:** When `npm audit fix` can't resolve the issue and the vulnerable package has a patched version available but the intermediate dependency hasn't updated yet. This pattern has been applied across 10+ repos (uuid, axios, @hono/node-server, esbuild, http-proxy-agent).

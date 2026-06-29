@@ -207,7 +207,48 @@ rsync -az --delete ./dist/ "$DEPLOY_TARGET"
 
 **Post-deploy .env integrity check:** After rsync, verify critical env vars on the server still have production values. A silent overwrite causes hard-to-diagnose failures (e.g., wrong database port, wrong API base URL) that look like application bugs.
 
+**Also exclude SQLite WAL files.** Apps using `better-sqlite3` or any SQLite WAL-mode database write live WAL/SHM files alongside the database file. `rsync --delete` will wipe these mid-transaction if they're not excluded:
+
+```bash
+rsync -az --delete \
+  --exclude '.env' \
+  --exclude '*.db' \
+  --exclude '*.db-wal' \
+  --exclude '*.db-shm' \
+  --exclude 'node_modules' \
+  .next/ "$DEPLOY_TARGET/.next/"
+```
+
+**Why:** A deploy that rsync'd without WAL exclusions wiped the live WAL file mid-write, corrupting the database state and requiring a restart to recover. Database files and WAL/SHM sidecars must always be excluded from rsync --delete deploys.
+
 **Why this matters:** A real deploy overwrote a production database port with a local dev port, causing all connections to fail silently. The root cause was `rsync --delete` without `--exclude .env`.
+
+## Pre-Deploy Backup + Automatic Rollback for rsync Deploys
+
+For artifact-only (non-git) deployments using rsync, take a server-side backup of the current build before deploying and roll back automatically if the health check fails.
+
+```bash
+# 1. Backup current build on the VM before rsync
+ssh "$VM" "cp -r .next .next-backup && cp server.js server.js.bak"
+
+# 2. rsync new build (with WAL + .env exclusions)
+rsync -az --delete --exclude '.env' --exclude '*.db' --exclude '*.db-wal' --exclude '*.db-shm' \
+  .next/ "$VM_PATH/.next/"
+scp .next/standalone/server.js "$VM:$VM_PATH/server.js"
+
+# 3. Restart and health check
+ssh "$VM" "pm2 restart $APP && sleep 4 && curl -sf http://localhost:$PORT/api/health"
+
+# 4. On failure, rollback and exit 1
+if [ $? -ne 0 ]; then
+  ssh "$VM" "mv .next-backup .next && mv server.js.bak server.js && pm2 restart $APP"
+  exit 1
+fi
+```
+
+**When to use:** Any Next.js standalone app deployed via rsync to a non-git VM directory (the "flat-layout" pattern where PM2 runs `node ./server.js` from the app root, not from `.next/standalone/`). Apps deployed via `git pull + npm run build` on the VM use git as the rollback mechanism instead.
+
+**Flat-layout note:** When PM2 is configured to run `node ./server.js` from the project root (not `.next/standalone/server.js`), deploying only `.next/` leaves a stale root `server.js`. Always `scp .next/standalone/server.js` back to the root as a separate step.
 
 ## Concurrent Bot Deploys Race Against PM2 — Serialize with flock
 
