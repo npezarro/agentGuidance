@@ -52,6 +52,10 @@ Two hooks mechanically enforce post-deploy verification, even if the agent skips
 
 **Why this exists:** The #1 failure mode was agents deploying, declaring "done," and leaving without testing. The Stop hook makes this structurally impossible for registered services.
 
+3. **`hooks/check-commit-deploy.sh`** (Stop hook): Detects when files were modified in a repo that has a live deployment (per `deploy-registry.json` `repo` field) but no deploy was performed during the session. **Blocks the session exit** until the agent either deploys or documents the pending deploy in context.md.
+
+**Why this exists:** The #2 failure mode was agents committing code to deployed repos and ending the session without deploying. The committed code sat stale while production served the old build (employ incident, 2026-06-29).
+
 ## Next.js Standalone Symlink Fix
 
 When using `output: 'standalone'` in `next.config`, Next.js produces a minimal server in `.next/standalone/` but does NOT include the `static/` or `public/` directories. Without symlinks, all CSS, JS, and static assets return 404.
