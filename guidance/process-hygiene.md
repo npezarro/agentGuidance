@@ -584,3 +584,12 @@ When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes
 Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
 
 How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
+
+### Cron jobs that invoke `claude` must use an absolute binary path (2026-06-29)
+Cron runs with a minimal PATH (`/usr/bin:/bin`) that does NOT include `/usr/local/bin`, where the global `claude` install lives. A cron script calling bare `claude ...` fails silently with `claude: command not found` (exit 127). On the VM this broke the host CLI auth keep-alive for ~10 days: every run failed, the OAuth refresh token expired from disuse, and the CLI started returning 401 — with no alert.
+
+How to apply:
+- Resolve the binary up front: `CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || echo /usr/local/bin/claude)}"` and call `"$CLAUDE_BIN"`. Works under both interactive PATH and bare cron PATH.
+- Prefer auth keep-alives that do NOT depend on the CLI at all: refresh directly via the OAuth `refresh_token` grant (curl + python3). See `~/repos/scripts/refresh-claude-token.sh`.
+- Always pair an auth keep-alive with a probe that pages on failure (`claude-auth-probe.sh`), so a silent keep-alive failure surfaces in hours, not days.
+- Refresh tokens ROTATE and are single-use: two hosts cannot share one credentials chain (whoever refreshes first breaks the other). Give each host its own `claude auth login` device session. Full write-up: `~/repos/scripts/VM-CLAUDE-AUTH.md`.
