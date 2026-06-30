@@ -102,7 +102,18 @@ const nextConfig: NextConfig = {
 - Needs a Docker bridge or external service integration
 - Needs Discord notifications, webhooks, or cron jobs
 
-**Deploy pattern:** Build locally → commit `out/` or let GitHub Actions build → GitHub Pages serves from the branch. Source: netflix-social (commit 928a1d7, 2026-05).
+**Deploy pattern (GitHub Actions):** Push a workflow that runs `next build` and uploads the `out/` artifact to gh-pages. Requires `contents: write` permission on the Actions token — if the repo lacks it, use the manual pattern below.
+
+**Deploy pattern (manual gh-pages branch, no Actions):** `next build` with `output: 'export'` **wipes `out/` entirely at the start of every build**, deleting any `.git` you initialized there. Never `git init` inside `out/` expecting it to survive the next build. Instead use a temp dir outside the project:
+```bash
+npm run build
+rm -rf /tmp/deploy-staging && cp -r out /tmp/deploy-staging
+cd /tmp/deploy-staging && touch .nojekyll
+git init -q && git checkout -q -b gh-pages && git add -A
+git commit -q -m "Deploy $(date -u +%FT%TZ)"
+git push -f <repo-url> HEAD:gh-pages
+```
+Source: netflix-social-platform deploy.sh (commit 62e4dd4, 2026-06-30 — learned after the initial attempt had its `out/.git` wiped by `next build`).
 
 ## Next.js Standalone: Missing Packages (`serverExternalPackages`)
 
