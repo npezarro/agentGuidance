@@ -299,3 +299,18 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 - Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
 
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
+
+## VM SSH: don't trip fail2ban with reconnect bursts
+
+**Incident 2026-06-30 (a PM2 service deploy):** A burst of short SSH connections to the production VM, plus one deploy SSH killed mid-run and immediately retried, tripped the VM's fail2ban jail on port 22. Result: a ~10-minute DROP ban on the source IP. Roughly 5 rapid or aborted connections are enough.
+
+**The tell (so you diagnose it in seconds, not minutes):**
+- SSH connect **times out** (not "connection refused") and ICMP/ping is blocked.
+- The production site still returns **HTTP 200 via the CDN**, so the box and web tier are fine; only your SSH is banned.
+- Direct-to-origin ports 80/443 are *always* firewalled to CDN-only, so the **only new signal is port 22 timing out** while HTTP works.
+
+**Recovery:** stop all SSH attempts (each retry re-arms/extends the ban), wait 10-12 minutes, then make ONE clean connection.
+
+**Prevention:**
+- Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
+- Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
