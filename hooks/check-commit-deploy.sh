@@ -42,6 +42,12 @@ while IFS= read -r REPO_ROOT; do
   HAS_NEW_COMMITS=$(git log --oneline --since="6 hours ago" -1 2>/dev/null || true)
   [ -z "$HAS_NEW_COMMITS" ] && continue
 
+  # Skip if all recent commits are on non-default branches (e.g. doc-sync PR branches).
+  # PR-only commits don't change the deployed artifact, so no service restart is needed.
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
+  MAIN_NEW=$(git log --oneline --since="6 hours ago" "$DEFAULT_BRANCH" -1 2>/dev/null || true)
+  [ -z "$MAIN_NEW" ] && continue
+
   if echo "$DEPLOYED_SVCS" | grep -qx "$SVC" 2>/dev/null; then
     continue
   fi
