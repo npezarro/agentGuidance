@@ -534,3 +534,16 @@ Most VM-hosted Next.js apps use the standard **nested standalone layout**: PM2 r
 | employ | 3116 | 3112 is browser-logs |
 
 Before assigning a new staging port, check existing PM2 processes and `~/repos/scripts/` for bound ports.
+
+## VM SSH — Rapid Bursts Trip fail2ban (Port 22 Banned ~10 min)
+
+**Never fire a burst of short SSH connections to the GCP VM, and never kill a deploy SSH session mid-run then immediately retry.** The VM runs fail2ban on port 22; roughly 5 rapid or aborted connections from the same source IP trigger a ~10 minute DROP ban.
+
+**Symptom:** SSH connect TIMES OUT (not "connection refused"). ICMP is also blocked. The production web tier still returns HTTP 200 through Cloudflare (CDN serves cached responses), so the site looks healthy — the only new signal is port 22 timing out. Direct-to-origin ports 80/443 are always firewalled to Cloudflare-only.
+
+**Recovery:** Stop all SSH attempts immediately — each retry re-extends the ban. Wait 10-12 minutes, then make ONE clean connection.
+
+**Prevention:**
+- Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+).
+- Avoid trailing `pm2 jlist` / Python JSON parsing that can hang the session near the timeout boundary and tempt you into a kill+retry loop.
+- If a deploy SSH session hangs, wait for the natural timeout rather than killing and retrying immediately.
