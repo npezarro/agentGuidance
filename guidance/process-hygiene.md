@@ -2086,3 +2086,57 @@ Or from PowerShell: `Start-Sleep` is not a sleep command — use the above `rund
 **If you discover drift** (live copy is ahead of the repo), reconcile immediately: diff the two files, apply the improvements to the repo file, commit, and push. Don't close the session with the repo behind.
 
 **Why this matters:** The VM syncs skills from the repo (`preJobSync()` in `executor.js`). A live-copy improvement that isn't committed to the repo will be silently overwritten the next time the VM pulls and will never reach Discord-dispatched jobs. Source: staging skill drift discovered 2026-06-28 — a flat-layout note and `start.sh`/`backup-db.sh`/`ecosystem.config.cjs` copy step were present in the live skill but absent from the repo for an unknown number of sessions (commit `a2d5c7c`).
+
+## Cron PATH Double Trap: claude + node
+
+Cron jobs run with a minimal PATH (`/usr/bin:/bin`). Scripts that invoke the `claude` CLI face a two-layer PATH failure that's easy to miss:
+
+1. `/usr/local/bin/claude` is not on PATH → `claude: command not found` (exit 127)
+2. `claude` is a **Node.js script** (`#!/usr/bin/env node`), so even after fixing `CLAUDE_BIN`, cron also lacks `/usr/local/bin/node` → `env: node: No such file or directory` (exit 127) before any auth or business logic runs.
+
+Both failures are silently swallowed if the cron wrapper treats exit 127 as "transient" and doesn't alert. The script runs dead indefinitely.
+
+**Fix:** Prepend both bin dirs at the top of any cron-invoked script:
+```bash
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+```
+
+Or pin explicitly:
+```bash
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || echo /usr/local/bin/claude)}"
+```
+
+**Validate before deploying as cron:** test the script under cron's minimal environment:
+```bash
+env -i PATH=/usr/bin:/bin HOME=$HOME bash your-script.sh
+```
+
+**Source:** VM `claude-auth-probe.sh` ran blind for 10+ days because cron lacked node; refresh token expired undetected (2026-06-29, `scripts` PR #49). See `~/repos/scripts/VM-CLAUDE-AUTH.md` for the full post-mortem.
+
+## Per-Item Failure Isolation in Batch Loops
+
+When a loop processes a batch (DB rows, files, API records) and each iteration performs an operation that can throw on bad data, an unguarded throw aborts the **entire** batch, not just the bad item. A second failure: if the cursor or timestamp advance happens **after** the loop, the same failing window is re-processed every tick forever.
+
+**Two-layer defense:**
+
+1. **Guard the throwing operation itself.** Wrap any expression that can fail on stored/external data:
+   - `new RegExp(storedPattern)` → wrap in a helper that returns `null` on `SyntaxError`
+   - `JSON.parse(externalData)` → wrap in `try/catch`, return a safe default
+   - Division by a data-derived value → check divisor `!== 0` first
+
+2. **Wrap each loop iteration in `try/catch + continue`** so one bad record is skipped, not fatal:
+   ```js
+   for (const item of items) {
+     try {
+       processItem(item);
+     } catch (err) {
+       console.warn(`[batch] Skipping item ${item.id}: ${err.message}`);
+     }
+   }
+   ```
+
+**Self-review trigger:** Any `new RegExp(nonLiteral)`, `JSON.parse(fileOrNetwork)`, or division by a data-sourced value inside a loop — ask: "does one bad input abort the whole batch?"
+
+**Bonus:** Compile invariant regexes **once before** the loop, not per-iteration, to avoid repeated throws and wasted compile time.
+
+**Source:** finance-tracker PR #74 — benefit auto-detection called `new RegExp(template.merchantPattern)` from stored card templates at three sites with no guard. One malformed pattern threw `SyntaxError` and 500'd `/api/cards/detect` for all the user's cards. Related: `pattern_isolate-per-item-failures-in-batch-loops` memory note.
