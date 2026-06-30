@@ -590,6 +590,8 @@ Cron runs with a minimal PATH (`/usr/bin:/bin`) that does NOT include `/usr/loca
 
 How to apply:
 - Resolve the binary up front: `CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || echo /usr/local/bin/claude)}"` and call `"$CLAUDE_BIN"`. Works under both interactive PATH and bare cron PATH.
+- `claude` is itself a node script (`#!/usr/bin/env node`), so cron also needs `node` on PATH or the CLI dies exit 127 (`env: node: No such file`) BEFORE doing anything — a probe that treats 127 as "transient" then goes blind to real outages. Prepend both bin dirs: `export PATH="$(dirname "$(command -v node 2>/dev/null || echo /usr/local/bin/node)"):$(dirname "$CLAUDE_BIN"):$PATH"`. Verify the whole script under cron conditions with `env -i PATH=/usr/bin:/bin HOME=$HOME bash your-script.sh`.
 - Prefer auth keep-alives that do NOT depend on the CLI at all: refresh directly via the OAuth `refresh_token` grant (curl + python3). See `~/repos/scripts/refresh-claude-token.sh`.
+- The OAuth `refresh_token` grant is rate-limited account-wide: 3+ refreshes in a few minutes trips a sustained 429 throttle (observed lasting ~2h) that blocks BOTH hosts. Never loop-retry a refresh — space attempts hours apart and let cron self-heal. A fresh `claude auth login` (authorization_code grant) is a separate bucket if you must recover sooner.
 - Always pair an auth keep-alive with a probe that pages on failure (`claude-auth-probe.sh`), so a silent keep-alive failure surfaces in hours, not days.
 - Refresh tokens ROTATE and are single-use: two hosts cannot share one credentials chain (whoever refreshes first breaks the other). Give each host its own `claude auth login` device session. Full write-up: `~/repos/scripts/VM-CLAUDE-AUTH.md`.
