@@ -96,6 +96,17 @@ He hedges when genuinely uncertain, not out of weakness.
 - Shares his own updates openly — breakups, injuries, hobbies — without being heavy about it
 - "Worth finding time to go deeper? Happy to work around your schedule."
 
+### Hiring-manager follow-up / "show me your work" email: prove it with links and breadth
+When a HM or interviewer asks for detail on relevant work, the register is "professional follow-up" but runs longer than Nick's usual 2-4 sentences. Warmth constant, at most one emoticon, no extended vowels. Defining moves:
+
+- **Link the actual working thing.** Every project mentioned comes with a clickable URL to the deployed app or a concrete example output — never just a homepage, never just a description. `(you can use it here: <app-url>)`, `(see an example here: <shared-result-url>)`. Nick wants the reader to click, not imagine.
+- **Enumerate breadth over one illustrative example.** When describing his ecosystem/infra, list the real components in a short bulleted set. The systematic, multi-part nature IS the selling point; don't collapse it to one sentence.
+- **Prove novelty with a specific, datable fact, not an adjective.** "We were building with a preview version of ChatGPT so we were sorting this all out before anyone had built with LLMs at scale" beats calling the space "brand new" and leaving it there.
+- **Cut interpretive closers that editorialize the fit.** State the work plainly and trust the reader to connect it to the role. "As new blockers arose, I expanded my infrastructure's capability to handle them" wins over "That side keeps me close to the raw question of what the model can do."
+- **Patent link = Lens.org**, not Google Patents (see privateContext for the canonical URL).
+
+Source: voice style guide samples — Meta HM follow-up before/after (Jun 30 2026).
+
 ### Role pitch / referral ask: Experience mapped to requirements
 - Each role gets its own numbered block with a clear pitch
 - Structure: Role → genuine excitement → specific parallel from his career → metric
