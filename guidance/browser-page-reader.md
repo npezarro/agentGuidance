@@ -46,6 +46,10 @@ node ~/repos/page-reader/src/index.js --compact <url>
 
 # Custom timeout (default 30000ms)
 node ~/repos/page-reader/src/index.js --timeout 60000 <url>
+
+# Authenticated read using a saved Playwright storageState (cookies + localStorage)
+# Missing/unreadable file silently falls back to anonymous browsing
+node ~/repos/page-reader/src/index.js --storage-state /path/to/session.json <url>
 ```
 
 ## Output Structure (JSON mode)
