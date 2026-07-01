@@ -121,5 +121,19 @@ When automating a site (form submission, navigation, clicking), choose between:
 
 Source: Peloton cancel automation rewrite (2026-06-22) — browser-agent blocked by site; Playwright worked. See `privateContext/recurring-tasks/scripts/peloton-cancel.sh`.
 
+## Browser-Agent Background Tab Command Timeouts
+
+Chrome throttles content-script/page timer polling to ~1 request per minute for tabs that are backgrounded or unfocused. `browser-agent` eval, navigate, click, and type commands targeting a background tab will appear to succeed (the relay accepts the command) but sit unpolled and time out ("Timeout waiting for browser response") — while `/health` and tab listings look healthy.
+
+**Fix (relay v2.7+, 2026-06-30, commit `55d1a74`):** The relay's `translateToExtension()` detects when a target tab's content-script is stale (>10s since last ping) and routes the command to the MV3 extension's CDP path (`cdpEval`/`cdpClick`/`cdpType`) instead. The extension polls via `chrome.alarms` (not throttled by Chrome) and drives any tab via `chrome.debugger`. This routing is automatic and transparent to callers.
+
+**Symptom pattern to recognize:**
+- Command targets a tab not currently in the foreground
+- `/agent/tabs` shows the tab as alive; `/health` returns OK
+- `eval`/`navigate`/`type` all time out with "Timeout waiting for browser response"
+- Content-script heartbeat is stale (tab unfocused >10s)
+
+**If you still see background-tab timeouts:** the relay is likely pre-fix. Pull `55d1a74` (`agent-server.js` + `lib/core.js`) and `pm2 restart browser-agent`. No extension update needed.
+
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.

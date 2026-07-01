@@ -2140,3 +2140,21 @@ When a loop processes a batch (DB rows, files, API records) and each iteration p
 **Bonus:** Compile invariant regexes **once before** the loop, not per-iteration, to avoid repeated throws and wasted compile time.
 
 **Source:** finance-tracker PR #74 — benefit auto-detection called `new RegExp(template.merchantPattern)` from stored card templates at three sites with no guard. One malformed pattern threw `SyntaxError` and 500'd `/api/cards/detect` for all the user's cards. Related: `pattern_isolate-per-item-failures-in-batch-loops` memory note.
+
+## PM2 Stop Is Not Durable Against Deploy-Path Restarts
+
+`pm2 stop <app>` + `pm2 save` does NOT permanently stop an app. If the app has its own deploy script (or any automation path) that calls `pm2 restart`, `pm2 startOrRestart`, or `pm2 start`, the app will come back online after the next deploy, overriding the saved stopped state.
+
+This pattern recurred on the memory-constrained VM (3.8GB): services like `grocerygenius-staging`, `runeval-staging`, and `promptlibrary-staging` were stopped and saved in 2026-05-25, yet were found fully online by 2026-07-01 because their app deploy paths call `pm2 startOrRestart`.
+
+**Solutions:**
+
+- **`pm2 delete` + remove from ecosystem config** — only viable for apps with no active deploy path. Permanent removal, not just a stop.
+
+- **Ondemand-waker pattern** — for low-traffic apps that need to stay launchable but shouldn't run 24/7: put a proxy in front of the app's PM2 process. The waker `pm2 start`s the app on the first request, then an idle reaper `pm2 stop`s it after N minutes of no traffic. Crucially, the reaper also re-stops any KEEP_STOPPED apps that were externally revived — making the stopped state durable against deploy-path restarts. Implementation: `~/repos/scripts/ondemand-waker/server.js` (proxy on port 3200). Apache points the app's `ProxyPass` at the waker instead of the app's direct port.
+
+- **Remove the staging-PM2 start from deploy scripts** — if a "staging" variant keeps coming back, trace the deploy script and remove the `pm2 start <staging-app>` call from it.
+
+**Why it matters:** The VM runs ~33 always-on PM2 processes on 3.8GB of RAM. Each Next.js `next-server` uses 60-170MB. Stopped apps coming back online erodes the memory headroom that offloads (autonomous jobs, remote Claude runs) depend on.
+
+**Source:** VM memory pressure investigation (2026-05-25, 2026-07-01); `scripts` commits `35e4904` + `563168f` (ondemand-waker, 2026-06-30). See `reference_vm_memory_tuning` memory note.
