@@ -109,6 +109,29 @@ When the user says **"update guidance"**, **"record this into guidance"**, **"sa
 4. **Commit and push** — Immediately. Unpushed rule changes don't help future sessions.
 5. **Optionally save a memory file** — As a personal index/cache. Memory is supplementary, never the primary destination.
 
+### MEMORY.md Index Budget (hard constraint)
+
+`MEMORY.md` is loaded into context every session, so it has a real size ceiling
+(~24.4KB; the loader truncates the tail past it and silently drops entries). Keep
+it healthy:
+
+- **One line per memory, hook ≤ ~128 chars total line length.** The detail lives
+  in the topic file (context-on-demand via Read), never in the index hook.
+- **The write path is capped at the source.** `scripts/propagate-learning.sh`
+  truncates the hook when it appends a new entry.
+- **A SessionStart hook self-heals.** `hooks/compact-memory-index.sh` re-compacts
+  over-long hooks every session (idempotent, non-destructive — it only trims hook
+  text, never deletes a memory file) and both it and the appender take an
+  `flock` on `MEMORY.md.lock` so concurrent cron appends are not clobbered. Run
+  `hooks/compact-memory-index.sh --check` to report size/longest-line (exit 3 if
+  over the hard limit).
+- **When the hook WARNS that the index is still over budget after compaction,**
+  truncation alone is not enough: prune. Delete or consolidate memories that are
+  (a) redundant with an always-loaded rule (ESSENTIAL.md / agent.md), (b) marked
+  superseded/stale, or (c) duplicates. Redundant-with-guidance memories add zero
+  recall value because the rule is already in context every session; archive them
+  under `memory/archived/` (reversible) rather than leaving orphaned index lines.
+
 ### Common Mistakes to Avoid
 
 - **Memory-only updates**: Writing a memory file and stopping. Memory is invisible to other agents and sessions that don't share your memory directory. The user said "update guidance" — they mean the durable instruction system.

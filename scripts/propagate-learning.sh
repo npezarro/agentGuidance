@@ -79,10 +79,22 @@ type: ${TYPE}
 
 $BODY
 MEMEOF
-    # Add to MEMORY.md index if not already present
+    # Add to MEMORY.md index if not already present.
+    # Cap the hook so the always-loaded index stays under its context budget —
+    # the full detail lives in the memory file, not the one-line index entry.
+    # A companion SessionStart hook (compact-memory-index.sh) re-compacts and
+    # warns if the index ever exceeds its hard limit.
     MEMORY_INDEX="$PRIMARY_MEMORY/MEMORY.md"
     if [ -f "$MEMORY_INDEX" ] && ! grep -q "$MEM_FILE" "$MEMORY_INDEX" 2>/dev/null; then
-      echo "- [${MEM_FILE}](${MEM_FILE}) — ${SUMMARY}" >> "$MEMORY_INDEX"
+      HOOK_MAX=$(( 128 - ${#MEM_FILE} - ${#MEM_FILE} - 8 ))   # 8 = len("- [](\) — ")
+      [ "$HOOK_MAX" -lt 24 ] && HOOK_MAX=24
+      HOOK="$SUMMARY"
+      if [ "${#HOOK}" -gt "$HOOK_MAX" ]; then
+        HOOK="$(printf '%s' "$SUMMARY" | cut -c1-"$HOOK_MAX" | sed 's/[[:space:],;:.—-]*$//')…"
+      fi
+      ( flock -w 5 9 2>/dev/null || true
+        echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
+      ) 9>"$MEMORY_INDEX.lock" 2>/dev/null
     fi
     DESTINATIONS+=("memory:$MEM_PATH")
   fi
