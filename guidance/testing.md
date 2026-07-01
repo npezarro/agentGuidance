@@ -498,6 +498,70 @@ it('returns focus to trigger on Escape', async () => {
 
 **Why:** An image lightbox component left focus on `document.body` after every close, silently breaking keyboard traversal of all surrounding cards. The bug went unnoticed until explicit close-path tests were written — none of the visual tests caught it.
 
+## Boundary Validation: Non-Negative Quantities from External Sources
+
+When validating numeric values parsed from external input (webhook payloads, API responses, database records, user data), `!x` and `x === 0` guards do NOT reject negative numbers — JS treats negatives as truthy.
+
+```javascript
+// WRONG — passes -100 through because !(-100) is false
+function computePace(distanceM, durationSec) {
+  if (!distanceM || !durationSec || distanceM === 0) return undefined;
+  return durationSec / (distanceM / 1000);  // returns -12.5 for duration=-100
+}
+
+// RIGHT — rejects non-positive values for physical quantities
+function computePace(distanceM, durationSec) {
+  if (!distanceM || !durationSec || distanceM <= 0 || durationSec <= 0) return undefined;
+  return durationSec / (distanceM / 1000);
+}
+```
+
+**Self-review trigger:** Any numeric guard for a measured/physical quantity (distance, duration, speed, count, price) that comes from an external source — use `<= 0`, not `!x`/`=== 0`. Check that all adapters for the same domain (e.g., Garmin and Strava pace calculation) use consistent guard forms.
+
+**Test to write:** `expect(fn(1000, -100)).toBeUndefined()` — verify the negative case explicitly alongside the zero case.
+
+**Why:** `computePace` in runEvaluator's Garmin adapter returned `-12.5` for `computePace(8000, -100)` because the guard `!durationSec || durationSec === 0` passed the negative through. A malformed webhook payload could reach this path. The Strava adapter in the same file used `speed <= 0` correctly — the inconsistency between two sibling adapters was the tell. Fixed PR #267, commit `1d5defe`.
+
+## Batch Loop Resilience: Isolate Per-Item Failures
+
+When a loop processes a batch (DB rows, files, API records) and each iteration runs an operation that can throw on bad data, an unguarded throw aborts the ENTIRE batch — not just the bad item.
+
+**Two-layer defense:**
+1. **Guard the throwing operation itself:** compile `new RegExp(external_pattern)` in a try/catch that returns null on SyntaxError; wrap `JSON.parse(external_file)` in try/catch; check for zero before dividing by an externally-sourced delta.
+2. **Wrap each loop iteration** in try/catch + continue so one bad record is skipped, not fatal.
+
+```javascript
+// WRONG — one malformed regex aborts ALL card benefit detection
+function detectAllBenefits(transactions, templates) {
+  for (const tmpl of templates) {
+    const re = new RegExp(tmpl.merchantPattern);  // throws SyntaxError on bad pattern
+    // ...
+  }
+}
+
+// RIGHT — guard the throw; isolate per-item failures
+function safeCompile(pattern) {
+  try { return new RegExp(pattern); } catch { return null; }
+}
+
+function detectAllBenefits(transactions, templates) {
+  for (const tmpl of templates) {
+    try {
+      const re = safeCompile(tmpl.merchantPattern);
+      if (!re) continue;
+      // ...
+    } catch (err) {
+      console.warn(`Skipping template ${tmpl.id}:`, err.message);
+      continue;
+    }
+  }
+}
+```
+
+**Self-review trigger:** Any `new RegExp(non-literal)`, `JSON.parse(file/network)`, or division by a data-derived value inside a loop → ask "does one bad input abort the whole batch?" Also: compile invariant regexes once before the loop, not per-iteration.
+
+**Why:** finance-tracker benefit auto-detection compiled `new RegExp(template.merchantPattern)` from stored card template strings inside a loop with no guard. One malformed pattern threw SyntaxError and 500'd `/api/cards/detect` for ALL cards. Same shape seen across repos: url-vault JSON.parse on metadata files; interpolation with zero-divisor timestamps.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
