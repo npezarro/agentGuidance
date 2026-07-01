@@ -28,6 +28,13 @@ PASSES=""
 while IFS= read -r SVC; do
   [ -z "$SVC" ] && continue
 
+  # Skip on-demand services (managed by ondemand-waker, stopped when idle)
+  IS_ONDEMAND=$(jq -r --arg svc "$SVC" '.services[$svc].ondemand // false' "$REGISTRY" 2>/dev/null)
+  if [ "$IS_ONDEMAND" = "true" ]; then
+    PASSES="${PASSES}  [SKIP] ${SVC} (on-demand, stopped when idle)\n"
+    continue
+  fi
+
   # Get health URL
   HEALTH=$(jq -r --arg svc "$SVC" '.services[$svc].health // empty' "$REGISTRY" 2>/dev/null)
   if [ -n "$HEALTH" ]; then
