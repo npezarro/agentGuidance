@@ -513,3 +513,31 @@ const shareUrl = `${origin}/<basePath>/share/${token}`;
 - Internal service-to-service API calls → use env vars (more stable, no user context)
 
 **Source:** shopper, foodie, and travel-assistant all received the same fix (2026-06-28) — share route handlers were building share URLs from `AUTH_URL`, which broke when the app was accessed from Tailscale or a staging hostname.
+
+## Mobile WebView Auth: Google blocks OAuth in Android WebViews (2026-06-30)
+
+Google OAuth returns `disallowed_useragent` when launched from an Android WebView (Capacitor, standard WebView). The OAuth flow never completes. This affects any Capacitor-based or hybrid app that tries to open a standard OAuth sign-in URL inside the WebView.
+
+### Solution: native sign-in → ID token → server-side session minting
+
+Replace the WebView OAuth flow with a native sign-in flow:
+
+1. Use `@capgo/capacitor-social-login` (Google Credential Manager) to get a Google ID token natively
+2. POST the ID token to the auth-proxy's `/api/auth/mobile` endpoint
+3. The endpoint verifies the token against Google's public keys, then mints per-app session cookies using `@auth/core/jwt` encode
+4. The mobile client stores the cookies and attaches them to subsequent WebView/API requests — the user is authenticated in all apps simultaneously
+
+### Key gotcha: AUTH_SECRET is NOT shared across apps in the mobile path
+
+Standard web OAuth (state JWT encoding between Auth.js instances) uses a shared `AUTH_SECRET`. The mobile path is different: `@auth/core/jwt` encodes each app's session cookie using that app's own `AUTH_SECRET` (the cookie name is the salt).
+
+- The auth-proxy holds each app's secret as `MOBILE_SECRET_<APP>` (e.g., `MOBILE_SECRET_SHOPPER`, `MOBILE_SECRET_TRAVEL`)
+- shopper/foodie/employ share one `AUTH_SECRET`; **travel uses a different one**
+- When adding a new app to the mobile endpoint, always add its corresponding `MOBILE_SECRET_<APP>` to the auth-proxy's env (see privateContext)
+
+### What NOT to do
+
+- Do NOT try to open a standard OAuth URL in a WebView — `disallowed_useragent` is a hard Google block, not a configuration issue.
+- Do NOT share the web `AUTH_SECRET` between all apps without verifying each app's actual secret — travel proved this assumption wrong.
+
+**Source:** auth-proxy commit `d4d2eca` (2026-06-30) — POST `/api/auth/mobile` endpoint; pezant-mobile Capacitor integration (run #856).
