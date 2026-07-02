@@ -1,4 +1,5 @@
 <!-- browser-page-reader.md | Last updated: 2026-05-10 -->
+<!-- Load when: page-reader CLI for JS-heavy pages -->
 # Browser Page Reader (page-reader)
 
 ## What It Is

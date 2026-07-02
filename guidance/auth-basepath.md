@@ -1,3 +1,4 @@
+<!-- Load when: authentication and base path patterns -->
 # Auth.js v5 + Next.js basePath
 
 Preventing the AUTH_URL/basePath mismatch that breaks OAuth on subpath deployments.

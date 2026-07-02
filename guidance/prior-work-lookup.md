@@ -1,3 +1,4 @@
+<!-- Load when: finding past conversations and prior work -->
 # Prior Work Lookup — Where to Search for Past Conversations
 
 When a user says "we did this before" or "our previous work on X", search these sources in order:

@@ -1,3 +1,4 @@
+<!-- Load when: async cross-session journal system -->
 # Agent Journal
 
 Cross-session async journal for sharing observations, unfinished work, and suggestions across Claude Code sessions.

@@ -1,3 +1,4 @@
+<!-- Load when: diagnosing issues, log analysis -->
 # Debugging Guidance
 
 A systematic approach to diagnosing and fixing issues.

@@ -1,3 +1,4 @@
+<!-- Load when: research depth and methodology before producing guides or recommendations -->
 # Deep Research Before Recommendations
 
 When the user asks you to research a topic and produce a guide, recommendation, analysis, or buying decision, the research phase must be thorough before you start writing. Surface-level research produces surface-level guides, and the user ends up doing the real research themselves. That defeats the purpose.

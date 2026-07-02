@@ -1,3 +1,4 @@
+<!-- Load when: branching, PRs, merge procedures, commit messages -->
 # Git Workflow
 
 ## Branch Rules

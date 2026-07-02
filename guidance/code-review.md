@@ -1,3 +1,4 @@
+<!-- Load when: self-review checklist before committing -->
 # Code Review Guidance
 
 Self-review checklist to run before every commit and PR.

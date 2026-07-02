@@ -1,3 +1,4 @@
+<!-- Load when: Snowflake/warehouse pull → DuckDB analysis → publish; auth ladder + cost gate + publish gotchas -->
 # Warehouse Analytics
 
 Pipeline for analyzing large cloud-warehouse datasets (Snowflake, BigQuery): **connect → cost-aware extract → local DuckDB analysis → publish**. Big data stays in the warehouse and local parquet; only small aggregates and reports reach git/Sheets/Docs.

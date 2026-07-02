@@ -1,3 +1,4 @@
+<!-- Load when: continuity checklist and `--refresh` command -->
 # Multi-Session Continuity
 
 For detailed guidance on session ephemerality, crash recovery, and output design, see `guidance/session-lifecycle.md`.

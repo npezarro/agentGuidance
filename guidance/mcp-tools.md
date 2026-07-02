@@ -1,3 +1,4 @@
+<!-- Load when: MCP tool provider selection (Claude AI vs piotr google-drive) -->
 # MCP Tool Selection
 
 Rules for choosing between available MCP tool providers when multiple cover the same service.

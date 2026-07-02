@@ -1,3 +1,4 @@
+<!-- Load when: when and where to persist operational learnings -->
 # Learning Capture
 
 Operational learnings, behavioral adjustments, and discovered patterns must be captured **immediately when they occur**, not deferred to session wrapup.

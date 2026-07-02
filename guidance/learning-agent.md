@@ -1,3 +1,4 @@
+<!-- Load when: hourly learning review: passes, staging, PR workflow -->
 # Learning Agent — Design
 
 A dedicated agent that periodically reviews recent work across all repos, identifies patterns and learnings that weren't captured, and persists them to the right instruction files.

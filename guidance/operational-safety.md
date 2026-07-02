@@ -1,3 +1,4 @@
+<!-- Load when: self-deploy loops, restart storms, hook loops -->
 # Operational Safety
 
 Prevent feedback loops, restart storms, and cascading failures in automated systems.

@@ -1,3 +1,4 @@
+<!-- Load when: WordPress hook setup -->
 # WordPress Auto-Posting Setup
 
 Claude Code sessions automatically save a markdown file at the end of each interaction via the `Stop` hook. Files are committed to `~/repos/wordpressPosts` for manual review before publishing to WordPress.

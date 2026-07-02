@@ -1,3 +1,4 @@
+<!-- Load when: pre-deploy and post-deploy checklists -->
 # Deployment
 
 ## Skill Routing (check before any ad-hoc ssh + pm2)
