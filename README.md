@@ -111,7 +111,6 @@ agentGuidance/
 │   ├── pr-body.md                     # Pull request body template
 │   └── commit-message.md             # Commit message format guide
 ├── hooks/
-│   └── fetch-rules.sh                 # SessionStart hook: fetch global rules
 ├── scripts/
 │   └── propagate-hooks.sh             # Push hooks + CLAUDE.md to all repos
 ├── .claude/

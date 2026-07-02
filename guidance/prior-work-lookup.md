@@ -10,7 +10,7 @@ When a user says "we did this before" or "our previous work on X", search these 
 
 ## 2. Closeout Reports
 - `~/repos/privateContext/deliverables/closeouts/` — per-session closeout markdown files
-- WordPress blog posts via `search-wp-posts.sh "<keyword>"` (script at `~/repos/agentGuidance/hooks/search-wp-posts.sh`)
+- WordPress blog posts via `search-wp-posts.sh "<keyword>"` (script at `~/repos/agentGuidance/scripts/search-wp-posts.sh`)
 - Closeouts contain detailed summaries of what was done, decisions made, and what's left
 
 ## 3. Discord Channels
