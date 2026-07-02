@@ -450,3 +450,13 @@ This failure occurs in `_doSetupUser` before the first request — it cannot be 
 The "direct Gemini fix" fallback path referenced in this file (line 183) is also broken under the free GCA account.
 
 **Mitigation:** Until migrated to a paid `GEMINI_API_KEY` or the Antigravity product, treat `gemini` CLI as unavailable. Fall back to Claude (alt-account bridge) or Codex CLI for shadow runners. Before relying on any `gemini -p` call in automation, probe with `gemini -p "ok?" 2>&1` — `IneligibleTierError` confirms the path is dead.
+
+## Shared Poller Resource Gates Must Be Scoped to the Executing Machine
+
+When a poller or executor dispatches jobs to BOTH local and remote workers (e.g. `runClaude` on the VM, `runClaudeRemote` via SSH to a local worker), any resource gate based on the local machine's resources (RAM, CPU, disk) must NOT fire for remote jobs — those jobs consume zero local resources.
+
+**Real case:** A multi-worker Discord-bot dispatcher had ONE memory watchdog for all jobs: when VM `MemAvailable < 100MB`, it killed the tracked PID. For remote SSH jobs the tracked PID was only the SSH client on the VM; the real Claude ran on the local worker using zero VM memory. VM memory pressure was killing healthy offloaded sessions. Symptom: log showed "Memory watchdog: only 93MB available — killing claude process PID" while dispatch counts showed only `runClaudeRemote` dispatches and zero VM-local `runClaude` dispatches.
+
+**Fix pattern:** Add a `skipMemoryWatchdog` (or equivalent) flag to the polling function. Set it to `true` for remote-dispatched jobs. Timeout and output-size watchdogs can still apply to remote jobs (they guard a hung SSH or runaway output regardless of location).
+
+**Rule of thumb when adding any resource guard to a shared poller:** Ask "Does this resource live on the machine actually running the session?" If the job is remote, VM-local RSS/mem/CPU is irrelevant. Source: commit 716e149 (2026-06-29).

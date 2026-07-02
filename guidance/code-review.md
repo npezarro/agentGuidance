@@ -241,3 +241,17 @@ When a prompt specifies a strict output format (e.g., "ONLY valid JSON", "no mar
 ## Update CLAUDE.md When Adding Features
 
 After implementing a new feature, route, export, or command, update the repo's CLAUDE.md before committing. Documentation lag is structural — close it at commit time. (Graduated from ESSENTIAL 2026-06-10: the CLAUDE.md drift-check PostToolUse hook now flags commits that add exports/routes/env vars without a CLAUDE.md update.)
+
+## `backdrop-filter` Ancestors Confine `position:fixed` Overlays — Portal to Body
+
+Any ancestor with a non-`none` `backdrop-filter` (e.g. glass-morphism / `backdrop-blur` cards) or `transform`/`filter` creates a CSS containing block for `position:fixed` descendants. A `fixed inset-0` modal, lightbox, or toast rendered inside such a card is silently clipped to the card's bounds, not the viewport.
+
+**Symptom:** overlay measures card dimensions instead of viewport; backdrop is unclickable or truncated.
+
+**Fix:** Use `ReactDOM.createPortal(overlay, document.body)` to render fixed overlays outside the containing ancestor.
+
+**Two follow-on gotchas after portaling:**
+1. Portals still bubble synthetic events through the React tree — clicks inside the overlay can still fire ancestor `onClick` handlers (e.g. a card's `navigate`). Add `e.stopPropagation()` on overlay and close-button handlers.
+2. `aria-modal=true` does NOT trap keyboard focus — implement an explicit Tab/Shift+Tab focus trap and reclaim focus if `document.activeElement` leaves the dialog.
+
+**Where to look:** Any `fixed` or `fixed inset-0` element inside a component that uses `backdrop-blur-*`, `blur-*`, `filter`, or CSS `transform`. Applies across all repos using the shared glass-morphism card design system. Source: autonomousDev run #324 (2026-07-02).
