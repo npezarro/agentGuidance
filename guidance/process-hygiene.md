@@ -2158,3 +2158,27 @@ This pattern recurred on the memory-constrained VM (3.8GB): services like `groce
 **Why it matters:** The VM runs ~33 always-on PM2 processes on 3.8GB of RAM. Each Next.js `next-server` uses 60-170MB. Stopped apps coming back online erodes the memory headroom that offloads (autonomous jobs, remote Claude runs) depend on.
 
 **Source:** VM memory pressure investigation (2026-05-25, 2026-07-01); `scripts` commits `35e4904` + `563168f` (ondemand-waker, 2026-06-30). See `reference_vm_memory_tuning` memory note.
+
+## Cron Script Failure Alerting — EXIT Trap + Shared Email Helper (2026-07-02)
+
+Silent failures in unattended cron scripts are the #1 cause of auth expiry going undetected for days. When a cron script can fail without triggering a Discord alert (e.g., no Claude CLI involved), add an EXIT trap that emails on non-zero exit.
+
+**Pattern:**
+```bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+alert_email() {
+  local subject="$1" body="$2"
+  "$SCRIPT_DIR/send-alert-email.sh" "$subject" "$body" 2>/dev/null || true
+}
+
+trap 'rc=$?; [[ $rc -ne 0 ]] && alert_email "⚠️ script-name failed (exit $rc)" "$(tail -5 "$LOG_FILE" 2>/dev/null)"' EXIT
+```
+
+**Rules:**
+- `send-alert-email.sh` (canonical: `~/repos/scripts/send-alert-email.sh`) reads `GMAIL_APP_PW` from `~/.secrets`, sends from `pezant.projects@gmail.com`, and **exits 0 even on send failure** — alerting never breaks the caller or extends the cron's exit code.
+- Use `EXIT` trap (not `ERR`) so the alert fires on any non-zero exit, including `set -e` aborts mid-script.
+- For failure modes that produce exit 0 but didn't actually complete (e.g., account-mismatch after OAuth rotation), also alert inline with a direct call to `alert_email` — the EXIT trap alone won't catch these.
+
+**Where to apply:** Any unattended cron script doing auth rotation, credential refresh, or other critical actions where silent failure causes downstream outages. Examples: `claude-auto-relogin-container.sh`, `refresh-bridge-auth.sh`, `refresh-claude-token.sh`.
+
+**Source:** `scripts/send-alert-email.sh` + `claude-auto-relogin-container.sh` overhaul (commit `b7691c7`, 2026-07-02).
