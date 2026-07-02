@@ -57,15 +57,28 @@ else
   log "FAIL: DISCORD_WEBHOOK_URL not configured"
 fi
 
-# --- 4. WordPress REST API (save-to-wp-repo.sh dependency) ---
-WP_SITE="${WP_SITE:-https://example.com}"
-WP_CODE=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "${WP_SITE}/wp-json/wp/v2/posts?per_page=1" 2>/dev/null || echo "000")
-if [ "$WP_CODE" = "200" ] || [ "$WP_CODE" = "401" ]; then
-  # 401 is fine — means the API is reachable but needs auth (expected for private posts)
-  log "OK: WordPress API (HTTP $WP_CODE)"
+# --- 3b. CLOSEOUT_CHANNEL_ID (post-closeout.sh dependency) ---
+# Warn-level: post-closeout.sh exits gracefully without it, but closeout
+# posts silently stop, so surface the missing var here.
+if [ -z "${CLOSEOUT_CHANNEL_ID:-}" ]; then
+  log "WARN: CLOSEOUT_CHANNEL_ID not set in ~/.env — post-closeout.sh will skip closeout posts"
 else
-  FAILURES+=("WordPress API at ${WP_SITE} returned HTTP ${WP_CODE}")
-  log "FAIL: WordPress API (HTTP $WP_CODE)"
+  log "OK: CLOSEOUT_CHANNEL_ID set"
+fi
+
+# --- 4. WordPress REST API (save-to-wp-repo.sh dependency) ---
+if [ -n "${WP_SITE:-}" ]; then
+  WP_CODE=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "${WP_SITE}/wp-json/wp/v2/posts?per_page=1" 2>/dev/null || echo "000")
+  if [ "$WP_CODE" = "200" ] || [ "$WP_CODE" = "401" ]; then
+    # 401 is fine — means the API is reachable but needs auth (expected for private posts)
+    log "OK: WordPress API (HTTP $WP_CODE)"
+  else
+    FAILURES+=("WordPress API at ${WP_SITE} returned HTTP ${WP_CODE}")
+    log "FAIL: WordPress API (HTTP $WP_CODE)"
+  fi
+else
+  # A hardcoded default (e.g. https://example.com) guarantees a misleading FAIL
+  log "SKIP: WordPress API check (WP_SITE not set in ~/.env)"
 fi
 
 # --- Report ---

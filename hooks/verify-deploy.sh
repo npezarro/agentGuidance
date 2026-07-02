@@ -25,6 +25,29 @@ SERVICES=$(cat "$TRACKER")
 FAILURES=""
 PASSES=""
 
+# HTTP check with one retry (2s sleep) so a transient blip doesn't fail
+# the deploy verification. Usage: http_check <url> <ok_code> [ok_code...]
+# Echoes the final HTTP code; always returns 0.
+http_check() {
+  local url="$1"; shift
+  local code ok attempt
+  for attempt in 1 2; do
+    # No -f: -w '%{http_code}' already yields 000 on connect failure, and
+    # -f + '|| echo 000' double-emits (e.g. "000000") on transport errors.
+    code=$(curl -s --max-time 8 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)
+    [ -z "$code" ] && code="000"
+    for ok in "$@"; do
+      if [ "$code" = "$ok" ]; then
+        echo "$code"
+        return 0
+      fi
+    done
+    [ "$attempt" = 1 ] && sleep 2
+  done
+  echo "$code"
+  return 0
+}
+
 while IFS= read -r SVC; do
   [ -z "$SVC" ] && continue
 
@@ -38,7 +61,7 @@ while IFS= read -r SVC; do
   # Get health URL
   HEALTH=$(jq -r --arg svc "$SVC" '.services[$svc].health // empty' "$REGISTRY" 2>/dev/null)
   if [ -n "$HEALTH" ]; then
-    HTTP_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$HEALTH" 2>/dev/null || echo "000")
+    HTTP_CODE=$(http_check "$HEALTH" 200)
     if [ "$HTTP_CODE" = "200" ]; then
       PASSES="${PASSES}  [PASS] ${SVC} health (${HTTP_CODE})\n"
     else
@@ -50,7 +73,7 @@ while IFS= read -r SVC; do
   URLS=$(jq -r --arg svc "$SVC" '.services[$svc].urls[]? // empty' "$REGISTRY" 2>/dev/null)
   while IFS= read -r URL; do
     [ -z "$URL" ] && continue
-    HTTP_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+    HTTP_CODE=$(http_check "$URL" 200 302)
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
       PASSES="${PASSES}  [PASS] ${SVC} page (${HTTP_CODE})\n"
     else
@@ -72,7 +95,7 @@ while IFS= read -r SVC; do
         # Build absolute URL: strip path from FIRST_URL to get origin+basepath
         BASE_URL=$(echo "$FIRST_URL" | sed 's|/$||')
         CHUNK_URL="${BASE_URL}${CHUNK_PATH}"
-        CHUNK_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$CHUNK_URL" 2>/dev/null || echo "000")
+        CHUNK_CODE=$(http_check "$CHUNK_URL" 200)
         if [ "$CHUNK_CODE" = "200" ]; then
           PASSES="${PASSES}  [PASS] ${SVC} chunk integrity (${CHUNK_CODE})\n"
         else
