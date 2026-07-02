@@ -49,3 +49,7 @@
 | 2026-03-04 | PR #3 | Add Discord stop hook for agent turn logging |
 | 2026-03-04 | PR #2 | Add Regression & Functional Verification to Testing rules |
 | 2026-03-01 | PR #1 | Comprehensive guidance improvements with modular sub-guidance and templates |
+
+## 2026-07-01 — Full-repo review implementation
+- `b83772a` review report (16 findings); `32e6c3b` agent.md v4.1.0 ESSENTIAL dedup; `c5bc0c6` hygiene (untrack logs/personal data, orphan hooks); `674a176` profiles/ removed; `da658ca` services extracted to private agentRuntime; `3793370` hooks bug batch; `5e1bbe9` portability (grep -P/flock); `2c093fc` guidance consolidation (Load-when headers, session-end dedup, process-hygiene split); `b505d00` generated MANIFEST + drift check.
+- Cross-repo: knowledgeBase `patterns/runtime-gotchas.md`; autonomousDev-private `e82f05f` (learning-agent Pass 5 retired); new repo github.com/npezarro/agentRuntime; crontab updated; VM clone re-created (was divergent+stale), pc2 synced.
