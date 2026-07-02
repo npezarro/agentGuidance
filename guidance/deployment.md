@@ -548,6 +548,25 @@ Most VM-hosted Next.js apps use the standard **nested standalone layout**: PM2 r
 
 Before assigning a new staging port, check existing PM2 processes and `~/repos/scripts/` for bound ports.
 
+## Next.js Behind Reverse Proxy: Use `AUTH_URL` for Generated URLs, Not `req.nextUrl.origin`
+
+In Next.js apps served behind Apache `ProxyPass` (shopper, foodie, travel-assistant), `req.nextUrl.origin` resolves to the **internal server address** (e.g., `http://127.0.0.1:3009`), not the public domain. Any URL built from `req.nextUrl.origin` — share links, email links, webhook callbacks — will be broken for the end user.
+
+**Fix:** Use `process.env.AUTH_URL` as the base for all generated URLs. `AUTH_URL` is already set to the correct public base URL in each app's `.env`.
+
+```ts
+// WRONG — returns internal address behind proxy
+const shareUrl = `${req.nextUrl.origin}/app/share/${token}`;
+
+// CORRECT — uses the public base from env
+const baseUrl = process.env.AUTH_URL || "https://your-domain.com";
+const shareUrl = `${baseUrl}/app/share/${token}`;
+```
+
+**Why:** The same class of bug hit three Next.js apps simultaneously (2026-07-02). `req.nextUrl.origin` was used after a prior refactor that stopped using `AUTH_URL` as the base. `req.url` and `headers.get('host')` have the same problem behind a non-HTTPS proxy.
+
+**Self-review trigger:** Any route handler that builds a URL for external consumption (share link, redirect, email, webhook) must use an env-configured base URL, not anything derived from the request object.
+
 ## VM SSH — Rapid Bursts Trip fail2ban (Port 22 Banned ~10 min)
 
 **Never fire a burst of short SSH connections to the GCP VM, and never kill a deploy SSH session mid-run then immediately retry.** The VM runs fail2ban on port 22; roughly 5 rapid or aborted connections from the same source IP trigger a ~10 minute DROP ban.
