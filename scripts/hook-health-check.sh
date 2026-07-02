@@ -66,6 +66,13 @@ else
   log "OK: CLOSEOUT_CHANNEL_ID set"
 fi
 
+# --- 3c. MANIFEST.md guidance-table drift (gen-manifest.sh) ---
+if bash "${HOME}/repos/agentGuidance/scripts/gen-manifest.sh" --check 2>/dev/null; then
+  log "OK: MANIFEST.md guidance table in sync"
+else
+  log "WARN: MANIFEST.md guidance table is stale — run scripts/gen-manifest.sh and commit"
+fi
+
 # --- 4. WordPress REST API (save-to-wp-repo.sh dependency) ---
 if [ -n "${WP_SITE:-}" ]; then
   WP_CODE=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "${WP_SITE}/wp-json/wp/v2/posts?per_page=1" 2>/dev/null || echo "000")
