@@ -15,7 +15,7 @@ Every operational function has exactly one canonical source. If you need to find
 ## Guidance Files (generated)
 
 <!-- BEGIN GENERATED guidance table (scripts/gen-manifest.sh) -->
-38 guidance files. Descriptions come from each file's "Load when:" header.
+39 guidance files. Descriptions come from each file's "Load when:" header.
 
 | File | Load when |
 |---|---|
@@ -50,6 +50,7 @@ Every operational function has exactly one canonical source. If you need to find
 | `guidance/session-lifecycle.md` | ephemerality, output design, crash recovery |
 | `guidance/session-wrapup.md` | end-of-session 7-step checklist |
 | `guidance/stop-hook-safety.md` | tiered stop hook classification, guard library, Tier 3 recursion prevention |
+| `guidance/synthetic-panel.md` | proposing, building, or shipping a user-facing product change; want structured synthetic-user feedback on an idea |
 | `guidance/tampermonkey.md` | TM script hosting and CAPTCHA bypass patterns |
 | `guidance/testing.md` | writing and running tests, cross-layer invariants |
 | `guidance/warehouse-analytics.md` | Snowflake/warehouse pull → DuckDB analysis → publish; auth ladder + cost gate + publish gotchas |
