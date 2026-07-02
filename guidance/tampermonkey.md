@@ -133,3 +133,18 @@ YouTube frequently changes DOM structure, removing elements and attributes witho
 - **Use session-scoped variables for SPA state.** For state that should persist across SPA navigation (e.g., user-set speed surviving Shorts swipes) but reset on page leave, use module-level variables instead of GM_setValue. GM_setValue is for persistent cross-session storage; module-level vars naturally reset when the page unloads.
 - **Detect navigation via video src changes, not container observers.** For SPA navigation detection (e.g., Shorts swipes), track `video.src || video.currentSrc` changes in the body-level MutationObserver rather than watching for platform-specific container mutations (`ytd-*` on desktop, `ytm-*` on mobile). This is platform-agnostic and works regardless of DOM structure differences. Compare against a `lastVideoSrc` variable with debouncing (300ms) to avoid redundant re-injection.
 - **Bump the major version** when adapting to YouTube DOM changes, as the fix typically affects multiple code paths (desktop, mobile, Shorts, fullscreen)
+
+## Claude Code Skills: YAML Frontmatter Gotcha
+
+Claude Code skills (files in `~/.claude/skills/*/SKILL.md` and `~/repos/claude-skills/`) use YAML frontmatter for `description:` and `when_to_use:`. **YAML treats an unquoted ` #` as a comment start** — any value containing a Discord/Slack channel name (e.g. `#requests`, `#intros`, `#tasks`) gets silently truncated at the `#`.
+
+**Symptom:** The skill still invokes manually, but model-invocation matching uses only the text before the `#`, making the trigger phrase incomplete or wrong. Hard to spot by inspection.
+
+**Fix:** Double-quote any `description:` or `when_to_use:` value that contains `#`:
+
+```yaml
+description: "Post to Discord #requests channel"
+when_to_use: "When the user mentions #cli-mirror output"
+```
+
+**Quick audit:** `python3 -c "import yaml, sys; d=yaml.safe_load(open(sys.argv[1])); print(d.get('description',''))" <skill-file>` — compare output length to the raw value. Found 2026-07-01: bot-self-test, linkedin-outreach-batch, vm-claude-auth-heal all had truncated triggers. Template gotcha added to `claude-skills/SKILL_TEMPLATE.md`.
