@@ -46,12 +46,12 @@
 - **Stale per-repo references:** 28 repos (8 VM, 20 local) still have old `post-to-wordpress.sh` URL in `.claude/settings.json`. Harmless (404s silently). Next `propagate-hooks.sh` run cleans them up.
 
 ### Previous (2026-05-15)
-- **Security scanner model tiering:** Opus -> Haiku first pass + Sonnet escalation for critical/high findings (`scripts/security-scanner/run.sh`)
+- **Security scanner model tiering:** Opus -> Haiku first pass + Sonnet escalation for critical/high findings (moved to agentRuntime/security-scanner 2026-07-01)
 - **Stop hook safety framework:** `guidance/stop-hook-safety.md` + guard library at `hooks/lib/stop-hook-guard.sh`
 
 ## Open Work
 - **Run `propagate-hooks.sh`** to clean up 28 stale per-repo `post-to-wordpress.sh` references
-- **Evaluate shadow runner results ~May 22:** `python3 scripts/security-scanner/compare-shadows.py --days 7`
+- **Evaluate shadow runner results ~May 22:** `python3 ~/repos/agentRuntime/security-scanner/compare-shadows.py --days 7`
 - S6 (branch collision risk) and S7 (deployment cross-ref) still open, minor
 - Recurring tasks infrastructure is generic; task configs and prompts live in `~/repos/privateContext/recurring-tasks/`
 

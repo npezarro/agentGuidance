@@ -120,6 +120,9 @@ agentGuidance/
 
 ## Ecosystem
 
+> Operational services (security-scanner, daily-tldr, supervisor reports) moved to the private `agentRuntime` repo on 2026-07-01; this repo is behavioral guidance only.
+
+
 The following public repositories make up the rest of the Claude Code harness that hangs off agentGuidance:
 
 - **[autonomousDev](https://github.com/npezarro/autonomousDev)**: Autonomous development agent on a 30-minute cron. Surveys 30+ repos, branches, implements, stages PRs for human review. Governed by agentGuidance rules, usage-gated, Discord reporting.
