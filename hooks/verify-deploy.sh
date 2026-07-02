@@ -108,7 +108,10 @@ while IFS= read -r SVC; do
 
 done <<< "$SERVICES"
 
-# Clean up tracker
+# Consume the tracker (so we don't re-verify on every Stop), but preserve the
+# record for check-commit-deploy.sh — deleting it outright made that gate
+# re-block on every subsequent Stop of the session (2026-07-01 incident).
+cat "$TRACKER" >> "/tmp/claude-deploys-verified-${SID}" 2>/dev/null || true
 rm -f "$TRACKER"
 
 # Build output

@@ -21,6 +21,10 @@ DEPLOYED="/tmp/claude-deploys-${SID}"
 
 DEPLOYED_SVCS=""
 [ -f "$DEPLOYED" ] && DEPLOYED_SVCS=$(cat "$DEPLOYED")
+# verify-deploy.sh consumes the live tracker into a -verified file; count those too.
+VERIFIED="/tmp/claude-deploys-verified-${SID}"
+[ -f "$VERIFIED" ] && DEPLOYED_SVCS="${DEPLOYED_SVCS}
+$(cat "$VERIFIED")"
 # Docs-only acknowledgment file: services listed here are treated as satisfied.
 # Used when new commits touch no runtime files, or when the deploy was performed
 # by a subagent (different session_id, so track-deploy.sh never saw it).
