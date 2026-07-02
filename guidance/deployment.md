@@ -1,6 +1,15 @@
 # Deployment
 
-## Staging-First Apps
+## Skill Routing (check before any ad-hoc ssh + pm2)
+
+A 2026-07-01 transcript audit found 97 sessions doing raw `ssh + pm2 restart` deploys with zero skill usage, while the deploy skills sat unused. Before running any ad-hoc deploy or restart command, route through the right skill:
+
+- **shopper, foodie, finance-tracker, travel-assistant, employ** (Next.js subpath apps): `staging` skill. Always.
+- **Any other PM2 service on the VM** (bots, APIs, workers): `deploy` skill.
+- **"Styling is broken" / unstyled page / dead buttons / `_next/static` 500s** on any production Next.js app: `fix-static-asset-drift` skill; do not debug CSS first.
+- **VM feels slow / disk warnings**: `vm-health`, then `vm-cleanup`.
+
+Invoke the skill (Skill tool), don't just Read its SKILL.md — invocation is what loads the full procedure and logs usage.
 
 **shopper, finance-tracker, and travel-assistant always deploy through staging.** Use the `/staging` skill. Do not deploy these apps directly to production unless the user explicitly requests it (e.g., emergency hotfix).
 
