@@ -135,5 +135,18 @@ Chrome throttles content-script/page timer polling to ~1 request per minute for 
 
 **If you still see background-tab timeouts:** the relay is likely pre-fix. Pull `55d1a74` (`agent-server.js` + `lib/core.js`) and `pm2 restart browser-agent`. No extension update needed.
 
+## Browser-Agent Extension Reload After Updates
+
+When the relay server is updated with changes that involve new content-script messaging (new `ba-*` registration commands, new `resolveTabId` lookup paths), the Chrome extension MUST be reloaded to activate the new content-script features. The relay restart alone is not enough.
+
+**When required:** any update to content-script message handlers or extension-side tab registry logic.
+
+**How to reload:**
+1. Open `chrome://extensions` in Chrome
+2. Find "Browser Agent" and click the reload icon (↺)
+3. Spawn fresh tabs via `browser-cli ensure <url>` after reload so content scripts re-register
+
+**v2.8.0 example (commit `6431607`, 2026-07-01):** The extension gained an `internalId→chromeTabId` registry populated by `ba-register-tab` content-script registration. Without an extension reload, `resolveTabId` fell through to the active-tab fallback, causing CDP commands (screenshot, click, close, focus) to silently target the WRONG tab instead of the named tab.
+
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
