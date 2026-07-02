@@ -21,6 +21,12 @@ DEPLOYED="/tmp/claude-deploys-${SID}"
 
 DEPLOYED_SVCS=""
 [ -f "$DEPLOYED" ] && DEPLOYED_SVCS=$(cat "$DEPLOYED")
+# Docs-only acknowledgment file: services listed here are treated as satisfied.
+# Used when new commits touch no runtime files, or when the deploy was performed
+# by a subagent (different session_id, so track-deploy.sh never saw it).
+ACK="/tmp/claude-deploy-ack-${SID}"
+[ -f "$ACK" ] && DEPLOYED_SVCS="${DEPLOYED_SVCS}
+$(cat "$ACK")"
 
 MISSING=""
 
@@ -60,7 +66,7 @@ while IFS= read -r REPO_ROOT; do
 done <<< "$REPO_ROOTS"
 
 if [ -n "$MISSING" ]; then
-  MSG="COMMIT WITHOUT DEPLOY: Files were modified in deployed repos but no deploy was performed:\n${MISSING}Deploy these services before ending the session, or note in context.md that a deploy is pending."
+  MSG="COMMIT WITHOUT DEPLOY: Files were modified in deployed repos but no deploy was performed:\n${MISSING}Deploy these services before ending the session. ONLY IF the new commits are docs-only (no runtime files) or the deploy already ran inside a subagent (verify the live health endpoint first), acknowledge with: echo '<service>' >> /tmp/claude-deploy-ack-${SID}"
   printf '{"decision":"block","reason":"%s"}' "$(printf "$MSG" | tr '\n' ' ')"
 fi
 
