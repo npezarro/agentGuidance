@@ -92,9 +92,23 @@ MEMEOF
       if [ "${#HOOK}" -gt "$HOOK_MAX" ]; then
         HOOK="$(printf '%s' "$SUMMARY" | cut -c1-"$HOOK_MAX" | sed 's/[[:space:],;:.—-]*$//')…"
       fi
-      ( flock -w 5 9 2>/dev/null || true
+      # flock is not universal (absent on some Macs/minimal boxes): fall back
+      # to an mkdir lock with the same wait-up-to-5s-then-proceed semantics.
+      # compact-memory-index.sh takes the same locks around its rewrite.
+      if command -v flock >/dev/null 2>&1; then
+        ( flock -w 5 9 2>/dev/null || true
+          echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
+        ) 9>"$MEMORY_INDEX.lock" 2>/dev/null
+      else
+        LOCK_D="$MEMORY_INDEX.lock.d" LOCK_HELD=false WAITED=0
+        while :; do
+          if mkdir "$LOCK_D" 2>/dev/null; then LOCK_HELD=true; break; fi
+          [ "$WAITED" -ge 5 ] && break   # timed out: proceed anyway (matches flock -w 5 || true)
+          sleep 1; WAITED=$((WAITED + 1))
+        done
         echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
-      ) 9>"$MEMORY_INDEX.lock" 2>/dev/null
+        [ "$LOCK_HELD" = true ] && rmdir "$LOCK_D" 2>/dev/null || true
+      fi
     fi
     DESTINATIONS+=("memory:$MEM_PATH")
   fi

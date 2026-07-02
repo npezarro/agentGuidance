@@ -58,9 +58,22 @@ process_one() {
   # Serialize with concurrent appenders (learning-agent crons, other sessions)
   # on the same lock file so a read-modify-write never clobbers a fresh append.
   # propagate-learning.sh takes the same "$INDEX.lock" around its >> append.
+  # flock is not universal (absent on some Macs/minimal boxes): fall back to an
+  # mkdir lock with the same wait-up-to-5s-then-proceed semantics.
   (
-    exec 9>"$INDEX.lock" 2>/dev/null || true
-    flock -w 5 9 2>/dev/null || true
+    if command -v flock >/dev/null 2>&1; then
+      exec 9>"$INDEX.lock" 2>/dev/null || true
+      flock -w 5 9 2>/dev/null || true
+    else
+      LOCK_D="$INDEX.lock.d" LOCK_HELD=false WAITED=0
+      while :; do
+        if mkdir "$LOCK_D" 2>/dev/null; then LOCK_HELD=true; break; fi
+        [ "$WAITED" -ge 5 ] && break   # timed out: proceed anyway (matches flock -w 5 || true)
+        sleep 1; WAITED=$((WAITED + 1))
+      done
+      # Release on every exit path of this subshell (including the empty-TMP exit 0)
+      trap '[ "${LOCK_HELD:-false}" = true ] && rmdir "${LOCK_D}" 2>/dev/null || true' EXIT
+    fi
     before=$(wc -c < "$INDEX" 2>/dev/null || echo 0)  # re-measure under the lock
 
     local TMP after n
