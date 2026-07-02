@@ -90,11 +90,13 @@ const nextConfig: NextConfig = {
 };
 ```
 
+**CRITICAL: GitHub Pages requires a PUBLIC repo on free GitHub plan.** Making a repo private immediately breaks GitHub Pages — the site goes 404. If a site must be private (e.g., it embeds the production domain or sensitive content), host on VM Apache with `Alias /path /var/www/dir` instead. Source: netflix-social-platform (2026-07-01) went private for panel prep → GitHub Pages broke → switched to Apache Alias at `/var/www/games-social`.
+
 **When to use GitHub Pages over VM PM2:**
-- Pure demo/portfolio/static-content apps
+- Pure demo/portfolio/static-content apps with a PUBLIC repo
 - No server-side API routes, database, or OAuth
 - No need for Apache ProxyPass config
-- App is public (no auth gate needed)
+- App is public (no auth gate needed) AND repo can stay public
 
 **When to stay on VM PM2:**
 - Needs dynamic API routes, SQLite, or server-side rendering
