@@ -72,7 +72,6 @@ Standard memory file with frontmatter.
 | Workflow pattern | N/A | `agentGuidance/guidance/<topic>.md` |
 | Prompt template | N/A | `privateContext/prompts/<name>.md` |
 | Infrastructure detail | N/A | `privateContext/infrastructure.md` or `accounts.md` |
-| Agent profile learning | N/A | `agentGuidance/profiles/<agent>/experience.md` |
 | User preference/style | N/A | `agentGuidance/guidance/written-voice.md` or similar |
 
 #### Step 3: Commit and push

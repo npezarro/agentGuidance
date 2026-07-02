@@ -2,7 +2,7 @@
 
 Version-controlled copies of the custom subagent definitions that live at `~/.claude/agents/` (the active location Claude Code reads from). These were previously unversioned and live-only; this directory is their backup and source of history.
 
-Each `<name>.md` defines a specialist subagent (frontmatter `name` + `description`, optional `model`, optional `allowed-tools`, then the system prompt). Most load their persistent identity and recent experience from the matching `agentGuidance/profiles/<name>/` directory, so the definitions here and the profiles are coupled and should be edited together.
+Each `<name>.md` defines a specialist subagent (frontmatter `name` + `description`, optional `model`, optional `allowed-tools`, then the system prompt). The former `profiles/` persona system (persistent identity + experience logs) was removed 2026-07-01; definitions are now self-contained. History: see git before commit c5bc0c6.
 
 ## Current agents
 - **architect** — system design, architecture decisions, migration planning

@@ -25,7 +25,6 @@ Every operational function has exactly one canonical source. If you need to find
 | Operational safety | `guidance/operational-safety.md` | Self-deploy loops, restart storms |
 | Secrets hygiene | `guidance/secrets-hygiene.md` | Rotation, history rewrite, detection |
 | Usage guardrail | `~/repos/privateContext/rules/usage-guardrail.md` | Team spawn gate at 75% |
-| Agent profiles | `profiles/_schema.md` | Identity + experience log format |
 | Written voice | `guidance/written-voice.md` | Writing in the owner's voice |
 | WordPress posting | `guidance/wordpress-auto-posting.md` | WordPress hook setup |
 | Auto-posting | `guidance/auto-posting.md` | Multi-destination posting design |
@@ -38,8 +37,6 @@ Every operational function has exactly one canonical source. If you need to find
 | Learning propagation script | `scripts/propagate-learning.sh` | Single-command multi-destination learning routing |
 | Essential rules (auto-loaded) | `guidance/ESSENTIAL.md` | Top-10 most-violated rules, injected at SessionStart |
 | Comprehensive closeout | `guidance/comprehensive-closeout.md` | Detailed session documentation for important conversations |
-| Propagation agent profile | `profiles/propagation/` | Dedicated role for learning routing consistency |
-| Doc-sync agent profile | `profiles/doc-sync/` | Dedicated role for CLAUDE.md freshness post-merge |
 | Cross-repo knowledge wiki | `~/repos/knowledgeBase/` | Synthesized cross-cutting reference; MANIFEST.md maps pages to sources |
 
 ## Rules vs Guidance
@@ -48,7 +45,6 @@ Every operational function has exactly one canonical source. If you need to find
 - **`guidance/`** (24 files): Detailed procedures loaded on-demand. `ESSENTIAL.md` is auto-loaded; rest are on-demand. One file per function; no duplication.
 - **`scripts/`**: Operational scripts (`propagate-learning.sh`, etc.)
 - **`agent.md`**: Slim routing table (~80 lines) with core principles and the guidance index.
-- **`profiles/`**: Agent identity and experience. One subdirectory per agent (including propagation, doc-sync).
 
 ## Adding New Functions
 

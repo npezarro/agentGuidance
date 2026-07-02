@@ -47,7 +47,7 @@ Each run reviews a sliding window of recent activity:
 ### What It Produces (Output)
 
 1. **Guidance updates** — Edits to existing `agentGuidance/guidance/*.md` files or new files when a gap is identified
-2. **Profile experience entries** — Appends to `profiles/<agent>/experience.md` when a session demonstrated a pattern relevant to that profile
+2. ~~Profile experience entries~~ — retired 2026-07-01 (profiles/ removed from agentGuidance)
 3. **Prompt refinements** — Updates to `privateContext/prompts/*.md` when a prompt strategy worked well or failed
 4. **CLAUDE.md patches** — Updates to specific repo CLAUDE.md files when repo-specific learnings weren't captured
 5. **Journal entries** — Posts observations to agent-journal for other sessions to see
