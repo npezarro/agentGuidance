@@ -55,3 +55,6 @@
 - Cross-repo: knowledgeBase `patterns/runtime-gotchas.md`; autonomousDev-private `e82f05f` (learning-agent Pass 5 retired); new repo github.com/npezarro/agentRuntime; crontab updated; VM clone re-created (was divergent+stale), pc2 synced.
 - check-commit-deploy gate: honor /tmp/claude-deploy-ack-<sid> for docs-only commits and subagent-performed deploys (which run under a different session_id and never register in track-deploy); dropped the undetectable "note in context.md" escape from the block message. Both branches tested.
 - Stop-hook state lifecycle fix: verify-deploy.sh consumed AND deleted /tmp/claude-deploys-<sid>, so check-commit-deploy re-blocked on every Stop after the first. Tracker now archived to -verified on consumption; the gate reads live + verified + ack files. Regression-tested across two simulated Stops.
+
+## 2026-07-02 — Skill routing rule from library audit
+- `guidance/deployment.md`: new "Skill Routing" section (staging apps list, generic deploy path, fix-static-asset-drift for styling-broken symptoms, vm-health/vm-cleanup). Audit context: 97 zero-skill ssh+pm2 sessions found in 21 days of transcripts. Companion edits in `~/.claude/rules/deploy-safety.md` (not this repo). Closeout: privateContext/deliverables/closeouts/2026-07-02-skill-library-audit-rework.md
