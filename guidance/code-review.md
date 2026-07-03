@@ -255,3 +255,20 @@ Any ancestor with a non-`none` `backdrop-filter` (e.g. glass-morphism / `backdro
 2. `aria-modal=true` does NOT trap keyboard focus — implement an explicit Tab/Shift+Tab focus trap and reclaim focus if `document.activeElement` leaves the dialog.
 
 **Where to look:** Any `fixed` or `fixed inset-0` element inside a component that uses `backdrop-blur-*`, `blur-*`, `filter`, or CSS `transform`. Applies across all repos using the shared glass-morphism card design system. Source: autonomousDev run #324 (2026-07-02).
+
+## JS Truthiness Guards Don't Reject Negatives — Use `<= 0` for Non-Negative External Quantities
+
+When validating a physical or non-negative numeric value parsed from external input (webhook payloads, API responses, user data), `!x || x === 0` does NOT reject negative values — JavaScript treats negative numbers as truthy. A negative distance, duration, speed, price, or count flows through arithmetic and produces an invalid result.
+
+**Fix:** Use `<= 0` for any quantity that must be strictly positive:
+```js
+// BAD: lets negative durationSec through
+if (!distanceM || !durationSec || distanceM === 0) return undefined;
+
+// GOOD
+if (!distanceM || !durationSec || distanceM <= 0 || durationSec <= 0) return undefined;
+```
+
+**Self-review trigger:** Any guard on an externally-sourced numeric that represents a measured, non-negative quantity — ask "does `!x || x === 0` let negatives through?" If yes, change to `<= 0`.
+
+**Real case (`runEvaluator computePace`, 2026-07-01):** Guard `distanceM === 0` let `computePace(8000, -100)` return −12.5 (invalid negative pace) which propagated into `avgPace`. The sibling Strava `paceFromSpeed` already used `speed <= 0` correctly — the two adapters were inconsistent. Fixed in autonomousDev run #323 (PR #267).
