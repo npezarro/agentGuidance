@@ -84,6 +84,7 @@ Load on-demand based on the current task:
 - `guidance/prior-work-lookup.md` -- finding past conversations and prior work
 - `guidance/research-quality.md` -- curating high-quality references and study resources
 - `guidance/deep-research.md` -- research depth and methodology before producing guides or recommendations
+- `guidance/fact-checking.md` -- mandatory search-verification of external actionable claims (prices, eligibility rules, offers) before asserting
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
 - `guidance/repo-creation.md` -- checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure
 - `guidance/public-app-isolation.md` -- siloed alt account pattern for public-facing apps with untrusted input
