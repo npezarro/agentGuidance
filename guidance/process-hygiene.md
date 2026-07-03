@@ -2182,3 +2182,17 @@ trap 'rc=$?; [[ $rc -ne 0 ]] && alert_email "⚠️ script-name failed (exit $rc
 **Where to apply:** Any unattended cron script doing auth rotation, credential refresh, or other critical actions where silent failure causes downstream outages. Examples: `claude-auto-relogin-container.sh`, `refresh-bridge-auth.sh`, `refresh-claude-token.sh`.
 
 **Source:** `scripts/send-alert-email.sh` + `claude-auto-relogin-container.sh` overhaul (commit `b7691c7`, 2026-07-02).
+
+## Suspending an Autonomous Agent — Full Checklist (2026-07-03)
+
+When permanently suspending an autonomous service, stopping PM2 alone is not enough. Three separate systems keep an agent alive: PM2 (restores on reboot and deploy-path restarts), cron (fires on schedule regardless of PM2 state), and remote copies (the same repo may run on multiple machines with independent PM2 + crontab).
+
+**Checklist (run on EVERY machine that runs the agent):**
+- [ ] `pm2 stop <service> && pm2 save` — prevents PM2 from auto-restarting on reboot or deploy
+- [ ] Comment out all cron entries for the agent (`# PAUSED YYYY-MM-DD`) — a cron that calls `run.sh` directly bypasses PM2 and can restart the agent as a side effect
+- [ ] Add `SUSPENDED.md` in the repo root with: date, reason, machine(s) affected, resume instructions
+- [ ] Verify journal/channel entries stop within one cron cycle
+
+**Why multi-machine matters:** The trading-agent was suspended WSL-side (2026-07-01: pm2 stop + pm2 save) but the GCP VM had a fully independent installation with its own PM2 instance, crontab, and no SUSPENDED.md. The VM continued firing the fast-loop cron every 30 minutes, posting noise journal entries for 2 days after the WSL-side suspension.
+
+**Source:** trading-agent multi-machine suspension gap (WSL suspended 2026-07-01, VM suspended 2026-07-03). Fix: SSH to each remote host, comment out cron entries with `sed "/service-name/s/^/# PAUSED YYYY-MM-DD /"`, and add SUSPENDED.md to the repo on that machine.
