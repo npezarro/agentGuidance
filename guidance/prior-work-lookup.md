@@ -3,6 +3,21 @@
 
 When a user says "we did this before" or "our previous work on X", search these sources in order:
 
+## 0. Recall Index (fastest for conversational content; WSL host only)
+A local FTS5 + semantic index of ALL past Claude Code sessions (~114K turn-blocks) lives at
+`~/repos/session-recall`. This is the first place to look when the prior work was a *conversation*
+(a decision, a debugging arc, an exact command) rather than a committed file.
+```bash
+R=~/repos/session-recall/recall
+$R "kroger token refresh 401"                 # keyword — error strings, commands, names
+$R "static asset drift" --project shopper --since 2026-06-01
+$R --semantic "why did we abandon the local worker bridge"   # meaning-based questions
+$R show <session-id>:<line>                    # expand a hit with surrounding context
+```
+Bodies are scrubbed; do not paste raw `recall` output into external surfaces without re-scrubbing.
+Run `~/repos/session-recall/reindex.sh` if the index looks stale. (Only on the WSL host — the VM
+and other machines don't have the index; use sources 1-6 there.)
+
 ## 1. Git History (fastest, most reliable)
 - `git log --all --oneline --grep="<keyword>"` in the relevant repo
 - `git log --all --oneline -- <file>` for specific file changes
@@ -49,6 +64,11 @@ gh search commits "<keyword>" --owner npezarro --limit 20
 - Check existing memory files for project context
 
 ## Gaps
-- Claude Code conversation history is NOT persisted between sessions unless captured in a closeout, commit, or Discord post
-- If a conversation produced no commit, no closeout, and no Discord post, it's effectively lost
-- Always encourage closeouts for substantive work to prevent this
+- On the WSL host, the recall index (source 0) captures conversation history verbatim even when a
+  session produced no commit, closeout, or Discord post — as long as the session ran on this host
+  and the index has been refreshed (`reindex.sh`, also hourly via cron).
+- Remaining gap: sessions that ran ONLY on the VM or another machine are not in the local recall
+  index. #cli-interactions (which recall also ingests) is the cross-machine backstop, but only
+  captures logged turns. For those, still rely on closeouts, commits, and Discord posts.
+- Closeouts remain valuable for substantive work: they add human-readable synthesis the raw index
+  lacks, and they cover the cross-machine gap.
