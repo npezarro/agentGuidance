@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-07-04 | ESSENTIAL rule 3 (Verify Before Asserting) gained the externally-verifiable-facts clause + new `guidance/fact-checking.md` (commit `8e41e02`): any external + actionable fact (issuer/card eligibility rules, offers, prices, API limits, versions, policies) MUST be search-verified before asserting — the model no longer self-assesses whether a domain is "fast-moving"; procedure = `/fact-check` skill. Source precedence codified: user's own statement > current web sources > curated internal files > model memory. Driven by the 2026-07-03 CC-thread postmortem (two confident-wrong claims from model memory + one stale-file-over-user override). agent.md index at 92 lines. Closeout: `privateContext/deliverables/closeouts/2026-07-04-requests-thread-continuity-postmortem.md`.
+
+## Last Updated (prior)
 2026-07-02 | `guidance/deployment.md` gained a "Skill Routing" section (check deploy/staging/fix-static-asset-drift/vm-health skills BEFORE any ad-hoc ssh+pm2), driven by the 2026-07-01 skill-library audit finding 97 zero-skill deploy sessions in 21 days. Mirrored in `~/.claude/rules/deploy-safety.md` (with a Cloudflare cf-cache-status post-deploy caveat). Closeout: `privateContext/deliverables/closeouts/2026-07-02-skill-library-audit-rework.md`.
 
 ### Previous

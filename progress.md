@@ -11,6 +11,8 @@
 
 ## Log
 
+- 2026-07-04 | guidance | `8e41e02` — ESSENTIAL rule 3 externally-verifiable-facts clause + `guidance/fact-checking.md` + agent.md index line; companion `/fact-check` skill in claude-skills. From the 2026-07-03 CC-thread postmortem.
+
 | 2026-06-30 | fix | `9c81340` bound the always-loaded MEMORY.md index to its ~24.4KB budget: `propagate-learning.sh` caps the index hook to ~128 chars on append (flock-coordinated); new `hooks/compact-memory-index.sh` SessionStart self-heal (non-destructive, idempotent, warns/`--check` over hard limit); `guidance/learning-capture.md` "MEMORY.md Index Budget" section. Root cause: unbounded SUMMARY append. Index 32KB→~22.5KB, 12 redundant/superseded memories archived. |
 | 2026-06-30 | fix | `25be864` made `compact-memory-index.sh` machine-agnostic: hook mode heals the current project's index (CLAUDE_PROJECT_DIR/PWD slug, fallback to interactive primary); `--check` audits all indexes. Required because the VM's home-dir project slug (non-`npezarro`) wasn't matched by the original hardcoded globs. Wired+verified on this host + VM; pc2 pending (WSL sshd down). Surfaced a 626KB malformed autonomousDev-private index (warns, can't auto-fix). |
 | 2026-06-30 | docs | knowledgeBase `agent-system/memory-system.md` + `infra/{windows-pc,macbook}-claude-code.md`: new machines wire `compact-memory-index.sh` into global SessionStart (curl-from-main pattern); per-machine wiring caveat documented. |
