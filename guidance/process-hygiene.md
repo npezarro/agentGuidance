@@ -2159,6 +2159,8 @@ This pattern recurred on the memory-constrained VM (3.8GB): services like `groce
 
 **Source:** VM memory pressure investigation (2026-05-25, 2026-07-01); `scripts` commits `35e4904` + `563168f` (ondemand-waker, 2026-06-30). See `reference_vm_memory_tuning` memory note.
 
+**Restarting a waker-managed app correctly:** Don't `pm2 start`/`pm2 restart` a waker-managed app directly. The waker tracks `lastSeen` per app; an app started outside the waker has `lastSeen` defaulting to `0`, so the next reaper tick sees it as long-idle and immediately stops it again — a restart that appears to silently fail seconds later for no visible reason. To restart correctly, either make a request through the waker (`curl http://127.0.0.1:3200/<prefix>`) or let it wake from real traffic. Affected apps: `manchu-translator`, `student-transcript`, `botlink`, `promptlibrary`, `grocerygenius`.
+
 ## Cron Script Failure Alerting — EXIT Trap + Shared Email Helper (2026-07-02)
 
 Silent failures in unattended cron scripts are the #1 cause of auth expiry going undetected for days. When a cron script can fail without triggering a Discord alert (e.g., no Claude CLI involved), add an EXIT trap that emails on non-zero exit.

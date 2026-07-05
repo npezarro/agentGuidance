@@ -93,6 +93,7 @@ The learning agent needs a focused prompt that:
 3. **Append-only for experience logs** — Never edit or delete existing profile experience entries
 4. **Diff review** — Before committing, show the full diff and validate against secrets-hygiene
 5. **Idempotent** — Running twice on the same data should produce no additional changes
+6. **Dedup against the active consolidation branch, not just `main`** — When the open-PR cap is reached, prior runs commit new content onto the newest existing open learnings branch (e.g. `claude/learnings-775`) instead of merging it to `main`. That branch can sit open for many runs. A dedup check that only greps `main` will re-"discover" gaps that a recent run already staged on the open branch (confirmed run #872: 3 of 4 candidate findings were already present on `claude/learnings-775` despite being absent from `main`). Before treating something as a gap, check both `main` AND the current open consolidation branch's content (`git show <branch>:<file>` or check out the branch in a worktree) — never just `main`.
 
 ## Integration with Existing Systems
 

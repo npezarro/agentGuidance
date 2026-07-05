@@ -514,6 +514,16 @@ const shareUrl = `${origin}/<basePath>/share/${token}`;
 
 **Source:** shopper, foodie, and travel-assistant all received the same fix (2026-06-28) — share route handlers were building share URLs from `AUTH_URL`, which broke when the app was accessed from Tailscale or a staging hostname.
 
+### Refinement: Same-App Self-Fetch Must Use `localhost`, Not the Public/Proxied URL
+
+The "internal service-to-service calls → use env vars" rule above assumes the env var points somewhere safe to hairpin through. It does not, when the target is the **same app calling its own API route** (e.g., a Next.js SSR server component fetching one of its own route handlers during render) and the env var in question (`APP_URL`, `AUTH_URL`) is the **external, publicly-proxied URL**.
+
+**Why it breaks:** A same-box self-fetch to the public URL routes back out through Cloudflare and the OAuth auth-proxy. If the proxy intercepts the request (e.g., returns an HTML redirect/login page instead of the expected JSON), the SSR fetch tries to `JSON.parse()` HTML and 500s — intermittently, since it depends on proxy/session state.
+
+**Fix:** For an app's own internal self-fetch, always use `http://localhost:<PORT>` (the port the process itself listens on), never `APP_URL`/the public domain. Reserve the public-URL env var for genuinely cross-service calls and user-facing contexts (callbacks, share links).
+
+**Source:** promptlibrary PR #195/#194 (2026-07-05) — SSR server components self-fetched via `APP_URL` (the external `https://` domain), which round-tripped through Cloudflare + the OAuth proxy and intermittently 500'd when the proxy returned a redirect page instead of JSON. Fixed by switching the internal self-fetch to `http://localhost:PORT`.
+
 ## Mobile WebView Auth: Google blocks OAuth in Android WebViews (2026-06-30)
 
 Google OAuth returns `disallowed_useragent` when launched from an Android WebView (Capacitor, standard WebView). The OAuth flow never completes. This affects any Capacitor-based or hybrid app that tries to open a standard OAuth sign-in URL inside the WebView.
