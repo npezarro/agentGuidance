@@ -90,3 +90,4 @@ Load on-demand based on the current task:
 - `guidance/public-app-isolation.md` -- siloed alt account pattern for public-facing apps with untrusted input
 - `guidance/when-to-fan-out.md` -- when to spawn subagents (Task fan-out / parallel bash / Workflow) vs stay single-agent; concurrency-safe 3-phase pattern
 - `guidance/synthetic-panel.md` -- advisory synthetic-user feedback on user-facing changes; fail-open contract, panel-check.sh usage
+- `guidance/opus-fable-parity.md` -- validated instruction layer closing the Opus 4.8 → Fable 5 behavioral gap; inject into Opus pipelines needing Fable-grade rigor (requires ≥45-turn budget)
