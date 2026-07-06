@@ -163,6 +163,9 @@ git bisect good <hash>  # this commit was working
   env: { NODE_OPTIONS: '--max-old-space-size=1024' }
   ```
   Also raise `max_memory_restart` to match (e.g., `1G`). Source: finance-tracker (2026-05-15).
+- **`datetime('now')` strings parse as LOCAL time in `new Date()`, not UTC.** SQLite stores UTC as `"YYYY-MM-DD HH:MM:SS"` (space-separated, no `T`/`Z`). The ECMAScript Date parser treats that non-ISO form as local time, so rendering a stored timestamp via `new Date(created_at)` silently shifts it by the viewer's UTC offset (7-8h for Pacific users), and can shift the displayed date near UTC midnight. This bites both Prisma-on-SQLite and raw `better-sqlite3` apps alike — it's a JS Date-parsing bug, not a Prisma one.
+  - **Fix**: normalize before parsing — strict-match `/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/` and rewrite to `` `${date}T${time}Z` ``; pass already-ISO strings through unchanged. SQL-side comparisons like `date(created_at) = utcToday` are unaffected (both sides stay UTC).
+  - Source: foodie `LocalTimestamp.tsx` (PR #48, 2026-07-06) fed raw DB strings straight to `new Date()` at 3 call sites. Verified: `new Date('2026-07-06 12:00:00').toISOString()` → `19:00Z` on a PDT host. shopper, travel-assistant, and employ carry identical `LocalTimestamp.tsx` clones with the same bug (grep-confirmed, not yet ported).
 
 ### 10. Prisma + PostgreSQL: Use pg.Pool, Not Raw Connection String
 
