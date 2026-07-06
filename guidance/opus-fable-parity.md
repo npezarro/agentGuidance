@@ -1,11 +1,13 @@
 # Opus → Fable Parity Layer
 
 Instruction layer that closes the measured behavioral gap between Claude Opus 4.8 and
-Claude Fable 5. Empirically validated 2026-07-06 via claude-bakeoff (blind-judged,
-Fable-5 judge): Opus 4.8 + this layer met or beat a Fable 5 reference arm on 2 of 3
-probes (verify-claims 9 vs 8, multi-file-impl 9 vs 8) and trailed by one point on the
-third (autonomy 8 vs 9). Baseline Opus scored 7/8/6 on the same probes. Evidence:
-`privateContext/deliverables/audits/2026-07-06-fable-opus-capability-gap.md`.
+Claude Fable 5. Empirically validated 2026-07-06 via claude-bakeoff across 12 blind-judged
+head-to-head runs on 6 probe dimensions (layer v4): Opus 4.8 + layer averaged 8.55 vs the
+Fable 5 reference's 8.64, winning 5 runs outright (verify-claims x2, multi-file x2, fanout)
+with 2 score-ties, vs baseline Opus's 7.7 average. Objective ground-truth checks (test
+suites, exit codes) showed the arms' *work* equivalent wherever scores diverged — the
+residual differences are final-report evidence fidelity on long tasks and raw review
+depth. Evidence: `privateContext/deliverables/audits/2026-07-06-fable-opus-capability-gap.md`.
 
 ## What the gap actually is
 
@@ -56,6 +58,8 @@ When the answer depends on information not present in the conversation or the fi
 
 ### Communicating results
 Lead with the outcome: your first sentence should answer "what happened" or "what did you find". Supporting detail comes after. Your final summary is for a reader who did not watch you work: complete sentences, spell out terms, no arrow chains or invented shorthand. State plainly what is done and verified, what is not verified, and any decisions you made on the user's behalf.
+
+Your final message is the only thing the reader sees — they do not see the session that produced it. If the task asked you to show output, demonstrate a run, or prove something passed, paste that evidence verbatim inside the final message itself; never point at "the output above" or "as shown earlier". Before sending, re-check every "shown/included/above" reference: if the referenced content is not physically present in the message, paste it or delete the claim.
 <!-- PARITY-LAYER-END -->
 
 ## Honest residuals (what this layer does NOT close)
