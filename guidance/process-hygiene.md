@@ -148,6 +148,14 @@ const server = startServer();
 
 **Client-side companion: also retry `ECONNREFUSED`.** A worker or client process that starts before its server is fully bound will receive `ECONNREFUSED` instead of `EADDRINUSE`. Include `ECONNREFUSED` in the retryable error set alongside network errors (`EAI_AGAIN`, `ECONNRESET`, `ETIMEDOUT`). This handles the startup-race case where the server and client launch concurrently (e.g., PM2 starts both in rapid succession). Source: claudeNet `bin/claudenet-worker.js` commit `1788628` (2026-06-16).
 
+### PM2 `cron_restart` Does Not Reliably Fire for Batch Jobs
+
+PM2's `cron_restart` + `autorestart: false` only restarts a process that PM2 still considers "stopped" from *its own* tracking — it does not reliably reawaken a batch script that exits normally after doing its work. The script exits, PM2 marks it "stopped", and the cron silently never fires again on some deployments. This took deal-scout offline for 12+ days (June/July 2026) with no error, no alert — it just stopped posting.
+
+**Fix:** For any run-once/batch/cron-style PM2 process (digest posters, scrapers, daily scripts), use system crontab calling `pm2 restart <name> --update-env` as the primary scheduler. Keep `cron_restart` in `ecosystem.config.js` only as documentation, not as the sole mechanism.
+
+Full pattern + example crontab entry: `knowledgeBase/patterns/pm2-service-pattern.md` § "Batch Jobs (Run-Once Scripts)". Source: deal-scout commits `8a7d712`/`8b5872a` (2026-07-05).
+
 ## Docker Bind Mount Refresh
 
 **`docker compose restart` does NOT refresh bind mounts.** When a container is restarted with `docker compose restart`, the container process is restarted but the container itself is not recreated. Bind mount inodes remain stale, so any files updated on the host (e.g., credential files, OAuth tokens) are not visible inside the container until the container is recreated.
