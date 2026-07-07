@@ -1,13 +1,14 @@
 # Opus → Fable Parity Layer
 
 Instruction layer that closes the measured behavioral gap between Claude Opus 4.8 and
-Claude Fable 5. Empirically validated 2026-07-06 via claude-bakeoff across 12 blind-judged
-head-to-head runs on 6 probe dimensions (layer v4): Opus 4.8 + layer averaged 8.55 vs the
-Fable 5 reference's 8.64, winning 5 runs outright (verify-claims x2, multi-file x2, fanout)
-with 2 score-ties, vs baseline Opus's 7.7 average. Objective ground-truth checks (test
-suites, exit codes) showed the arms' *work* equivalent wherever scores diverged — the
-residual differences are final-report evidence fidelity on long tasks and raw review
-depth. Evidence: `privateContext/deliverables/audits/2026-07-06-fable-opus-capability-gap.md`.
+Claude Fable 5. Final validation (2026-07-06→07, 49 judged claude-bakeoff runs, blind
+Fable judge, 80% agreement with an Opus judge): under the full recommended architecture
+(this layer v4 + effort xhigh + the verified pipeline below) **Opus scored 8.82 vs the
+Fable reference's 8.35 across 17 runs (9W-7L-1T; four of the seven losses were 9-9
+tiebreaks)**, at ~40-60% of Fable's per-task cost. Attribution 2x2 proved the layer is
+load-bearing (baseline Opus at xhigh still lost everything). Objective ground truths
+(suites, exit codes, live contract checks) backed every scored claim. Evidence:
+`privateContext/deliverables/audits/2026-07-06-fable-opus-capability-gap.md` §8.
 
 ## What the gap actually is
 
@@ -78,10 +79,14 @@ Lead with the outcome: your first sentence should answer "what happened" or "wha
 Your final message is the only thing the reader sees — they do not see the session that produced it. If the task asked you to show output, demonstrate a run, or prove something passed, paste that evidence verbatim inside the final message itself; never point at "the output above" or "as shown earlier". Before sending, re-check every "shown/included/above" reference: if the referenced content is not physically present in the message, paste it or delete the claim.
 <!-- PARITY-LAYER-END -->
 
-## Honest residuals (what this layer does NOT close)
+## Honest residuals (what this architecture does NOT close)
 
-- Probes were 5–25 minute tasks with n=1 per cell and a single (blind) judge —
-  directional evidence, not statistical proof.
+- **Native depth**: Fable finds ~one more real bug in review and writes richer test
+  suites — worth a 9-9 tiebreak. Unrecoverable by prompting (5 layer iterations),
+  sampling (panel platform, retired 0-2), or effort. Bounded at ≈0-1 judge point.
+- verify-claims at xhigh flips on sub-point margins — parity with noise.
+- Scales beyond a 500-turn/2h harness are unmeasured; weekly parity-telemetry cron
+  is the standing production signal.
 - Raw-capability ceilings stand: overnight-scale long-horizon coherence, effort
   ceiling (Fable's `low` ≈ prior models' `xhigh`), degraded-image vision. Expect
   patched Opus to trail Fable on genuinely frontier tasks regardless of instructions.
