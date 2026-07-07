@@ -26,6 +26,11 @@ autonomy, persistence, and reporting.
    equivalent) — budget is part of the patch, not an optimization.
 2. **Whole layer, verbatim.** The sections below were validated as a unit. Inject the
    full "Operating principles" block; don't cherry-pick sentences.
+3. **Effort xhigh where available.** Round-2 sweep (2026-07-06): at `--effort xhigh`
+   patched Opus took its first autonomy win (9-8) and a 9-7 multi-file win vs the
+   Fable reference; all earlier runs had inherited the WSL-pinned `high`. Claude
+   Code's own default is xhigh — pipelines that pin effort lower give the win back.
+   Expect more tool use per task at xhigh (one arm ran a full dependency install).
 
 ## The layer (inject verbatim into the target's CLAUDE.md or system prompt)
 
