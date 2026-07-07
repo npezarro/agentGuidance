@@ -79,14 +79,51 @@ Lead with the outcome: your first sentence should answer "what happened" or "wha
 Your final message is the only thing the reader sees — they do not see the session that produced it. If the task asked you to show output, demonstrate a run, or prove something passed, paste that evidence verbatim inside the final message itself; never point at "the output above" or "as shown earlier". Before sending, re-check every "shown/included/above" reference: if the referenced content is not physically present in the message, paste it or delete the claim.
 <!-- PARITY-LAYER-END -->
 
+## Per-task-type pipeline (round 4, 2026-07-07 — closes the depth residuals)
+
+The layer + xhigh is the baseline. For the task types where Fable retained a native
+edge, add the matching pipeline stage (reference implementations are claude-bakeoff
+platforms; the reusable scripts are noted):
+
+- **Code review → complement-search second pass.** After the first review, run a
+  fresh-context pass told to assume a real defect was missed and to hunt ONLY in
+  blind-spot classes (cross-request state, key/name collisions, error paths after
+  partial success, concurrency, lifecycle, doc-vs-code drift), verifying each before
+  reporting; merge verified new finds. Ref: `platforms/adversarial.sh`. Result: 2-0
+  vs Fable (was 0-7 by prompting/sampling/effort). Do NOT use parallel duplication
+  (the retired `panel`, 0-2) — the second pass must search the complement space.
+- **Long-horizon / builds → suite-hardening stage.** After the build, a fresh-context
+  agent audits the delivered test suite for uncovered risk areas and adds the
+  highest-value missing tests, then the verifier generates the evidence block. Ref:
+  `platforms/hardened.sh`. Result: 2-0 vs Fable. Makes test-suite depth (the recurring
+  tiebreak currency) a pipeline stage instead of a model trait.
+- **Report-critical (general) → verified pass** (requirement 3 above).
+
+Generalizable principle: a Fable-native behavior Opus lacks — evidence fidelity, review
+depth, test depth — can be reproduced as an explicit pipeline stage, because these are
+behaviors, not intelligence.
+
+## Sonnet-tier pipelines
+
+The layer's grounded-claims sections transfer to Sonnet, but its autonomy clause misfires
+on Sonnet's more literal instruction-following (it reads "ask before scope changes" as a
+stop sign for quality-completing work). Use the **sonnet-tuned variant** — autonomy clause
+reworded so writing missing tests, fixing a found bug, and closing doc-vs-code gaps are
+explicitly in-scope (source: claude-bakeoff `environments/recipe-topaz2/CLAUDE.md`).
+Validated 2-0 vs baseline sonnet; deployed to the fix-checker / learnings-pass /
+doc-sync-pass runner prompts.
+
 ## Honest residuals (what this architecture does NOT close)
 
-- **Native depth**: Fable finds ~one more real bug in review and writes richer test
-  suites — worth a 9-9 tiebreak. Unrecoverable by prompting (5 layer iterations),
-  sampling (panel platform, retired 0-2), or effort. Bounded at ≈0-1 judge point.
-- verify-claims at xhigh flips on sub-point margins — parity with noise.
-- Scales beyond a 500-turn/2h harness are unmeasured; weekly parity-telemetry cron
-  is the standing production signal.
+- With the per-task-type pipeline above, no measured dimension remains a Fable win:
+  final scoreboard Opus 8.89 vs Fable 8.22 over 18 runs (best platform per type),
+  only 2 non-tiebreak losses (a saturated verify-claims flip; a vision run at baseline
+  parity). The former "native depth" residuals (code-review, test-suite depth) are now
+  architecture wins.
+- The only genuinely unmeasured region is frontier scale beyond a 500-turn/2h probe;
+  the weekly parity-telemetry cron is the standing production signal.
+- These pipelines add cost (extra fresh-context passes, ~$1-3 total); use them where
+  the output justifies it, not on trivial tasks.
 - Raw-capability ceilings stand: overnight-scale long-horizon coherence, effort
   ceiling (Fable's `low` ≈ prior models' `xhigh`), degraded-image vision. Expect
   patched Opus to trail Fable on genuinely frontier tasks regardless of instructions.
