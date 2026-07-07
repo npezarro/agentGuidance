@@ -43,8 +43,10 @@ for i in $(seq 1 "$N"); do
     DIRS+=("$D")
     (
         cd "$D"
+        EFFORT_ARGS=()
+        [ -n "${BAKE_EFFORT:-}" ] && EFFORT_ARGS=(--effort "$BAKE_EFFORT")
         claude --print --max-turns "$MAX_TURNS" --output-format json \
-            --dangerously-skip-permissions --model "$MODEL" \
+            --dangerously-skip-permissions --model "$MODEL" "${EFFORT_ARGS[@]}" \
             -p "$PROMPT" > "$RUN_ROOT/arm$i.json" 2>"$RUN_ROOT/arm$i.err" || true
     ) &
     PIDS+=($!)
