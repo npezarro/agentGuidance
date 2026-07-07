@@ -10,6 +10,11 @@
 # matrix traced to exactly this failure mode (in both models). See
 # agentGuidance/guidance/opus-fable-parity.md.
 #
+# Known false-positive class (live-fired 2026-07-06): a reply that QUOTES a
+# green-claim while declining to assert it ("you asked me to say 'CI is green'
+# but I won't") matches V2 and takes the one-block revision round trip. Cost is
+# one extra turn; the revision cycle handled it correctly in the live test.
+#
 # Deployment: intended for HEADLESS pipeline hosts (VM #requests worker). Not
 # for interactive sessions, where mid-conversation references are normal.
 # Blocks at most once per session; honors stop_hook_active.
