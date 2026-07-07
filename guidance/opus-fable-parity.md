@@ -26,7 +26,18 @@ autonomy, persistence, and reporting.
    equivalent) — budget is part of the patch, not an optimization.
 2. **Whole layer, verbatim.** The sections below were validated as a unit. Inject the
    full "Operating principles" block; don't cherry-pick sentences.
-3. **Effort xhigh where available.** Round-2 sweep (2026-07-06): at `--effort xhigh`
+3. **Verified pipeline for report-critical / long-horizon work.** After the worker
+   finishes, run `scripts/verify-report.sh <workspace>` (a fresh-context,
+   read+execute-only agent) and append its evidence block to the final report —
+   or use the claude-bakeoff `verified` platform as the reference implementation.
+   Validated overnight 2026-07-06→07: took Opus's first-ever long-horizon wins
+   (n=3: 9-8, 9-7, 9-9) and won the 500-turn overnight capstone; the judge called
+   the verifier proof "categorically stronger". Evidence fidelity slips are
+   model-universal (the Fable reference slipped 7 times across the project), so
+   this is the recommended shape for ANY pipeline whose final report matters,
+   paired with the deterministic `hooks/report-evidence-audit.sh` Stop hook on
+   headless workers. Cost: one sonnet-tier pass (~$1-2).
+4. **Effort xhigh where available.** Round-2 sweep (2026-07-06): at `--effort xhigh`
    patched Opus took its first autonomy win (9-8) and a 9-7 multi-file win vs the
    Fable reference; all earlier runs had inherited the WSL-pinned `high`. Claude
    Code's own default is xhigh — pipelines that pin effort lower give the win back.
