@@ -288,15 +288,15 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **Standalone mode changes basePath behavior.** In `next dev`, Next.js strips the basePath from `req.url` before the route handler sees it. In standalone mode (`node server.js`), it does NOT strip it — `@auth/core` sees the full URL including the basePath prefix. So the NextAuth `basePath` must include the Next.js basePath:
-   ```typescript
-   // next dev: handler sees /api/auth/signin/google → basePath: "/api/auth"
-   // standalone: handler sees /finance/api/auth/signin/google → basePath: "/finance/api/auth"
+8. **Standalone basePath stripping — RESOLVED for Next.js 16.2.8+ (updated 2026-07-09).** Historically this file carried two contradictory claims: (a) standalone STRIPS the basePath so NextAuth `basePath` must be `/api/auth` (shopper/foodie/humans note above), and (b) standalone does NOT strip it so `basePath` must be `/<app>/api/auth` (the finance-tracker note this bullet used to assert). **Both cannot be true, and the version matters.** As of **Next.js 16.2.8+ (verified on 16.2.9)**, `output: 'standalone'` **STRIPS the basePath** from `req.url` before Route Handlers AND middleware run — identical to `next dev`. The "does NOT strip" behavior belonged to an earlier Next.js and is no longer correct.
 
-   // Dynamic config that works in both modes:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,
-   ```
-   **Why this trips people up:** The runeval fix (above) uses a hardcoded `"/api/auth"` because runeval's Apache proxy rewrites the URL. Apps without that rewrite need the dynamic basePath.
+   **This caused a total OAuth outage on runeval (2026-07-09)** after a Dependabot bump 16.2.7 → 16.2.9. runeval used `basePath: "${NEXT_PUBLIC_BASE_PATH}/api/auth"` = `/runeval/api/auth`; once standalone started stripping, the incoming path became `/api/auth/...` and every `/runeval/api/auth/*` endpoint threw `[auth][error] UnknownAction: Cannot parse action at /api/auth/session` (HTTP 400). Insidious detail: server-side `auth()` session reads keep working (they build the URL via `createActionURL(AUTH_URL + basePath)`, not the request path), so **pages return 200 while sign-in is dead** — a homepage uptime check misses it entirely.
+
+   Two valid fixes:
+   - **(A) `basePath: "/api/auth"`** (the stripped form). Simplest, but `createActionURL` then builds the OAuth `redirect_uri` WITHOUT the subpath (`https://host/api/auth/callback/google`), so you must restore `/<app>` via a `customFetch` or an Apache redirect (finance-tracker does this).
+   - **(B) keep `basePath: "/<app>/api/auth"` and re-prepend the subpath to the request pathname in a thin `route.ts` wrapper** before delegating to next-auth's `handlers.GET/POST`. Keeps `redirect_uri` correct with NO customFetch — preferred when the app forbids customFetch hacks (e.g. runeval). runeval's `restoreAuthBasePath()` (`lib/basePath.ts`) does this; it is idempotent so it survives a future Next reverting to non-stripping. runeval commit `5032c55`.
+
+   **Always verify a Next.js bump against a REAL standalone build, not `next dev`:** `curl http://127.0.0.1:PORT/<app>/api/auth/providers` must return 200 JSON, and a signin POST must 302 to the IdP with `redirect_uri` including `/<app>`.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
