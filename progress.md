@@ -11,6 +11,7 @@
 
 ## Log
 
+- 2026-07-09 | guidance | `c1ef193` — ESSENTIAL rule 5 new bullet "Intended state before config changes": read a project's docs before altering config/lifecycle (restart policy, enable/disable). From the 2026-07-09 power-cut recovery where `humans-pg` (documented on-demand dev DB, `restart:no` by design) was made `unless-stopped` on a hunch.
 - 2026-07-04 | guidance | `8e41e02` — ESSENTIAL rule 3 externally-verifiable-facts clause + `guidance/fact-checking.md` + agent.md index line; companion `/fact-check` skill in claude-skills. From the 2026-07-03 CC-thread postmortem.
 
 | 2026-06-30 | fix | `9c81340` bound the always-loaded MEMORY.md index to its ~24.4KB budget: `propagate-learning.sh` caps the index hook to ~128 chars on append (flock-coordinated); new `hooks/compact-memory-index.sh` SessionStart self-heal (non-destructive, idempotent, warns/`--check` over hard limit); `guidance/learning-capture.md` "MEMORY.md Index Budget" section. Root cause: unbounded SUMMARY append. Index 32KB→~22.5KB, 12 redundant/superseded memories archived. |
