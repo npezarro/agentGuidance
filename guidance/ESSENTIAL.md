@@ -43,6 +43,7 @@ After a mistake: (1) check if a rule already exists in guidance, (2) if yes, pat
 - Long text to Termius: write to a file and scp, don't ask user to paste
 - **WSL/Windows boundary:** Chrome, Electron apps, and other Windows programs read from the Windows filesystem, not WSL. After changing files they consume (browser extension, Electron app, etc.), you MUST sync to the Windows copy (`cd /mnt/c/... && git pull`) BEFORE asking the user to reload. WSL repo changes are invisible to Windows apps.
 - **Specs, compatibility, upgradeability:** Research it yourself (WebSearch, WebFetch, page-reader) before recommending. Never tell the user "check if X is upgradeable" when you can look up the service manual yourself. The user should receive answers, not homework.
+- **Intended state before config changes:** Before altering a service's config or lifecycle (restart policy, enabling/disabling, "resilience" tweaks) or "fixing" something that's down, read that project's docs to learn its *intended* state — repo `CLAUDE.md`, its memory file, privateContext env/infra notes, and watchdog scripts. A service being down after a reboot is not automatically a bug: on-demand dev tooling (local dev DBs, one-shot containers) is often `restart:no` **by design**, distinct from always-on production. Deciding "it should auto-start" on a hunch, without checking, inverts documented intent. (2026-07-09: made `humans-pg`, a documented on-demand local dev DB, `unless-stopped` on a whim — its `CLAUDE.md` and `wsl-watchdog.sh` both document `restart:no` as intended.)
 
 ---
 
