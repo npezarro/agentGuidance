@@ -226,6 +226,22 @@ fi
 
 **Rule:** Never do unbounded retries on a consent button. If two attempts both produce no callback, escalate via Discord alert — the problem is something other than a hydration race (rate limit, broken page, wrong selector).
 
+### Claude.ai Auth-Age Enforcement — All Bridges Fail Simultaneously
+
+**Symptom:** All alt-account bridge relogins (`claude-auto-relogin-container.sh`) fail on the same night with `callback tab not found` (exit 7). The browser session IS active (`claude.ai/new` shows the alt account logged in), but clicking Authorize redirects to `claude.ai/login?reauth=1&from=logout` instead of the OAuth callback.
+
+**Root cause:** claude.ai enforces a **max auth-age** — the elapsed time since the account last performed a real sign-in — in addition to activity-age, before granting the `claude_code`/`user:inference` OAuth scopes. `browser-session-keepalive.sh` slides the activity clock but cannot reset the auth-age clock. When auth-age exceeds the threshold, the consent flow forces a full logout regardless of session freshness.
+
+**Differentiator from the hydration race (above):** All 6 bridge containers fail on the same night. The hydration race is a single-container, timing-based event that a retry resolves. Simultaneous failure across all containers is diagnostic of the auth-age pattern.
+
+**Why automation cannot self-heal:** After the forced logout, the OAuth grant page lands on "Continue with Google" — whose popup Chrome blocks for extension-synthetic clicks (requires a real user-activation gesture). The script cannot complete the re-login loop unattended.
+
+**Recovery:** One-time manual action — sign the alt account (`nickthepezant@gmail.com`) out of and back into the controlling Brave browser. The browser session then satisfies the auth-age check and nightly relogins resume.
+
+**No user-facing impact during the failure window:** Bridge containers keep running. Their existing access tokens auto-refresh via the refresh-token OAuth flow. Only the nightly refresh-token rotation is broken, not the live inference path.
+
+**Operational rule:** When `claude-auto-relogin-container.sh` fires a final-failure alert, check whether the alert message says "alt session logged out at grant time". If it does, trigger manual Brave re-sign-in — do NOT attempt automated recovery, retry loops, or container restarts. Source: `scripts` repo commit d499c59 (2026-07-07) — improved error classification and actionable alert text.
+
 ### Claude CLI Binary Path on VM
 
 The Claude CLI binary is at `/usr/bin/claude` on the VM — **not** `/usr/local/bin/claude`. Using the wrong fallback path causes silent `[Errno 2] No such file or directory` failures that drop all AI processing without any obvious error in service logs.
