@@ -241,6 +241,36 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 **Add to the new-app checklist:** When adding a new app, assign a unique cookie name following this pattern.
 
+## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11)
+
+WebView-shell apps (e.g. `pezant-mobile`) can't do OAuth in the WebView — Google blocks
+embedded WebViews with `disallowed_useragent`. Instead they do **native** Google Sign-In
+via Credential Manager (`@capgo/capacitor-social-login`), get an ID token, and POST it to
+a server endpoint that mints the web app's session cookie(s). The mint endpoint verifies
+the token's `aud` against the **web** OAuth client id (the `serverClientId`).
+
+**The trap that silently breaks sign-in for every user:** Credential Manager authorizes
+the *calling app* by package name + its **signing-cert SHA-1**, matched against an
+**Android** OAuth client in the Google Cloud project. If the SHA-1 of the *installed*
+build is not registered, the plugin returns **no idToken** and sign-in fails silently —
+the server never even sees a request (its mint logs stay empty).
+
+With **Play App Signing ON** (the default), the installed app is re-signed by Google, so
+its cert is NOT your upload key. You must register the SHA-1 of **every distribution
+channel**:
+- **Play App Signing key** SHA-1 (Play Console -> App integrity -> App signing key
+  certificate) — required for all Play installs (testers + prod). Registering only the
+  upload key breaks 100% of Play installs.
+- **Debug key** SHA-1 (`~/.android/debug.keystore`) — for `assembleDebug` sideloads.
+- Upload-key SHA-1 alone is never sufficient once Play App Signing is on.
+
+Debugging checklist for "mobile sign-in does nothing / broken across the board":
+1. Confirm the mint endpoint is up and web OAuth works (`curl .../api/auth/providers`).
+2. Check the mint endpoint's logs — zero "minted" lines means the failure is on-device,
+   before the POST (points at SHA-1 / Credential Manager, not the server).
+3. Get the installed build's channel + that channel's SHA-1; verify it's on the Android
+   OAuth client. Don't swallow the plugin's error in JS — log it so `adb logcat` shows it.
+
 ## Rules for Future Work
 
 1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.
