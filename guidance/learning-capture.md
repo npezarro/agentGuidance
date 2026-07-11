@@ -57,6 +57,8 @@ The fastest and most reliable way to capture a learning is the single-command pr
 
 This handles memory + CLAUDE.md + guidance file in one command. Add `--private` for privateContext routing, `--cross-cutting` for knowledgeBase flagging, `--dry-run` to preview.
 
+> **Caveat — agentGuidance direct-to-main push (S216, 2026-07-10):** `propagate-learning.sh` runs `git commit && git push -u origin HEAD` directly in `~/repos/agentGuidance`. If `main` is checked out there (the normal SessionStart state), `--guidance-file` commits straight to `main` on a public repo, bypassing PR review. 15+ commits landed on agentGuidance `main` this way before the bug was flagged. For agentGuidance guidance edits that should go through review, use a worktree on an existing open learnings branch instead (see `guidance/learning-agent.md` Worktree Rule). The script is safe for memory and repo `CLAUDE.md` destinations — those repos are private and don't have a PR-review gate on direct pushes.
+
 For complex or nuanced learnings where the script isn't sufficient, you can also spawn the **propagation agent** (`~/.claude/agents/propagation.md`) which handles routing decisions, duplicate checking, and MANIFEST.md lookup.
 
 ### Manual Capture (when the script doesn't fit)
