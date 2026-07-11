@@ -59,5 +59,9 @@
 - check-commit-deploy gate: honor /tmp/claude-deploy-ack-<sid> for docs-only commits and subagent-performed deploys (which run under a different session_id and never register in track-deploy); dropped the undetectable "note in context.md" escape from the block message. Both branches tested.
 - Stop-hook state lifecycle fix: verify-deploy.sh consumed AND deleted /tmp/claude-deploys-<sid>, so check-commit-deploy re-blocked on every Stop after the first. Tracker now archived to -verified on consumption; the gate reads live + verified + ack files. Regression-tested across two simulated Stops.
 
+## 2026-07-10 — Interactive Opus→Fable parity rollout (WSL) with 85/15 holdout A/B
+- `6af79d0` new SessionStart hook `hooks/parity-layer-injection.sh` + `guidance/opus-fable-parity.md` "Interactive-session rollout" section. Injects the parity layer into interactive Opus WSL sessions only; guards skip headless (`/proc/$PPID/cmdline` has `-p`/`--print`) and non-Opus, fail closed. Deterministic 85/15 arm (`cksum(session_id)%100<85`), both arms logged to `~/.claude/parity-telemetry/interactive-arms.jsonl`. Wired as `~/.claude/settings.json` SessionStart entry #9 (local, not in repo).
+- Empirical: SessionStart hooks DO fire on local `claude -p` runs (verified via security-scan log), hence the headless guard. Public-repo security scan #70 clean (0/30). Closeout: privateContext/deliverables/closeouts/2026-07-10-interactive-parity-rollout-and-security-review.md
+
 ## 2026-07-02 — Skill routing rule from library audit
 - `guidance/deployment.md`: new "Skill Routing" section (staging apps list, generic deploy path, fix-static-asset-drift for styling-broken symptoms, vm-health/vm-cleanup). Audit context: 97 zero-skill ssh+pm2 sessions found in 21 days of transcripts. Companion edits in `~/.claude/rules/deploy-safety.md` (not this repo). Closeout: privateContext/deliverables/closeouts/2026-07-02-skill-library-audit-rework.md

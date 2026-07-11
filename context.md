@@ -62,6 +62,7 @@
 - **Stop hook safety framework:** `guidance/stop-hook-safety.md` + guard library at `hooks/lib/stop-hook-guard.sh`
 
 ## Open Work
+- **Parity A/B analyzer (needs data ~late Jul 2026):** join `~/.claude/parity-telemetry/interactive-arms.jsonl` `session_id` → session transcripts and compare treated vs control correction/re-work. Interactive-session parity hook shipped `6af79d0` (see `guidance/opus-fable-parity.md` "Interactive-session rollout"); do not build the analyzer until a few weeks of both arms exist.
 - **Run `propagate-hooks.sh`** to clean up 28 stale per-repo `post-to-wordpress.sh` references
 - **Evaluate shadow runner results ~May 22:** `python3 ~/repos/agentRuntime/security-scanner/compare-shadows.py --days 7`
 - S6 (branch collision risk) and S7 (deployment cross-ref) still open, minor
