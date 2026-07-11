@@ -130,6 +130,39 @@ doc-sync-pass runner prompts.
 - The layer trades tokens for quality (~30% more turns observed). Patched Opus still
   cost about half a Fable run per task in validation.
 
+## Interactive-session rollout (WSL) + forward A/B
+
+Since 2026-07-10 the layer is auto-injected into **interactive Opus sessions on the WSL
+host** via a SessionStart hook: `hooks/parity-layer-injection.sh`, wired into
+`~/.claude/settings.json` `hooks.SessionStart`. It reads the marker block from this file
+(single source of truth; a v5 auto-propagates) and emits it as `additionalContext`.
+
+Guards (all fail toward protecting non-interactive pipelines):
+- **Headless skip.** Reads `/proc/$PPID/cmdline`; if the invocation has `-p`/`--print`
+  it exits silently. This keeps the layer OUT of local headless runs (security-scanner,
+  autonomousDev, fix-checker, etc.), which run non-Opus and where the autonomy clause
+  misfires.
+- **Opus-only.** Honors a `--model` override on the invocation, else the settings.json
+  default; non-Opus (Fable/Sonnet/Haiku) exits silently (layer is no-gain on Fable,
+  misfires on Sonnet/Haiku).
+- **Fail closed.** If the claude process can't be identified, it does nothing.
+
+**Holdout A/B (85/15).** Arm is derived deterministically from the session id
+(`cksum % 100 < 85` → treated), so it is stable across resume/compact — a control
+session never flips to treated. Only the treated arm gets the layer; both arms are
+logged. This is a *forward* causal design (same operator, same period, treated vs
+control) rather than a confounded before/after-deploy comparison.
+
+**Telemetry sink:** `~/.claude/parity-telemetry/interactive-arms.jsonl`, one line per
+session start: `{ts, session_id, model, arm, layer_version, source}`. Assess outcomes by
+joining `session_id` → the session transcript (via the `analyze-claude-usage` skill's
+join method) and comparing correction/re-work proxies between arms. Distinct from the
+Discord-tag `privateContext/parity-telemetry.sh` cron, which measures the VM worker, not
+interactive WSL sessions. Needs a few weeks of both arms before it is readable.
+
+Interactive turn budgets are effectively unbounded, so the ≥45-turn requirement is met
+for free; no budget change is needed for this path.
+
 ## Re-validation
 
 The bakeoff arms are permanent: `recipe-amber` (Opus baseline), `recipe-jade` (Fable
