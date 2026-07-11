@@ -476,3 +476,15 @@ When a poller or executor dispatches jobs to BOTH local and remote workers (e.g.
 **Fix pattern:** Add a `skipMemoryWatchdog` (or equivalent) flag to the polling function. Set it to `true` for remote-dispatched jobs. Timeout and output-size watchdogs can still apply to remote jobs (they guard a hung SSH or runaway output regardless of location).
 
 **Rule of thumb when adding any resource guard to a shared poller:** Ask "Does this resource live on the machine actually running the session?" If the job is remote, VM-local RSS/mem/CPU is irrelevant. Source: commit 716e149 (2026-06-29).
+
+## A Repo's Main Checkout Must Never Be Left on a Merged Feature Branch
+
+**Symptom:** `~/repos/<repo>` (the primary working copy, not a worktree) is checked out on a feature branch whose PR has already been merged on GitHub. The local branch is stranded and local `main`/`production` silently falls behind `origin/main` — sometimes by several commits — with no error surfaced anywhere.
+
+**Why this is worse than an ordinary stale branch:** SessionStart hooks, CLAUDE.md loads, and guidance-file reads for every concurrent session on that machine execute against whatever is checked out in the main checkout. A stranded branch means every other session (interactive or automated) silently reads outdated or divergent guidance/rules — the exact failure mode the learnings-pass WORKTREE RULE was written to prevent for the learning-agent's own commits. This incident (2026-07-11, run #903) showed the same failure can originate from **any** session that does a plain `git checkout <branch>` in the main checkout to open a PR (rather than a worktree) and never switches back after the merge.
+
+**Detection:** In any repo's main checkout, `git branch --show-current` should always equal that repo's default branch (`main` or `production`) except for the brief window a human is actively working on a real feature. If it isn't, check whether the current branch's PR is already merged (`gh pr list --head <branch> --state all`) — if so, the checkout was simply never returned home.
+
+**Fix:** Verify the current branch is a strict subset of `origin/<default>` first (`git diff origin/main HEAD --stat` should be empty or default-only), then `git checkout main && git merge --ff-only origin/main && git branch -d <stale-branch>`. Do not force anything — if the diff isn't empty, treat it as in-progress human work per the git-safety protocol (stash/investigate, don't discard).
+
+**Prevention:** The existing WORKTREE RULE (learnings-pass/prompt.md) already covers learning-agent's own commits. Extend the same discipline to any session opening a PR from a main checkout: `git -C ~/repos/<repo> worktree add /tmp/<label> -b <branch>`, work there, and leave the main checkout untouched on its default branch throughout.
