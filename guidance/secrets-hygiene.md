@@ -254,6 +254,28 @@ This is the right tool when `npm audit` or security scans flag personal emails i
 
 **Scope replacements narrowly.** Replace the full string (e.g., the complete webhook URL) rather than substrings that appear in innocent contexts (e.g., a username that's also part of standard paths).
 
+## Push-Forbidden Archive Repos
+
+Some repos on disk are deliberately local-only archives — pre-sanitization backups, forensic copies, or experimental trees whose history must never reach a remote. These repos often carry `CLAUDE.md` annotations like "NEVER PUSH" or "local-only archive." But the `origin` remote may still be configured and point at a live GitHub repo.
+
+**The trap (2026-07-11, S218):** A session read a suggestion mentioning "3 copies of a file" and applied a fix to all three repos — including the local archive. The push was rejected only because another push from the real checkout had already used the same branch name seconds earlier, a coincidence that prevented the archive's pre-sanitization history (30+ commits with unsanitized secrets) from reaching the public repo. No safety mechanism stopped it.
+
+**Required when designating a repo as push-forbidden:**
+```bash
+# Immediately after writing "NEVER PUSH" in CLAUDE.md:
+git remote remove origin
+# Verify — should produce no output:
+git remote -v
+```
+
+**Before touching any unfamiliar repo:**
+```bash
+grep -i "never push\|push.forbidden\|archive\|local.only" CLAUDE.md
+# If any match: do NOT push from this repo under any circumstances
+```
+
+Disconnecting but keeping the remote name is not sufficient — a remote still listed in `git remote -v` creates false confidence. Remove it entirely so any accidental push fails immediately with "no remote configured" rather than silently landing on a live repo.
+
 ## When a Secret is Accidentally Committed
 
 1. **Rotate immediately** — the secret is compromised the moment it's pushed
