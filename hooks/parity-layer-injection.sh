@@ -19,7 +19,8 @@
 # Wired into ~/.claude/settings.json SessionStart hooks. Layer source of truth is
 # the marker block in guidance/opus-fable-parity.md -- a future v5 auto-propagates.
 #
-# Testability: set PARITY_CMDLINE_OVERRIDE to bypass /proc process detection.
+# Process detection uses /proc on Linux/WSL, `ps` on darwin/BSD.
+# Testability: set PARITY_CMDLINE_OVERRIDE to bypass process detection entirely.
 
 set -uo pipefail
 
@@ -38,17 +39,29 @@ SID="$(printf '%s' "$STDIN_JSON" | jq -r '.session_id // empty' 2>/dev/null || t
 [ -z "$SID" ] && SID="${CLAUDE_CODE_SESSION_ID:-}"
 
 # --- identify the claude invocation from the process tree ---
+# Linux/WSL expose /proc; darwin/BSD do not, so fall back to `ps`. Both walk up
+# to 6 ancestors looking for the claude invocation's argv.
 CMDLINE="${PARITY_CMDLINE_OVERRIDE:-}"
 if [ -z "$CMDLINE" ]; then
   pid="$PPID"
   for _ in 1 2 3 4 5 6; do
-    [ -r "/proc/$pid/cmdline" ] || break
-    c="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+    if [ -r "/proc/$pid/cmdline" ]; then
+      c="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+      next="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo "")"
+    elif command -v ps >/dev/null 2>&1; then
+      # darwin/BSD: `ps -o ppid=,command=` yields "<ppid> <argv...>"
+      line="$(ps -o ppid=,command= -p "$pid" 2>/dev/null || true)"
+      [ -n "$line" ] || break
+      next="$(printf '%s' "$line" | awk '{print $1}')"
+      c="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')"
+    else
+      break
+    fi
     if printf '%s' "$c" | grep -qE '(^|/| )claude(\.exe)?( |$)'; then
       CMDLINE="$c"; break
     fi
-    pid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo "")"
-    { [ -z "$pid" ] || [ "$pid" = "0" ]; } && break
+    pid="$next"
+    { [ -z "$pid" ] || [ "$pid" = "0" ] || [ "$pid" = "1" ]; } && break
   done
 fi
 
