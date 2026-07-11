@@ -65,6 +65,10 @@ if [ -z "$CMDLINE" ]; then
   done
 fi
 
+# the invocation must actually look like a claude process (also validates test overrides)
+if [ -n "$CMDLINE" ] && ! printf '%s' " $CMDLINE " | grep -qE '(^| |/)claude(\.exe)?( |$)'; then
+  CMDLINE=""
+fi
 # fail closed: if we cannot identify the invocation, do not risk polluting a pipeline
 [ -n "$CMDLINE" ] || exit 0
 
