@@ -255,11 +255,13 @@ the *calling app* by package name + its **signing-cert SHA-1**, matched against 
 build is not registered, the plugin returns **no idToken** and sign-in fails silently —
 the server never even sees a request (its mint logs stay empty).
 
-With **Play App Signing ON** (the default), the installed app is re-signed by Google, so
-its cert is NOT your upload key. You must register the SHA-1 of **every distribution
-channel**:
+**An Android OAuth client holds exactly ONE package + ONE SHA-1** — there is no "add
+fingerprint" (that only exists for API-key restrictions). So you need a **separate Android
+OAuth client per signing cert**, all sharing the same package name. With **Play App Signing
+ON** (the default), the installed app is re-signed by Google, so its cert is NOT your
+upload key. Create a client for the SHA-1 of **every distribution channel**:
 - **Play App Signing key** SHA-1 (Play Console -> App integrity -> App signing key
-  certificate) — required for all Play installs (testers + prod). Registering only the
+  certificate) — required for all Play installs (testers + prod). A client for only the
   upload key breaks 100% of Play installs.
 - **Debug key** SHA-1 (`~/.android/debug.keystore`) — for `assembleDebug` sideloads.
 - Upload-key SHA-1 alone is never sufficient once Play App Signing is on.
@@ -268,8 +270,16 @@ Debugging checklist for "mobile sign-in does nothing / broken across the board":
 1. Confirm the mint endpoint is up and web OAuth works (`curl .../api/auth/providers`).
 2. Check the mint endpoint's logs — zero "minted" lines means the failure is on-device,
    before the POST (points at SHA-1 / Credential Manager, not the server).
-3. Get the installed build's channel + that channel's SHA-1; verify it's on the Android
-   OAuth client. Don't swallow the plugin's error in JS — log it so `adb logcat` shows it.
+3. Get the installed build's channel + that channel's SHA-1; verify an Android OAuth client
+   (same package) exists for it, and create one if not. Don't swallow the plugin's error in
+   JS — log it so `adb logcat` shows it.
+
+**Automation caveat (browser-agent):** it can read the Cloud Console client *list* to
+confirm what's registered, but it CANNOT reliably drive the "Create OAuth client" form (the
+Application-type dropdown / Material form is not automatable) and CANNOT read the Play App
+Signing SHA-1 (Play Console renders the cert inside a frame the content script can't reach).
+Treat client creation as a manual Cloud Console step, driven on the project-owner's browser
+profile (not an alt account that lacks project access).
 
 ## Rules for Future Work
 
