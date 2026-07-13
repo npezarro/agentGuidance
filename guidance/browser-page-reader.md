@@ -114,6 +114,7 @@ Match the lever to the actual block, don't default to IP rotation:
 | JS challenge, TLS fingerprint check, CAPTCHA | Real browser (page-reader / browser-agent, rungs 2+) |
 | 429, per-IP rate throttle | IP rotation (only scoped to genuine high-volume scrapers, e.g. `nll-hunter`'s proxy rotation) |
 | Datacenter-ASN block | Residential proxy — a fresh GCP IP will not help; it's still flagged as datacenter |
+| Path-specific CloudFront/WAF block that survives `page-reader --stealth` too (real headless browser still 403s) | `browser-agent`'s authenticated home-browser session — drive a same-origin `eval` on an already-loaded page instead of a fresh out-of-band request; it carries real session cookies neither curl nor a stealth headless session has. Use synchronous `XMLHttpRequest` in the `eval`, not `fetch` — the `eval` harness doesn't await promises, so `fetch` returns before the response arrives (see `knowledgeBase/integrations/browser-agent.md`). Verified 2026-07-12 (deal-scout Redfin autocomplete endpoint). |
 
 Only reach for IP rotation once you've confirmed the block survives a browser-UA retry. Reserve it for high-volume scrapers, not one-off article fetches.
 
