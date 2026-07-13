@@ -1,3 +1,4 @@
+<!-- Load when: server resource checks -->
 # Resource Awareness
 
 Shared infrastructure has limits. Discover them before you hit them — don't memorize numbers that change.

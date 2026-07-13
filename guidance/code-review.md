@@ -1,3 +1,4 @@
+<!-- Load when: self-review checklist before committing -->
 # Code Review Guidance
 
 Self-review checklist to run before every commit and PR.
@@ -237,3 +238,10 @@ When a prompt specifies a strict output format (e.g., "ONLY valid JSON", "no mar
 **Common violations:** wrapping JSON in fences when told not to; adding explanatory text when told "no explanation"; submitting a self-diagnosis inside the violating output.
 
 **Why:** Multiple scoring sessions (2026-05-15) violated this pattern and then self-diagnosed the violation inside the same response — demonstrating the agent knew the rule and still didn't fix it. Hard format constraints are enforcement gates for downstream parsers. Identifying a violation is not fixing it.
+
+## Update CLAUDE.md When Adding Features
+
+After implementing a new feature, route, export, or command, update the repo's CLAUDE.md before committing. Documentation lag is structural — close it at commit time. (Graduated from ESSENTIAL 2026-06-10: the CLAUDE.md drift-check PostToolUse hook now flags commits that add exports/routes/env vars without a CLAUDE.md update.)
+
+### Isolate per-item failures in batch loops; guard operations that throw on stored/external data (2026-06-30)
+When a loop processes a batch (DB rows, files, API records) and each iteration does an operation that can throw on bad data, an unguarded throw aborts the ENTIRE batch — not just the bad item. Two-layer defense: (1) guard the throwing operation itself (e.g. compile a stored regex via a safeCompile() that returns null on SyntaxError; JSON.parse external files in try/catch; check divisor != 0 before dividing on externally-sourced deltas), and (2) wrap each loop iteration in try/catch + continue so one bad record is skipped, not fatal. Real case (finance-tracker PR #74): benefit auto-detection compiled 'new RegExp(template.merchantPattern)' from stored card-benefit template strings at 3 sites with no guard, inside detectAllBenefits() which looped mappings with no try/catch. One malformed pattern threw SyntaxError and 500'd /api/cards/detect, killing detection for ALL the user's cards. Same shape seen elsewhere: url-vault JSON.parse on index/metadata files without try/catch; waymo-sim waypoint interpolation alpha=(t-t0)/(t1-t0) with no guard for duplicate timestamps. Self-review trigger: any new RegExp(non-literal), JSON.parse(file/network), or division by a data-derived value inside a loop → ask 'does one bad input abort the whole batch?'. Bonus: compile invariant regexes once before the loop, not per-iteration.

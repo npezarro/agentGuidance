@@ -26,7 +26,9 @@ case "$CMD" in
 esac
 
 # Extract the repo root from the command (look for cd or use cwd)
-REPO_DIR=$(echo "$CMD" | grep -oP '(?<=cd\s)[^\s&;]+' | head -1)
+# BSD-grep portable: ERE match on "cd <path>" then strip the "cd " prefix
+# (replaces GNU-only grep -oP lookbehind).
+REPO_DIR=$(echo "$CMD" | grep -oE 'cd[[:space:]]+[^[:space:]&;]+' | head -1 | sed -E 's/^cd[[:space:]]+//')
 if [ -z "$REPO_DIR" ]; then
   # Try tool_input.cwd or fall back to common locations
   REPO_DIR=$(echo "$INPUT" | python3 -c "

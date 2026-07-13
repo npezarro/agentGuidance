@@ -1,3 +1,4 @@
+<!-- Load when: writing in the owner's voice -->
 # Nicholas Pezarro — Written Voice Style Guide
 
 **Source of truth:** The dedicated voice repository contains the full validated guide (V2, scored 9/10 in A/B bakeoff) plus the pre-2025 real writing samples it was built from. Always pull from there for the latest voice guidance. This file is a synopsis.
@@ -252,6 +253,7 @@ In casual writing, specifics take the form of place names, dates, and references
 ## What Nick Does NOT Do
 
 - **No inline air-quotes in cover letters.** Never use quotation marks around phrases for emphasis or to frame concepts (e.g., don't write: not just "build the feature" but "quantify the tradeoffs"). Just state the idea directly. This applies to all application materials (cover letters, additional info, outreach drafts).
+- **Cover letters always lead with the resume header.** Every cover letter (Google Doc, plain text, application portal text box) begins with Nick's resume header above the salutation. The literal header text and source-of-truth resume doc reference live in `~/repos/privateContext/guidance/cover-letter-header.md` (this is a public repo so the values are not inlined here). The `write-as-nick` skill enforces this as a Quality Gate.
 - **No buzzwords.** Doesn't say "synergy", "leverage", "paradigm shift."
 - **No throat-clearing.** Never opens with "So I wanted to talk about..." or "In today's post, we'll explore..."
 - **No rhetorical hooks.** Doesn't open with "Have you ever wondered...?"
