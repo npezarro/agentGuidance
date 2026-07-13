@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-07-12 | New provenance + source-capture system (PR #314, branch `provenance-system`): `guidance/provenance.md` makes Claude-generated facts distinguishable from Nick's own writing, and captures every cited source. Two document classes — internal review docs get inline `[AI·<id>]` tags + a Provenance & Sources appendix; external deliverables (things Nick sends/publishes) keep a clean body with AI-authorship signaled in the *title* `(AI-generated)` + frontmatter provenance (Nick's hard constraint: no visible markers in sent prose). New `scripts/source-registry.sh` (add/get/find/list/id) writes to a new **private** repo `sourceLibrary` (github.com/npezarro/sourceLibrary): `registry.jsonl` deduped by URL with stable `s-<8hex>` IDs + `materials/<id>.md` caching page content so citations survive link rot. Indexed in agent.md + a compact rule in ESSENTIAL.md under rule 3. Helper tested end-to-end. Closeout: `privateContext/deliverables/closeouts/2026-07-12-provenance-source-capture-system.md`.
+
+## Last Updated (prior)
 2026-07-06 | New `guidance/opus-fable-parity.md` (`ddafc12`): validated instruction layer closing the Opus 4.8 → Fable 5 behavioral gap, marker-delimited for verbatim injection; indexed in agent.md (93 lines). Gap measured via claude-bakeoff blind A/B: baseline Opus lost purely on grounded claims (reformatted output shown as real, "CI is green" from a local run, "buildable" tree with dangling refs); with the layer + ≥45-turn budget, Opus beat the Fable reference 2/3 probes. Applicator skill: `fable-parity` (claude-skills). Full audit: `privateContext/deliverables/audits/2026-07-06-fable-opus-capability-gap.md`. Round 2 additions: requirement #3 effort xhigh (`a14c891`); new `hooks/report-evidence-audit.sh` (Tier-2 Stop gate, live on VM); new `scripts/bestof-claude.sh` + `scripts/verify-report.sh`.
 
 ## Last Updated (prior)
