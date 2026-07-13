@@ -4,6 +4,11 @@
 Goal: when Nick reviews content later, he can tell **what he wrote** from **what Claude
 generated**, and every external fact traces back to a captured, re-findable source.
 
+**Invocable as the `provenance` skill** (claude-skills) — the step-by-step procedure
+with quality gates that applies this convention to a deliverable. Producer skills
+(write-as-nick, application-packet, resume-variant, buying-guide, deep-research) call
+it as their final provenance pass.
+
 Two facets, always applied together:
 1. **Provenance marking** — generated facts are attributable to Claude, not Nick.
 2. **Source capture** — every external source is recorded once in the private
