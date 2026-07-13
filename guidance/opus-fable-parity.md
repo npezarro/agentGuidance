@@ -163,6 +163,66 @@ interactive WSL sessions. Needs a few weeks of both arms before it is readable.
 Interactive turn budgets are effectively unbounded, so the ≥45-turn requirement is met
 for free; no budget change is needed for this path.
 
+## Headless worker rollout (Discord #requests/#tasks) — 2026-07-13
+
+The SessionStart hook above **cannot** deliver the layer to the Discord worker: those
+jobs run headless (`claude -p`), which the hook's Headless-skip guard deliberately drops
+(that guard exists to protect the local non-Opus pipelines, and it can't tell a
+headless-but-Opus worker apart from a headless Sonnet/Haiku run). So from 2026-07-06
+(the model bump to `claude-opus-4-8`) until 2026-07-13 the worker ran on the **right
+model with the layer text missing** — the `parity-telemetry.sh` before/after comparison
+over that window measured a model upgrade, not the layer.
+
+Closed 2026-07-13 by injecting the layer into the worker **prompt** instead of via the
+hook: the Discord bot repo's `src/bot/parityLayer.js` reads the same marker block from
+this file and `executor.js` prepends it to `fullPrompt` in **both** `runClaude` (VM-local) and
+`runClaudeRemote` (SSH to local workers), right after the directive and before the
+prompt. Design mirrors the hook's guards:
+- **Opus-only.** `getParityLayerPrefix(executionOptions?.model || DEFAULT_MODEL)` returns
+  `''` unless the effective model matches `/opus/i`. A per-request `-m sonnet`/`-m haiku`
+  override therefore never gets the layer; the opus-4-8 default always does.
+- **Single source of truth.** The block is read from this file's `PARITY-LAYER-START/END`
+  markers and mtime-cached, so a future v5 auto-propagates to the worker on the next job
+  (after `executor.js`'s pre-job `--ff-only` pull of agentGuidance). Do **not** paste the
+  layer text into `executor.js` or a CLAUDE.md — that forks the source of truth.
+- **Injected on the bot host.** The bot (on the VM) reads the file and folds the text into
+  the prompt string; for `runClaudeRemote` the layer travels to the local worker *inside
+  the prompt* over SSH, so only the VM-side path (`/home/deploy/agentGuidance/
+  guidance/opus-fable-parity.md`) needs to resolve. Override with `PARITY_LAYER_FILE` or
+  `AGENT_GUIDANCE_DIR` if the layout changes.
+- **Requirements met:** #1 (≥45-turn budget) — headless `claude -p` sets no `--max-turns`,
+  so the budget is unbounded like interactive; #4 (effort xhigh) — no effort override in
+  the worker path, so it inherits Claude Code's `xhigh` default.
+
+**Observability:** every spawn logs `parity=v4|off` in the `[executor] runClaude` /
+`runClaudeRemote` line. Production impact is still measured by `parity-telemetry.sh`, but
+the meaningful before/after boundary is now **2026-07-13**, not the 2026-07-06 model bump.
+For a clean causal read, prefer a forward per-job arm (same shape as the interactive A/B)
+over the confounded before/after; 100% rollout was chosen here because the user asked for
+the layer ON, not measured.
+
+## Implementing the layer in a NEW pipeline (checklist)
+
+When a new Opus pipeline needs Fable-grade rigor, pick the delivery path by how it runs —
+then satisfy all four requirements above. Never cherry-pick sentences; inject the whole
+`PARITY-LAYER-START/END` block verbatim from this file (single source of truth).
+
+1. **Interactive Opus session on WSL** → already covered by `hooks/parity-layer-injection.sh`.
+   Nothing to do; it auto-injects (85/15 holdout). Just confirm the model is Opus.
+2. **Headless Opus worker** (`claude -p`, like the Discord worker) → the hook skips it.
+   Read the marker block yourself and prepend it to the prompt, gated to Opus-only. Reuse
+   the Discord bot repo's `src/bot/parityLayer.js` (`getParityLayerPrefix(model)`) as the
+   reference implementation — copy the pattern, don't re-paste the layer text.
+3. **Headless non-Opus pipeline** (security-scanner, autonomousDev on Sonnet/Haiku) → do
+   **not** inject. The autonomy clause misfires off-Opus and the layer is no-gain on Fable.
+4. **Report-critical / long-horizon work** → also wire requirement #3: run
+   `scripts/verify-report.sh <workspace>` (fresh-context verifier) and append its evidence
+   block, and add the `hooks/report-evidence-audit.sh` Stop hook.
+
+Budget gate (non-negotiable): give the pipeline ≥45 turns / the token-budget equivalent.
+Below ~25 turns the model dies mid-verification and the gap re-opens — budget is part of
+the patch. Then set effort to `xhigh` where the runner exposes it.
+
 ## Re-validation
 
 The bakeoff arms are permanent: `recipe-amber` (Opus baseline), `recipe-jade` (Fable
