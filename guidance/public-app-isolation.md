@@ -1,3 +1,4 @@
+<!-- Load when: siloed alt account pattern for public-facing apps with untrusted input -->
 # Public App Isolation: Siloed Alt Account Pattern
 
 When building apps where the public can submit free-text that feeds into Claude (e.g., Shopper), use this pattern to prevent prompt injection from accessing personal credentials, infrastructure, or consuming primary account resources.

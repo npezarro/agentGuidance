@@ -25,13 +25,43 @@ SERVICES=$(cat "$TRACKER")
 FAILURES=""
 PASSES=""
 
+# HTTP check with one retry (2s sleep) so a transient blip doesn't fail
+# the deploy verification. Usage: http_check <url> <ok_code> [ok_code...]
+# Echoes the final HTTP code; always returns 0.
+http_check() {
+  local url="$1"; shift
+  local code ok attempt
+  for attempt in 1 2; do
+    # No -f: -w '%{http_code}' already yields 000 on connect failure, and
+    # -f + '|| echo 000' double-emits (e.g. "000000") on transport errors.
+    code=$(curl -s --max-time 8 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)
+    [ -z "$code" ] && code="000"
+    for ok in "$@"; do
+      if [ "$code" = "$ok" ]; then
+        echo "$code"
+        return 0
+      fi
+    done
+    [ "$attempt" = 1 ] && sleep 2
+  done
+  echo "$code"
+  return 0
+}
+
 while IFS= read -r SVC; do
   [ -z "$SVC" ] && continue
+
+  # Skip on-demand services (managed by ondemand-waker, stopped when idle)
+  IS_ONDEMAND=$(jq -r --arg svc "$SVC" '.services[$svc].ondemand // false' "$REGISTRY" 2>/dev/null)
+  if [ "$IS_ONDEMAND" = "true" ]; then
+    PASSES="${PASSES}  [SKIP] ${SVC} (on-demand, stopped when idle)\n"
+    continue
+  fi
 
   # Get health URL
   HEALTH=$(jq -r --arg svc "$SVC" '.services[$svc].health // empty' "$REGISTRY" 2>/dev/null)
   if [ -n "$HEALTH" ]; then
-    HTTP_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$HEALTH" 2>/dev/null || echo "000")
+    HTTP_CODE=$(http_check "$HEALTH" 200)
     if [ "$HTTP_CODE" = "200" ]; then
       PASSES="${PASSES}  [PASS] ${SVC} health (${HTTP_CODE})\n"
     else
@@ -43,7 +73,7 @@ while IFS= read -r SVC; do
   URLS=$(jq -r --arg svc "$SVC" '.services[$svc].urls[]? // empty' "$REGISTRY" 2>/dev/null)
   while IFS= read -r URL; do
     [ -z "$URL" ] && continue
-    HTTP_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+    HTTP_CODE=$(http_check "$URL" 200 302)
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
       PASSES="${PASSES}  [PASS] ${SVC} page (${HTTP_CODE})\n"
     else
@@ -60,12 +90,13 @@ while IFS= read -r SVC; do
     if [ -n "$FIRST_URL" ]; then
       PAGE_HTML=$(curl -sL --max-time 10 "$FIRST_URL" 2>/dev/null || true)
       # Extract first /_next/static/chunks/ JS URL from the HTML
-      CHUNK_PATH=$(echo "$PAGE_HTML" | grep -oP '/_next/static/chunks/[^"'"'"'\s]+\.js' | head -1 || true)
+      # BSD-grep portable ERE (was GNU-only grep -oP with \s)
+      CHUNK_PATH=$(echo "$PAGE_HTML" | grep -oE "/_next/static/chunks/[^\"'[:space:]]+\.js" | head -1 || true)
       if [ -n "$CHUNK_PATH" ]; then
         # Build absolute URL: strip path from FIRST_URL to get origin+basepath
         BASE_URL=$(echo "$FIRST_URL" | sed 's|/$||')
         CHUNK_URL="${BASE_URL}${CHUNK_PATH}"
-        CHUNK_CODE=$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "$CHUNK_URL" 2>/dev/null || echo "000")
+        CHUNK_CODE=$(http_check "$CHUNK_URL" 200)
         if [ "$CHUNK_CODE" = "200" ]; then
           PASSES="${PASSES}  [PASS] ${SVC} chunk integrity (${CHUNK_CODE})\n"
         else
@@ -77,7 +108,10 @@ while IFS= read -r SVC; do
 
 done <<< "$SERVICES"
 
-# Clean up tracker
+# Consume the tracker (so we don't re-verify on every Stop), but preserve the
+# record for check-commit-deploy.sh — deleting it outright made that gate
+# re-block on every subsequent Stop of the session (2026-07-01 incident).
+cat "$TRACKER" >> "/tmp/claude-deploys-verified-${SID}" 2>/dev/null || true
 rm -f "$TRACKER"
 
 # Build output

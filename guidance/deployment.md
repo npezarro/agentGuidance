@@ -1,6 +1,16 @@
+<!-- Load when: pre-deploy and post-deploy checklists -->
 # Deployment
 
-## Staging-First Apps
+## Skill Routing (check before any ad-hoc ssh + pm2)
+
+A 2026-07-01 transcript audit found 97 sessions doing raw `ssh + pm2 restart` deploys with zero skill usage, while the deploy skills sat unused. Before running any ad-hoc deploy or restart command, route through the right skill:
+
+- **shopper, foodie, finance-tracker, travel-assistant, employ** (Next.js subpath apps): `staging` skill. Always.
+- **Any other PM2 service on the VM** (bots, APIs, workers): `deploy` skill.
+- **"Styling is broken" / unstyled page / dead buttons / `_next/static` 500s** on any production Next.js app: `fix-static-asset-drift` skill; do not debug CSS first.
+- **VM feels slow / disk warnings**: `vm-health`, then `vm-cleanup`.
+
+Invoke the skill (Skill tool), don't just Read its SKILL.md — invocation is what loads the full procedure and logs usage.
 
 **shopper, finance-tracker, and travel-assistant always deploy through staging.** Use the `/staging` skill. Do not deploy these apps directly to production unless the user explicitly requests it (e.g., emergency hotfix).
 
@@ -51,6 +61,10 @@ Two hooks mechanically enforce post-deploy verification, even if the agent skips
 2. **`hooks/verify-deploy.sh`** (Stop hook): When a session ends, reads the tracker and curls each deployed service's health endpoint and user-facing URLs from the registry. **Blocks the session exit** if any check fails, forcing the agent to diagnose and fix before stopping.
 
 **Why this exists:** The #1 failure mode was agents deploying, declaring "done," and leaving without testing. The Stop hook makes this structurally impossible for registered services.
+
+3. **`hooks/check-commit-deploy.sh`** (Stop hook): Detects when files were modified in a repo that has a live deployment (per `deploy-registry.json` `repo` field) but no deploy was performed during the session. **Blocks the session exit** until the agent either deploys or documents the pending deploy in context.md.
+
+**Why this exists:** The #2 failure mode was agents committing code to deployed repos and ending the session without deploying. The committed code sat stale while production served the old build (employ incident, 2026-06-29).
 
 ## Next.js Standalone Symlink Fix
 
@@ -280,3 +294,33 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## SQLite/DB path must never resolve inside the build tree (silent data loss)
+
+**Incident 2026-06-17 (shopper/foodie/travel/runeval):** Next.js standalone apps run with `cwd = .next/standalone/`. A DB layer that falls back to a RELATIVE path (`process.env.DB_PATH || path.join(process.cwd(), "app.db")`, or Prisma `DATABASE_URL="file:./data/x.db"`) silently creates the live DB INSIDE `.next/` whenever the launch doesn't export an absolute path. `npm run build` does `rm -rf .next`, so every deploy ERASES the DB and all rows written since the last build — silent, intermittent, undetected.
+
+**Rules:**
+- Pin an ABSOLUTE DB path in `.env` AND `start.sh`, outside `.next/`. For Prisma use an absolute `file:/abs/path.db` URL.
+- Add a boot guard in the DB layer: `if (path.resolve(dbPath).split(path.sep).includes(".next")) throw` — turns silent loss into a loud crash. No-op when configured correctly.
+- Add row-count-drop + missing-backup alerting. A corruption/integrity check does NOT catch a DB that is intact but missing rows (no baseline). See VM `~/bin/db-guardian.sh`.
+
+**Deploy-model divergence (don't mix them up):**
+- Some VM app dirs are NON-GIT, artifact-only (`.next`+`node_modules`+`package.json`) — deploy via /staging artifact promotion (rsync `.next`), sync loose scripts via scp.
+- Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
+
+Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
+
+## VM SSH: don't trip fail2ban with reconnect bursts
+
+**Incident 2026-06-30 (a PM2 service deploy):** A burst of short SSH connections to the production VM, plus one deploy SSH killed mid-run and immediately retried, tripped the VM's fail2ban jail on port 22. Result: a ~10-minute DROP ban on the source IP. Roughly 5 rapid or aborted connections are enough.
+
+**The tell (so you diagnose it in seconds, not minutes):**
+- SSH connect **times out** (not "connection refused") and ICMP/ping is blocked.
+- The production site still returns **HTTP 200 via the CDN**, so the box and web tier are fine; only your SSH is banned.
+- Direct-to-origin ports 80/443 are *always* firewalled to CDN-only, so the **only new signal is port 22 timing out** while HTTP works.
+
+**Recovery:** stop all SSH attempts (each retry re-arms/extends the ban), wait 10-12 minutes, then make ONE clean connection.
+
+**Prevention:**
+- Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
+- Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
