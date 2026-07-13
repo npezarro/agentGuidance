@@ -1,20 +1,11 @@
+<!-- Load when: detailed session documentation for important conversations -->
 # Comprehensive Closeout
 
 Use when a session involves significant decisions, new systems, architectural changes, or anything worth referencing later. This produces a durable, detailed document beyond the standard session-wrapup.
 
 ## When to Use
 
-**Comprehensive closeout is the default for all interactive sessions.** It runs automatically at session end without requiring `--dc` or any explicit trigger.
-
-Additionally, it is especially important for sessions that:
-- Established a new system, agent, or workflow
-- Involved architectural decisions with trade-offs
-- Produced learnings that affect multiple repos
-- Covered complex ground over multiple hours
-
-### Self-Service Open Items
-
-When the closeout process surfaces open items, address them independently rather than just documenting them. Fix what can be fixed, push what needs pushing, capture what needs capturing. Only escalate to the user when a genuine decision or input is required.
+Triggering, the automatic-default policy, self-service of open items, and the base checklist all live in `guidance/session-wrapup.md` (single source; not repeated here). This file specifies only the deliverables a deep closeout produces. It matters most for sessions that established a new system, made architectural decisions, produced cross-repo learnings, or covered complex multi-hour ground.
 
 ## What It Produces
 

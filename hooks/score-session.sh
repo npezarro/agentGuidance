@@ -6,7 +6,9 @@
 source "$(dirname "$0")/lib/stop-hook-guard.sh"
 stop_hook_init "score-session" --invokes-claude
 
-SCORER="$HOME/repos/autonomousDev/supervisor/score.sh"
+# Private tree is canonical: it has the usage gate + CLAUDE_CODE_* env-strip,
+# and its scores/ dir is the one tier-2 actually reads (Fable 5 review item 4)
+SCORER="$HOME/repos/autonomousDev-private/supervisor/score.sh"
 [ -x "$SCORER" ] || exit 0
 
 # Content fingerprint fallback (env var guard is handled by stop_hook_init)

@@ -7,7 +7,7 @@
 # Rate-limited: won't trigger if the learning pass ran in the last 30 minutes.
 
 source "$(dirname "$0")/lib/stop-hook-guard.sh"
-stop_hook_init "trigger-learning-review"
+stop_hook_init "trigger-learning-review" --invokes-claude
 
 [[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]] && exit 0
 

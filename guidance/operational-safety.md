@@ -1,3 +1,4 @@
+<!-- Load when: self-deploy loops, restart storms, hook loops -->
 # Operational Safety
 
 Prevent feedback loops, restart storms, and cascading failures in automated systems.
@@ -113,6 +114,22 @@ count=$(grep -c 'pattern' file || true)
 **`-p` consumes the next argument as a prompt string.** When piping input via stdin with additional flags, use `claude --print` (not `claude -p`). The `-p` flag takes the NEXT argument as a positional prompt — so `claude -p --model X` feeds the literal string `"--model X"` as the prompt and ignores stdin entirely. Use `claude --print --model X` to enable stdin mode with a separate model flag. This caused a silent failure in `deal-scout/scout.js` (commit `909f481`, 2026-06-01).
 
 **Real incident (2026-05-15):** `auto-shorts-worker/pipeline.py` piped prompts to `claude --print -p -` without `--no-chrome`. On the headless worker, Claude attempted browser operations that failed silently.
+
+### Gotcha: `claude -p` Eats the Next Argument as a Prompt String
+
+When calling the Claude CLI with piped stdin **and** additional flags like `--model`, use `claude --print`, **not** `claude -p`. The `-p` flag is positional — it treats the **next CLI argument** as a literal prompt string, so `claude -p --model claude-sonnet-4-6` passes `"--model claude-sonnet-4-6"` as the prompt and ignores stdin entirely.
+
+```bash
+# WRONG — -p eats --model as the prompt; stdin is ignored
+echo "$prompt" | claude -p --model claude-sonnet-4-6
+
+# CORRECT — --print enables stdin pass-through; --model is parsed as a flag
+echo "$prompt" | claude --print --model claude-sonnet-4-6
+```
+
+**Real incident (2026-06-01):** `deal-scout/scout.js` used `execSync('claude -p --model claude-sonnet-4-6', { input: prompt })`. Every eval call passed the model flag string as the prompt instead of the deal data. Fixed in commit `909f481` by switching to `claude --print`.
+
+**Rule:** When combining piped stdin with any extra flags (`--model`, `--output-format`, etc.), always use `claude --print` as the mode flag, not `claude -p`.
 
 ### Strip CLAUDE_CODE_* Env Vars From Subprocess Invocations
 
@@ -257,6 +274,30 @@ if (output.match(/you've hit your limit/i) || output.match(/resets \d+:\d+[ap]m/
 
 **Where this applies:** shopper bridge, error_handler Claude invocations, any future service that pipes prompts to `claude -p` and parses stdout.
 
+## `set -e` Makes Post-Hoc Exit-Code Capture Dead Code
+
+**The scenario:** A runner script uses `set -euo pipefail`, invokes `claude` (or any fallible command) as a bare statement, then tries to handle failure afterwards:
+
+```bash
+set -euo pipefail
+timeout 2700 claude -p "$PROMPT" > "$LOG"   # non-zero exit kills the script HERE
+EXIT_CODE=$?                                 # never reached on failure
+if [ "$EXIT_CODE" -eq 124 ]; then ...        # dead code
+```
+
+Under `set -e`, any non-zero exit terminates the script before `EXIT_CODE=$?` runs. Every downstream failure path (timeout logging, Discord alerts, state writes, cost tracking) is unreachable. The same applies to command substitution: `RESULT=$(claude ...)` exits the script before the failure branch. A subtle variant: `OUT=$(cmd || true); RC=$?` — the `|| true` guarantees `RC` is always 0, silently disabling the gate that reads it.
+
+**Real incident (found 2026-06-09):** all three autonomous runners (learnings-pass, supervisor, autonomousDev main) plus verify.sh had this bug. Zero failure alerts had ever fired across ~1,000 combined runs; a 45-minute Opus run timed out with no log entry, no state write, and a reused run ID the next day; the autonomousDev verify gate passed proven test failures for weeks.
+
+**Fix:** capture the exit code in the same statement so `set -e` never sees the failure:
+
+```bash
+EXIT_CODE=0
+timeout 2700 claude -p "$PROMPT" > "$LOG" || EXIT_CODE=$?
+```
+
+**Rule:** In any `set -e` script, a command whose failure you intend to handle must have its exit captured via `|| VAR=$?` (or run inside an `if`). Never write a bare command followed by `$?`, and never read `$?` after `|| true`. Audit: `grep -n 'EXIT_CODE=\$?\|_EXIT=\$?' <script>` — each hit must be on the same line as the command it measures.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
@@ -391,3 +432,7 @@ logger.info(f"Claude fix complete (cost: ${cost:.4f})")
 ```
 
 Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25).
+
+## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
+
+`ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.

@@ -1,3 +1,4 @@
+<!-- Load when: claude-bakeoff A/B testing -->
 # A/B Testing with claude-bakeoff
 
 **claude-bakeoff is a default part of every Claude Code instance.** All agents should be familiar with it and use it proactively when the situation calls for it. Results are automatically posted to `#claude-bakeoff` in Discord.

@@ -1,4 +1,5 @@
 <!-- browser-page-reader.md | Last updated: 2026-05-10 -->
+<!-- Load when: page-reader CLI for JS-heavy pages -->
 # Browser Page Reader (page-reader)
 
 ## What It Is
@@ -101,6 +102,20 @@ The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible ins
 **Pattern:** Use as a WebFetch fallback in Docker-bridged Claude CLI system prompts. If `WebFetch` returns a 500, 403, empty body, or bot-block page, retry via the proxy. Only fall back to this after direct WebFetch fails — the proxy uses a full headless browser and is slower.
 
 Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
+
+## The Page-Access Waterfall (escalate; don't surrender at the first empty fetch)
+page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with commands) lives in the **`page-access` skill** — invoke it whenever a fetch returns empty, login-walled, paywalled, or JS junk:
+
+1. **WebFetch** — static pages, fast.
+2. **page-reader** (`node ~/repos/page-reader/src/index.js --text-only <url>`) — JS SPAs. A 500/empty here is an escalation trigger, not "page is dead."
+3. **Feed / alt-endpoint tricks** — clean, no-JS, no-auth; try BEFORE the browser when the host is known:
+   - Medium → `medium.com/feed/@USERNAME` (full bodies); Substack → `SUB.substack.com/feed`; blogs → `/feed` `/rss`.
+   - YouTube/podcast transcripts → `yt-dlp --skip-download --write-auto-sub --sub-lang en --sub-format vtt`, then clean the VTT.
+   - Reddit → append `.json`; GitHub → `raw.githubusercontent.com`.
+4. **browser-agent** (`~/repos/browser-agent/browser-cli.sh open|tabs|text`) — drives the **logged-in Chrome**, so it beats **auth walls AND paywalls** (LinkedIn, paid newsletters, gated dashboards). This is the rung WebFetch-only sub-agents are missing.
+5. **WebSearch** — secondhand, LAST resort, always flagged as search-derived. Never launder a search summary into a deliverable as if you read the source.
+
+**Sub-agent rule:** never delegate auth-gated or SPA retrieval to a sub-agent armed only with WebFetch — hand it the waterfall (and the browser-agent command) or retrieve via browser-agent in the main thread and pass the text down. An auth/paywall wall is *climbable*, not terminal.
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
