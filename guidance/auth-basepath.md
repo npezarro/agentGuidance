@@ -285,6 +285,14 @@ profile (not an alt account that lacks project access).
 
 1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.
 
+   **AUTH_URL options for Auth.js v5 subpath apps (updated 2026-06-03):** there are two working patterns; both require the explicit `basePath: "/api/auth"` above.
+   - **Bare origin** (canonical, simpler): `AUTH_URL=https://example.com` — `setEnvDefaults()` extracts `"/"` as the pathname, which doesn't conflict with the explicit basePath. Works for most apps and is the default recommendation (see "AUTH_URL origin-only pattern for tunneled apps" above).
+   - **Full path** (needed in some Auth.js v5 configurations): `AUTH_URL=https://example.com/runeval/api/auth` — includes both the app subpath AND the NextAuth basePath. The `setEnvDefaults()` extraction of `/runeval/api/auth` is overridden by the explicit `basePath: "/api/auth"`. This pattern fixed CSRF token mismatches in runeval under Auth.js v5 (Gemini fix `3f50b89`, 2026-06-03), where the bare-origin pattern caused auth failures.
+
+   The danger zone remains the middle ground described above: `AUTH_URL=https://example.com/runeval` (app subpath only, no `/api/auth`) lets `setEnvDefaults()` extract `/runeval` as basePath, overriding the explicit config and breaking action parsing.
+
+   **Rule of thumb:** if starting fresh, use bare origin first; if CSRF failures appear with bare origin already set, try the full-path pattern next.
+
 2. **When upgrading next-auth or Next.js**: test the full OAuth flow on staging before deploying to production. `curl https://staging.example.com/runeval/api/auth/providers` must return provider JSON, not "Bad request."
 
 3. **Add a smoke test**: After deploying, verify auth endpoints AND the signin flow:
@@ -355,6 +363,49 @@ profile (not an alt account that lacks project access).
    Also exclude static assets from the middleware matcher (`.*\\.png$|.*\\.svg$`) — auth middleware blocking images causes broken layouts.
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
+
+12. **Never concatenate `NEXTAUTH_URL` directly with `BASE_PATH` to build app URLs.** `NEXTAUTH_URL` may include a pathname on the VM (e.g., `https://example.com/finance`) even when the "origin-only" rule above is followed in older deployments. Concatenating it with `BASE_PATH` (also `/finance`) produces double-path URLs like `/finance/finance/cards` that are silently wrong — no build error, no 404 from the server, just broken links in emails or redirect callbacks.
+
+    **Fix:** Always strip the pathname from `NEXTAUTH_URL` before appending `BASE_PATH`:
+    ```typescript
+    // src/lib/origin.ts — helper used in benefit-reminder emails and SnapTrade redirects
+    export function getAppOrigin(): string {
+      const raw = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "";
+      try {
+        return new URL(raw).origin;  // strips pathname, search, hash
+      } catch {
+        return raw;  // fallback: return as-is
+      }
+    }
+
+    // Usage
+    const url = `${getAppOrigin()}${process.env.NEXT_PUBLIC_BASE_PATH}/cards`;
+    ```
+
+    **Why it happens:** `NEXTAUTH_URL` must include the pathname for the NextAuth `setEnvDefaults()` basePath derivation to work (per rule #1), but server-side code constructing non-auth URLs must use only the origin. Storing them in the same var creates the double-path risk for any code that hasn't read this rule.
+
+    Source: finance-tracker commit `95b3477` (2026-06-02).
+
+13. **Trap JWT decode errors to prevent AUTH_SECRET rotation crash loops.** When `AUTH_SECRET` is rotated, cookies encrypted with the old secret cause Auth.js to throw `JWTSessionError` inside the JWT callback, which kills the `next-server` worker. PM2 restarts it, but if the old worker hasn't released its port yet, the new one hits `EADDRINUSE` → crash → repeat. Foodie saw **349 restarts** from this pattern on 2026-06-02. Fix: wrap `jwt.decode` in `try/catch` in the NextAuth config's `jwt` callback; on failure return `null` (treats the request as anonymous). Never let a stale cookie crash the server — treat it as an expired session instead.
+    ```typescript
+    callbacks: {
+      jwt: async ({ token, user }) => {
+        try {
+          // normal jwt logic
+        } catch (err) {
+          console.warn("JWT decode error (stale secret?), treating as anonymous:", err);
+          return null; // anonymous session
+        }
+      }
+    }
+    ```
+
+14. **Export HEAD and OPTIONS handlers on auth routes to prevent UnknownAction errors.** Health checks and CORS preflights that hit `GET /api/auth/[...nextauth]` throw Auth.js `UnknownAction` because Auth.js only exports `GET` and `POST`. Fix: add explicit stubs in your route handler:
+    ```typescript
+    export const { GET, POST } = handlers;
+    export const HEAD = () => new Response(null, { status: 200 });
+    export const OPTIONS = () => new Response(null, { status: 200 });
+    ```
 
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 

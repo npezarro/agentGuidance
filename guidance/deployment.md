@@ -80,6 +80,23 @@ npm runs `postbuild` automatically after `build`. This pattern is used in financ
 
 **Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
 
+## Next.js 16: Also Copy `.next/server` to Standalone
+
+**Next.js 16 bug:** Standalone builds omit `.next/server/` (app-router server files). Copying only `.next/static` and `public/` is not enough — omitting `.next/server` causes `InvariantError: client reference manifest does not exist` on any route with `use client` components or app-router pages.
+
+**Fix:** In your build script, copy both `.next/static` **and** `.next/server` into the standalone output:
+
+```bash
+STANDALONE=.next/standalone
+cp -r .next/static  $STANDALONE/.next/static
+cp -r .next/server  $STANDALONE/.next/server
+cp -r public        $STANDALONE/public
+```
+
+**Detection:** The error manifests at runtime, not at build time — the app starts fine (`pm2` shows `online`, `/api/health` returns 200) but any app-router page with client components throws `InvariantError: client reference manifest for route "/X" does not exist`.
+
+Source: runEvaluator commit `6f78038` (2026-06-01), run #647.
+
 ## GitHub Pages Static Export (No-Server Alternative)
 
 For apps that don't require SSR, auth, or server-side API routes, `output: 'export'` produces a static site that can be hosted on GitHub Pages for free — no VM, no PM2, no Apache config needed.
@@ -226,6 +243,21 @@ fi
 
 **Env knobs:** `DEPLOY_LOCK_WAIT=0` to fail fast, `DEPLOY_LOCK_BYPASS=1` as a break-glass escape hatch (coordinate before using).
 
+## Stop PM2 Before Next.js Standalone Builds
+
+`next build` deletes `.next/standalone/server.js` before recreating it. If PM2 is running and the process restarts (for any reason) during this window, PM2 crash-loops on `MODULE_NOT_FOUND` until the build finishes. With `max_restarts: 10` or higher, this can burn through all restart attempts before the build completes, leaving the process errored.
+
+**Fix:** Always stop PM2 before building a standalone Next.js app:
+```bash
+pm2 stop <process>; npm run build && pm2 restart <process> --update-env
+```
+
+Use `;` (not `&&`) after `pm2 stop` so the build proceeds even if the process was already stopped or doesn't exist yet (first deploy).
+
+**Why:** runeval observed 27+ PM2 restart attempts during a single build window (2026-06-03). The build completed successfully but PM2 had already entered "errored" state.
+
+This is a simpler, narrower complement to the `flock` serialization above — it's about a single deploy's own build-vs-serve race, not concurrent deploys stepping on each other. Apply both where relevant.
+
 ## Concurrent rsyncs Silently Drop Subdirectories
 
 **Never run parallel rsyncs from the same dev host to multiple production directories.** Concurrent rsync operations (e.g., deploying shopper, foodie, and travel in the same shell session with `&`) can silently drop subdirectories in the destination.
@@ -283,17 +315,35 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 {
   name: 'my-service',
   script: 'server.js',
-  kill_timeout: 3000,    // ms to wait for graceful shutdown before SIGKILL (default: 1600)
-  listen_timeout: 3000,  // ms to wait for app to bind its port before marking crashed (default: 3000)
-  max_memory_restart: '1G',
+  kill_timeout: 10000,    // ms to wait for graceful shutdown before SIGKILL (default: 1600)
+  listen_timeout: 10000,  // ms to wait for app to bind its port before marking crashed (default: 3000)
 }
 ```
 
-**`kill_timeout`:** PM2 sends SIGTERM, then force-kills with SIGKILL after `kill_timeout` ms. Default 1600ms is too short for Next.js apps closing DB connections or finishing in-flight requests. Use 3000ms minimum. **Finance-tracker crash loop (2026-05-15):** default kill_timeout caused partial shutdown, leaving DB connections open, causing the next start to hit connection limit immediately.
+**`kill_timeout`:** PM2 sends SIGTERM, then force-kills with SIGKILL after `kill_timeout` ms. Default 1600ms is too short for Next.js apps closing DB connections or finishing in-flight requests. Use **10000ms (10s)** for Next.js standalone apps — experience shows 3000ms can still cause partial shutdown under load, leaving DB connections open and causing the next start to hit connection limit immediately. **Finance-tracker crash loop (2026-05-15):** default kill_timeout caused this. **runeval crash loop (2026-06-02, commit `0ac95bc`):** even 3000ms was insufficient; raised to 10000ms to fully resolve.
 
-**`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
+**`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, use 10000ms to match `kill_timeout` and give heavy initializers (Prisma, migrations, PRAGMA setup) enough runway.
+
+**`max_memory_restart`:** Remove this from production PM2 configs for Next.js apps. It can trigger unexpected restarts during traffic spikes and is harder to tune than a VM-level OOM guard. Set a Node.js heap cap via `node_args: '--max-old-space-size=1024'` instead and let the OS OOM killer be the last resort.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Prisma + SQLite: WAL Mode Must Be Applied via PRAGMA, Not URL
+
+When using Prisma with SQLite, WAL mode (`journal_mode=WAL`) cannot be set as a query parameter in the `DATABASE_URL`. Prisma's engine does not support it as a URL param and will silently ignore or error on it.
+
+**Correct approach:** Apply WAL mode via `$queryRawUnsafe` after connecting:
+
+```ts
+await prisma.$queryRawUnsafe(`PRAGMA journal_mode=WAL;`);
+await prisma.$queryRawUnsafe(`PRAGMA busy_timeout=30000;`);
+```
+
+If `journal_mode=WAL` appears in `DATABASE_URL` (e.g., from an old deploy.sh), **strip it before passing to Prisma** — do not let it through as a connection parameter.
+
+**URL params that ARE supported:** `connection_limit=1`, `pool_timeout=10`, `busy_timeout=30000`. These prevent "database is locked" errors under concurrent Prisma access.
+
+**Pattern used in:** runeval `lib/prisma.ts` (commit `0ac95bc`, 2026-06-02) — strips `journal_mode` from URL with `url.searchParams.delete("journal_mode")` before constructing the Prisma datasource URL, then applies WAL via PRAGMA at connection time.
 
 ## SQLite/DB path must never resolve inside the build tree (silent data loss)
 
@@ -324,3 +374,70 @@ Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-d
 **Prevention:**
 - Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
 - Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
+
+## Apache 60s Proxy Timeout — 202 Async Split Pattern
+
+Apache's default `ProxyTimeout` is 60 seconds. Any Next.js API route that calls a slow backend (LLM, external API, heavy compute) and blocks until completion will hit this limit and return a 502 to the browser.
+
+**Pattern:** Split the long-running request into two parts:
+1. **POST → 202 Accepted:** Kick off the work in a detached background task (fire-and-forget promise, PM2 cron, etc.). Return `{ status: "accepted" }` immediately.
+2. **GET → status + result:** The client polls this endpoint until the result appears (e.g., a new `generatedAt` timestamp or `generating: false`).
+
+```typescript
+// In the API route
+const inFlight = new Set<string>();  // module-scoped dedup
+
+export async function POST(req: NextRequest) {
+  if (inFlight.has(userId)) return NextResponse.json({ status: "already_running" }, { status: 202 });
+  inFlight.add(userId);
+  // Fire and forget — don't await
+  doSlowWork(userId).finally(() => inFlight.delete(userId));
+  return NextResponse.json({ status: "accepted" }, { status: 202 });
+}
+
+export async function GET(req: NextRequest) {
+  const result = await db.getResult(userId);
+  return NextResponse.json({ ...result, generating: inFlight.has(userId) });
+}
+```
+
+**Client polling (React):**
+```typescript
+// Poll GET every 4s for up to 4 minutes after triggering POST
+useEffect(() => {
+  if (!generating) return;
+  const id = setInterval(async () => {
+    const data = await fetchPlan();
+    if (data.generatedAt > lastGenerated) { clearInterval(id); refresh(); }
+  }, 4000);
+  const timeout = setTimeout(() => clearInterval(id), 240_000);
+  return () => { clearInterval(id); clearTimeout(timeout); };
+}, [generating]);
+```
+
+**Where this matters:** Any Apache-proxied route doing LLM calls (Claude Opus ~30-60s), batch processing, or external API calls >30s. First observed in runeval's training plan generation (commit `21d69a5`, 2026-06-03).
+
+**Alternative for internal cron endpoints:** Curl directly to `http://127.0.0.1:<port>/api/...` (bypasses Apache entirely). Used by PM2 cron processes that don't need timeout workarounds.
+
+## Deploy Scripts Must Hard-Lock to origin/main
+
+**Problem:** Autonomous fix-checker bots (Gemini, Claude learning-agent) create PR branches and can leave the VM's working copy checked out on a bot branch. A naive `git pull origin $(git branch --show-current)` in a deploy script will then silently ship an unreviewed bot branch to production.
+
+**Observed (runeval, 2026-06-03):** `deploy.sh` was pulling the current branch. A Gemini fix-checker left the VM checked out on `gemini/fix-runeval-0603-2053`. The next `./deploy.sh` shipped that in-progress branch to prod, reverting the Plan nav link and losing `TrainingPlan` rows (the bot's schema migration hadn't merged yet).
+
+**Fix pattern** for any deploy script on a repo with autonomous bot activity:
+```bash
+git fetch origin main
+git checkout main
+git reset --hard origin/main
+# Abort if working tree is dirty rather than silently wiping it
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Working tree dirty — aborting to avoid losing changes."
+    git status -sb
+    exit 1
+fi
+```
+
+**Why `reset --hard` over `pull`:** `git pull` with a dirty tree merges or errors. A detached/stale branch silently pulls the wrong history. `reset --hard origin/main` is unambiguous: always lands on exactly what's on the remote main branch.
+
+**Safety:** Abort if the tree is dirty so you don't silently wipe in-progress changes. A dirty tree on a deploy server is a signal something is wrong — investigate, don't bulldoze.
