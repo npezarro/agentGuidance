@@ -50,6 +50,14 @@ describe('functionName', () => {
 - **Error paths:** Does it fail gracefully with bad input?
 - **Boundaries:** Off-by-one errors, array boundaries, date rollovers.
 
+## Fallback Chains Hide Dead Rungs (test each branch in isolation)
+
+A fallback/waterfall (try A, else B, else C) is the highest-risk structure for a **silent miss**: if an early rung dies, a later rung catches everything and the end-to-end result still looks correct, so nothing appears broken. The dead layer is invisible until the day the layer below it also fails.
+
+- **Test each rung/branch on its own**, with an input it MUST handle, not just the end-to-end happy path. If rung 1 is supposed to handle server-rendered pages, prove it does with the *later rungs disabled* (a `--max-rung`/`--from-rung`-style flag, a forced-branch fixture, dependency stubs). End-to-end green is necessary but not sufficient.
+- **Ship a canary** for any fallback you rely on (see `page-access/scripts/selftest.sh`): assert the winning rung, not just that content came back. If rung 1 stops winning on a case it owns, fail loudly.
+- **Verify the actual artifact, run the real code path — never a reimplementation of it.** On 2026-07-12 an isolated check used `open(file)` while the real script read the same data from stdin; the paraphrase passed while the real path was dead (`python3 - <<HEREDOC` had shadowed stdin). Testing a rewrite of the logic gives false confidence; drive the shipped script/function itself.
+
 ## What NOT to Test
 
 - Implementation details (private methods, internal state).
