@@ -103,6 +103,20 @@ The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible ins
 
 Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
 
+## Diagnose the Block Type Before Picking a Fix
+
+Most page-fetch 403s are **User-Agent/header fingerprinting, not IP reputation** — measured 2026-07-12 on a CNBC article that 403'd `WebFetch`: default curl UA → 403; browser UA → 200 from *both* a residential IP and a datacenter (GCP VM) IP. IP rotation would have done nothing there; the fix was a browser `User-Agent` string.
+
+Match the lever to the actual block, don't default to IP rotation:
+| Block symptom | Correct lever |
+|---|---|
+| 403/empty body, works with curl `-A "<browser UA>"` | Browser User-Agent (rung 1 of the waterfall below already sets one via `fetch-page.sh`) |
+| JS challenge, TLS fingerprint check, CAPTCHA | Real browser (page-reader / browser-agent, rungs 2+) |
+| 429, per-IP rate throttle | IP rotation (only scoped to genuine high-volume scrapers, e.g. `nll-hunter`'s proxy rotation) |
+| Datacenter-ASN block | Residential proxy — a fresh GCP IP will not help; it's still flagged as datacenter |
+
+Only reach for IP rotation once you've confirmed the block survives a browser-UA retry. Reserve it for high-volume scrapers, not one-off article fetches.
+
 ## The Page-Access Waterfall (escalate; don't surrender at the first empty fetch)
 page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with commands) lives in the **`page-access` skill** — invoke it whenever a fetch returns empty, login-walled, paywalled, or JS junk:
 
