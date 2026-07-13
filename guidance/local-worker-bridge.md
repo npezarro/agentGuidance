@@ -1,3 +1,4 @@
+<!-- Load when: local worker bridge post-mortem -->
 # Local Worker Bridge — Lessons Learned
 
 Post-mortem from the local worker bridge setup (2026-03-16 to 2026-03-18). Documents issues encountered during setup and deployment so agents avoid repeating them.

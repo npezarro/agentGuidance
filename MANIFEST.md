@@ -7,52 +7,69 @@ Every operational function has exactly one canonical source. If you need to find
 | Identity and stack defaults | `agent.md` | Always loaded at session start |
 | Core behavioral principles | `agent.md` | Plan, validate, push, ask |
 | Credential lookup | `~/repos/privateContext/` | Search before asking user |
-| Session reporting (Discord) | `guidance/discord-integration.md` | Webhooks, threading, file-links |
-| Session wrap-up | `guidance/session-wrapup.md` | 7-step end-of-session checklist |
-| Session continuity | `guidance/multi-session.md` | Picking up previous work |
-| Session lifecycle | `guidance/session-lifecycle.md` | Ephemerality, crash recovery |
-| Agent journal | `guidance/agent-journal.md` | Cross-session async notes |
-| Git workflow | `guidance/git-workflow.md` | Branching, PRs, merges, commit messages |
-| Code review | `guidance/code-review.md` | Pre-commit self-review checklist |
-| Context and progress files | `guidance/context-progress.md` | context.md and progress.md specs |
-| Testing | `guidance/testing.md` | Writing, running, cross-layer invariants |
-| Debugging | `guidance/debugging.md` | Log analysis, reproduce, isolate |
-| Deployment (general) | `guidance/deployment.md` | Pre-deploy and post-deploy checklists |
 | Deployment (VM safety) | `~/repos/privateContext/rules/deploy-safety.md` | VM-specific: disk, large-file-storage, branches |
-| Dependencies | `guidance/dependencies.md` | Evaluating and adding packages |
-| Resource awareness | `guidance/resource-awareness.md` | Server resource checks |
-| Process hygiene | `guidance/process-hygiene.md` | Spawned processes, temp files, ports |
-| Operational safety | `guidance/operational-safety.md` | Self-deploy loops, restart storms |
-| Secrets hygiene | `guidance/secrets-hygiene.md` | Rotation, history rewrite, detection |
 | Usage guardrail | `~/repos/privateContext/rules/usage-guardrail.md` | Team spawn gate at 75% |
-| Agent profiles | `profiles/_schema.md` | Identity + experience log format |
-| Written voice | `guidance/written-voice.md` | Writing in the owner's voice |
-| WordPress posting | `guidance/wordpress-auto-posting.md` | WordPress hook setup |
-| Auto-posting | `guidance/auto-posting.md` | Multi-destination posting design |
-| A/B testing | `guidance/ab-testing.md` | claude-bakeoff framework |
-| Auth and base paths | `guidance/auth-basepath.md` | Authentication patterns |
-| Browser page reader | `guidance/browser-page-reader.md` | page-reader CLI for JS pages |
-| Local worker bridge | `guidance/local-worker-bridge.md` | Post-mortem reference |
-| Tampermonkey | `guidance/tampermonkey.md` | Script hosting, CAPTCHA patterns |
-| Learning capture | `guidance/learning-capture.md` | When/where to persist learnings (multi-destination rule) |
 | Learning propagation script | `scripts/propagate-learning.sh` | Single-command multi-destination learning routing |
-| Essential rules (auto-loaded) | `guidance/ESSENTIAL.md` | Top-10 most-violated rules, injected at SessionStart |
-| Comprehensive closeout | `guidance/comprehensive-closeout.md` | Detailed session documentation for important conversations |
-| Propagation agent profile | `profiles/propagation/` | Dedicated role for learning routing consistency |
-| Doc-sync agent profile | `profiles/doc-sync/` | Dedicated role for CLAUDE.md freshness post-merge |
 | Cross-repo knowledge wiki | `~/repos/knowledgeBase/` | Synthesized cross-cutting reference; MANIFEST.md maps pages to sources |
+
+## Guidance Files (generated)
+
+<!-- BEGIN GENERATED guidance table (scripts/gen-manifest.sh) -->
+39 guidance files. Descriptions come from each file's "Load when:" header.
+
+| File | Load when |
+|---|---|
+| `guidance/ESSENTIAL.md` | AUTO-LOADED at SessionStart: top most-violated rules |
+| `guidance/ab-testing.md` | claude-bakeoff A/B testing |
+| `guidance/agent-journal.md` | async cross-session journal system |
+| `guidance/auth-basepath.md` | authentication and base path patterns |
+| `guidance/auto-posting.md` | writing style, multi-destination design |
+| `guidance/browser-page-reader.md` | MISSING Load-when header — add one |
+| `guidance/code-review.md` | self-review checklist before committing |
+| `guidance/comprehensive-closeout.md` | detailed session documentation for important conversations |
+| `guidance/context-progress.md` | context.md and progress.md specs |
+| `guidance/debugging.md` | diagnosing issues, log analysis |
+| `guidance/deep-research.md` | research depth and methodology before producing guides or recommendations |
+| `guidance/dependencies.md` | evaluating and adding packages |
+| `guidance/deployment.md` | pre-deploy and post-deploy checklists |
+| `guidance/discord-integration.md` | session reporting, posting, threading, file-links |
+| `guidance/git-workflow.md` | branching, PRs, merge procedures, commit messages |
+| `guidance/learning-agent.md` | hourly learning review: passes, staging, PR workflow |
+| `guidance/learning-capture.md` | when and where to persist operational learnings |
+| `guidance/local-worker-bridge.md` | local worker bridge post-mortem |
+| `guidance/mcp-tools.md` | MCP tool provider selection (Claude AI vs piotr google-drive) |
+| `guidance/multi-session.md` | continuity checklist and `--refresh` command |
+| `guidance/operational-safety.md` | self-deploy loops, restart storms, hook loops |
+| `guidance/prior-work-lookup.md` | finding past conversations and prior work |
+| `guidance/process-hygiene.md` | spawned processes, temp files, port conflicts |
+| `guidance/public-app-isolation.md` | siloed alt account pattern for public-facing apps with untrusted input |
+| `guidance/repo-creation.md` | checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure |
+| `guidance/research-quality.md` | curating high-quality references and study resources |
+| `guidance/resource-awareness.md` | server resource checks |
+| `guidance/secrets-hygiene.md` | secret rotation, history rewrite, detection patterns |
+| `guidance/session-lifecycle.md` | ephemerality, output design, crash recovery |
+| `guidance/session-wrapup.md` | end-of-session 7-step checklist |
+| `guidance/stop-hook-safety.md` | tiered stop hook classification, guard library, Tier 3 recursion prevention |
+| `guidance/synthetic-panel.md` | proposing, building, or shipping a user-facing product change; want structured synthetic-user feedback on an idea |
+| `guidance/tampermonkey.md` | TM script hosting and CAPTCHA bypass patterns |
+| `guidance/testing.md` | writing and running tests, cross-layer invariants |
+| `guidance/warehouse-analytics.md` | Snowflake/warehouse pull → DuckDB analysis → publish; auth ladder + cost gate + publish gotchas |
+| `guidance/when-to-fan-out.md` | when to spawn subagents (Task fan-out / parallel bash / Workflow) vs stay single-agent; concurrency-safe 3-phase pattern |
+| `guidance/wiki-consultation.md` | when and how to consult knowledgeBase wiki pages |
+| `guidance/wordpress-auto-posting.md` | WordPress hook setup |
+| `guidance/written-voice.md` | writing in the owner's voice |
+<!-- END GENERATED -->
 
 ## Rules vs Guidance
 
 - **`~/repos/privateContext/rules/`** (2 files): Environment-specific constraints installed to `~/.claude/rules/` via `scripts/install-rules.sh`. VM deploy safety and usage guardrails. Kept in privateContext because they contain infrastructure details.
-- **`guidance/`** (24 files): Detailed procedures loaded on-demand. `ESSENTIAL.md` is auto-loaded; rest are on-demand. One file per function; no duplication.
+- **`guidance/`**: Detailed procedures loaded on-demand (count and list in the generated table above). `ESSENTIAL.md` is auto-loaded; rest are on-demand. One file per function; no duplication.
 - **`scripts/`**: Operational scripts (`propagate-learning.sh`, etc.)
 - **`agent.md`**: Slim routing table (~80 lines) with core principles and the guidance index.
-- **`profiles/`**: Agent identity and experience. One subdirectory per agent (including propagation, doc-sync).
 
 ## Adding New Functions
 
 1. Create a new `guidance/<function>.md` file
-2. Add a row to this manifest
+2. Run `scripts/gen-manifest.sh` (the guidance table is generated from each file's Load-when header)
 3. Add a pointer in agent.md's Guidance File Index
 4. Do NOT duplicate the content in `~/.claude/rules/` unless it's VM/environment-specific

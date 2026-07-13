@@ -1,3 +1,4 @@
+<!-- Load when: self-deploy loops, restart storms, hook loops -->
 # Operational Safety
 
 Prevent feedback loops, restart storms, and cascading failures in automated systems.
@@ -271,6 +272,30 @@ if (output.match(/you've hit your limit/i) || output.match(/resets \d+:\d+[ap]m/
 
 **Where this applies:** shopper bridge, error_handler Claude invocations, any future service that pipes prompts to `claude -p` and parses stdout.
 
+## `set -e` Makes Post-Hoc Exit-Code Capture Dead Code
+
+**The scenario:** A runner script uses `set -euo pipefail`, invokes `claude` (or any fallible command) as a bare statement, then tries to handle failure afterwards:
+
+```bash
+set -euo pipefail
+timeout 2700 claude -p "$PROMPT" > "$LOG"   # non-zero exit kills the script HERE
+EXIT_CODE=$?                                 # never reached on failure
+if [ "$EXIT_CODE" -eq 124 ]; then ...        # dead code
+```
+
+Under `set -e`, any non-zero exit terminates the script before `EXIT_CODE=$?` runs. Every downstream failure path (timeout logging, Discord alerts, state writes, cost tracking) is unreachable. The same applies to command substitution: `RESULT=$(claude ...)` exits the script before the failure branch. A subtle variant: `OUT=$(cmd || true); RC=$?` — the `|| true` guarantees `RC` is always 0, silently disabling the gate that reads it.
+
+**Real incident (found 2026-06-09):** all three autonomous runners (learnings-pass, supervisor, autonomousDev main) plus verify.sh had this bug. Zero failure alerts had ever fired across ~1,000 combined runs; a 45-minute Opus run timed out with no log entry, no state write, and a reused run ID the next day; the autonomousDev verify gate passed proven test failures for weeks.
+
+**Fix:** capture the exit code in the same statement so `set -e` never sees the failure:
+
+```bash
+EXIT_CODE=0
+timeout 2700 claude -p "$PROMPT" > "$LOG" || EXIT_CODE=$?
+```
+
+**Rule:** In any `set -e` script, a command whose failure you intend to handle must have its exit captured via `|| VAR=$?` (or run inside an `if`). Never write a bare command followed by `$?`, and never read `$?` after `|| true`. Audit: `grep -n 'EXIT_CODE=\$?\|_EXIT=\$?' <script>` — each hit must be on the same line as the command it measures.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.
@@ -426,3 +451,7 @@ trap 'exit 0' ERR
 ```
 
 **Exceptions:** This applies only to cron/periodic processes. Long-running server processes (Express apps, daemons) should exit non-zero on unrecoverable errors so PM2 can restart them.
+
+## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
+
+`ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.
