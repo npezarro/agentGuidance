@@ -10,6 +10,8 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+2026-07-12 | guidance | testing.md: "Fallback Chains Hide Dead Rungs" rule (PR #318) — test each fallback branch in isolation; ship a canary asserting the winning rung; verify the real code path not a reimplementation. From the fetch-page.sh silent-miss (rung 1 dead, rung 2 masked it).
+2026-07-12 | incident | Quarantined an unpushed concurrent-automation commit (f68e8c5) that added sensitive identifiers (VM SSH username + a Discord-bot module path) to guidance/opus-fable-parity.md in this PUBLIC repo. Local-only, never pushed; held in git stash@{0} pending sanitization. See closeout.
 2026-07-12 | feature | Provenance + source-capture system (PR #314): guidance/provenance.md, scripts/source-registry.sh, agent.md + ESSENTIAL.md wiring. Companion private repo sourceLibrary created. Marks Claude-generated facts vs Nick's writing; captures cited sources with cached material.
 
 - 2026-07-09 | guidance | `c1ef193` — ESSENTIAL rule 5 new bullet "Intended state before config changes": read a project's docs before altering config/lifecycle (restart policy, enable/disable). From the 2026-07-09 power-cut recovery where `humans-pg` (documented on-demand dev DB, `restart:no` by design) was made `unless-stopped` on a hunch.
