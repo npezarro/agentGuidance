@@ -6,3 +6,5 @@ node_modules/
 *.pem
 *.key
 .DS_Store
+recurring-tasks/logs/
+scripts/security-scanner/*state.json

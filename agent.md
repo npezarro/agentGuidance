@@ -1,4 +1,4 @@
-<!-- agent.md v4.0.0 | Last updated: 2026-04-04 -->
+<!-- agent.md v4.1.0 | Last updated: 2026-07-01 -->
 # Global Agent Rules
 
 > **THIS IS A PUBLIC REPOSITORY.** Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information.
@@ -18,17 +18,15 @@ npx jest             # tests (when present)
 ```
 
 ## Core Principles
+> `guidance/ESSENTIAL.md` is always co-loaded with this file. Its rules (learning capture, guidance-updates-to-repo-files, verify before asserting, test before reporting, gather context first, mistake postmortem, self-service) are NOT repeated here; each rule lives in exactly one place.
 - **Plan before coding.** Outline approach, files affected, risks. Confirm before implementing.
 - **Ask, don't guess.** Ambiguous prompt? Stop and ask.
-- **Verify before asserting.** Check available sources (Gmail, git history, Drive) before stating something as fact. Don't infer user actions from the existence of prep materials.
 - **Validate incrementally.** Run the build after changes. Never commit broken code.
 - **Targeted edits only.** Precise insertions and replacements, not full-file overwrites.
 - **Diagnose before retrying.** Understand *why* before re-running. No blind retry loops.
 - **Always push to GitHub.** If it's not on GitHub, it doesn't exist. Use `llm-tasks` for deliverables without a home repo.
-- **Test before reporting.** Verify changes yourself (browser agent, curl, build, etc.) before asking the user to test or confirming completion.
-- **Fall back to page-reader for JS-rendered pages.** When WebFetch returns empty or broken content (common with SPAs like Gemini, modern forums, React apps), use `node ~/repos/page-reader/src/index.js --text-only <url>` (VM: `~/page-reader/`). Never skip a shared link; if both methods fail, say so explicitly.
+- **Fall back to page-reader for JS-rendered pages.** WebFetch empty/broken? See `guidance/browser-page-reader.md`. Never skip a shared link; if all methods fail, say so explicitly.
 - **No external posting without explicit instruction.** Building features is fine; calling endpoints is not.
-- **Capture every learning in ALL relevant places.** Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to route learnings to all destinations in one command. Never save to memory alone.
 
 ## Code Standards
 - **Match existing patterns.** Read `package.json`, config files, and surrounding code first.
@@ -75,17 +73,22 @@ Load on-demand based on the current task:
 - `guidance/ab-testing.md` -- claude-bakeoff A/B testing
 - `guidance/auth-basepath.md` -- authentication and base path patterns
 - `guidance/browser-page-reader.md` -- page-reader CLI for JS-heavy pages
+- `guidance/warehouse-analytics.md` -- Snowflake/warehouse pull → DuckDB analysis → publish; auth ladder + cost gate + publish gotchas
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/tampermonkey.md` -- TM script hosting and CAPTCHA bypass patterns
 - `guidance/learning-capture.md` -- when and where to persist operational learnings
 - `guidance/learning-agent.md` -- hourly learning review: passes, staging, PR workflow
-- `guidance/ESSENTIAL.md` -- **auto-loaded** top-10 most-violated rules (always in context)
 - `guidance/comprehensive-closeout.md` -- detailed session documentation for important conversations
 - `guidance/stop-hook-safety.md` -- tiered stop hook classification, guard library, Tier 3 recursion prevention
 - `guidance/mcp-tools.md` -- MCP tool provider selection (Claude AI vs piotr google-drive)
 - `guidance/prior-work-lookup.md` -- finding past conversations and prior work
 - `guidance/research-quality.md` -- curating high-quality references and study resources
 - `guidance/deep-research.md` -- research depth and methodology before producing guides or recommendations
+- `guidance/fact-checking.md` -- mandatory search-verification of external actionable claims (prices, eligibility rules, offers) before asserting
+- `guidance/provenance.md` -- mark Claude-generated facts vs Nick's own writing; capture every source to the private sourceLibrary repo (source-registry.sh)
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
 - `guidance/repo-creation.md` -- checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure
 - `guidance/public-app-isolation.md` -- siloed alt account pattern for public-facing apps with untrusted input
+- `guidance/when-to-fan-out.md` -- when to spawn subagents (Task fan-out / parallel bash / Workflow) vs stay single-agent; concurrency-safe 3-phase pattern
+- `guidance/synthetic-panel.md` -- advisory synthetic-user feedback on user-facing changes; fail-open contract, panel-check.sh usage
+- `guidance/opus-fable-parity.md` -- validated instruction layer closing the Opus 4.8 → Fable 5 behavioral gap; inject into Opus pipelines needing Fable-grade rigor (requires ≥45-turn budget)

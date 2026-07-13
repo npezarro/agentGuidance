@@ -22,10 +22,18 @@ esac
 # Create fingerprint from tool_name + tool_input
 FINGERPRINT=$(printf '%s' "$INPUT" | jq -cS '{t: .tool_name, i: .tool_input}' 2>/dev/null | sha256sum | cut -d' ' -f1) || exit 0
 
-# State directory; use PPID to approximate session identity
+# Session identity: parse session_id from the PostToolUse hook JSON on stdin
+# (same pattern as lib/stop-hook-guard.sh). PPID is unreliable across subshells
+# and collides when multiple sessions share a parent, so it is only a fallback.
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || true
+[[ -z "$SESSION_ID" ]] && SESSION_ID="$PPID"
+# Sanitize to a safe filename component
+SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_.-')
+[[ -z "$SESSION_ID" ]] && exit 0
+
 STATE_DIR="/tmp/claude-loop-guard"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
-STATE_FILE="$STATE_DIR/$PPID.log"
+STATE_FILE="$STATE_DIR/${SESSION_ID}.log"
 
 # Cleanup: remove state files older than 4 hours (non-blocking)
 find "$STATE_DIR" -name '*.log' -mmin +240 -delete 2>/dev/null &
