@@ -163,6 +163,127 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Python `smtplib`: Validate Email Addresses Before Sending
+
+Always guard `smtplib` send calls with a basic address sanity check. If `to_email` is empty, `None`, a placeholder (e.g., a username without a domain), or pulled from a config field that may not be set, passing it directly to `smtplib.SMTP` raises `smtplib.SMTPRecipientsRefused` or triggers an SMTP error that surfaces as an unhandled exception in the pipeline.
+
+```python
+def send_completion_email(to_email: str, subject: str, body: str) -> None:
+    if not to_email or "@" not in to_email:
+        log.warning(f"Skipping email — invalid address: {to_email!r}")
+        return
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        # ... rest of send
+```
+
+**Why:** Pipeline config fields that accept an email address may be left blank or filled with a display name instead of an address. The SMTP server will reject the recipient, throwing an exception that fails the whole job. A cheap guard at the function boundary prevents this.
+
+Source: auto-shorts-worker commit `0bc12ee` (2026-05-31) — completion email was skipping for invalid address configs.
+
+## `pm2 restart <name>` Does NOT Pick Up Ecosystem Config Changes
+
+`pm2 restart <name>` restarts the process using its **in-memory config**, ignoring any changes you've made to `ecosystem.config.js`. Changes to `node_args`, `max_memory_restart`, env vars, and other config fields are silently ignored.
+
+To apply config changes:
+
+```bash
+# BAD — restarts the process but ignores ecosystem.config.js changes
+pm2 restart finance-tracker
+
+# GOOD — re-reads ecosystem.config.js and applies all config changes
+pm2 startOrRestart ecosystem.config.js
+```
+
+**When this matters:**
+- You changed `node_args` to add `--max-old-space-size` (or any V8 flag)
+- You raised/lowered `max_memory_restart`
+- You added/changed env vars in the ecosystem config
+- You changed `watch` paths, `listen_timeout`, or `kill_timeout`
+
+Always run `pm2 save` after `pm2 startOrRestart` to persist the updated config for `systemd resurrect`.
+
+Source: finance-tracker commit `27184f8` (2026-06-07) — deploy.sh was using `pm2 restart finance-tracker`, so the node_args `--max-old-space-size=512` added to ecosystem.config.js was never picked up. Fixed by switching to `pm2 startOrRestart $VM_DIR/ecosystem.config.js`.
+
+## PM2 Crash Loops from DB Dependency on Startup
+
+Services that connect to Postgres (or any external DB) at module load time can enter a tight PM2 restart loop if the DB isn't ready on first boot or after a VM reboot. Two-layer fix:
+
+**Layer 1 — PM2 exponential backoff:** Add `exp_backoff_restart_delay: 100` to the ecosystem config. PM2 doubles the restart delay on each consecutive failure (100ms → 200ms → 400ms…) instead of hammering the process in a tight loop.
+
+```js
+module.exports = {
+  apps: [{
+    name: "my-app",
+    max_restarts: 10,
+    autorestart: true,
+    exp_backoff_restart_delay: 100,
+  }],
+};
+```
+
+**Layer 2 — Application-level connection retry:** For Prisma, add startup retry in `src/lib/db.ts` so the process doesn't crash before the DB becomes available:
+
+```ts
+if (process.env.NODE_ENV === "production") {
+  const connectWithRetry = async (retries = 5, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await prisma.$connect();
+        return;
+      } catch (err) {
+        console.error(`[db] Prisma connect failed (${i + 1}/${retries}):`, (err as Error).message);
+        if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    console.error("[db] All Prisma connection attempts failed.");
+  };
+  connectWithRetry();
+}
+```
+
+**When to apply:** Any Next.js + Prisma service on PM2. Especially important after VM reboots — Postgres may take a few seconds to accept connections, causing the first startup attempt to fail. The two layers are complementary: app-level retry handles transient blips; PM2 backoff prevents hammering when DB is down for longer.
+
+Source: humans commit `314a5ca` (2026-06-08) — resolved crash loop on startup.
+
+## Bash `date +%H` Produces Octal-Invalid Strings in Arithmetic
+
+`date +%H` emits zero-padded hours (`08`, `09`). Bash `(( ))` arithmetic interprets numbers starting with `0` as octal — `08` and `09` are invalid octal, causing arithmetic to fail with `value too great for base` at those hours only.
+
+```bash
+# BAD — fails silently (or aborts with set -e) at hours 08 and 09
+current_hour=$(date +%H)          # "08"
+(( current_hour >= 8 )) && ...    # bash: 08: value too great for base
+
+# GOOD — no zero-pad (Linux only, GNU date)
+current_hour=$(date +%-H)         # "8"
+(( current_hour >= 8 )) && ...    # works
+
+# macOS alternative — printf forces decimal interpretation
+current_hour=$(printf '%d' $(date +%H))
+```
+
+This is especially insidious because it only fails at hours `08` and `09` — cron scripts appear to work on all other hours, making the bug hard to reproduce.
+
+Source: scripts/cron-freshness.sh commit `ec4d8f9` (2026-05-31) — schedule-aware cron check silently skipped at 8–9am because `08` failed octal validation.
+
+## `WebFetch` Tool Routes Through Anthropic's Edge, Not the Agent's Local Network
+
+Claude Code's `WebFetch` tool sends requests through Anthropic's server-side edge fetcher — it does **NOT** use the agent's local network namespace. Fetches to `localhost`, `host.docker.internal`, RFC 1918 addresses, or SSH-tunneled services fail silently: Anthropic's fetcher resolves the hostname against the public internet, gets nothing, and returns empty or wrong output. The agent has no signal that the fetch went to the wrong place.
+
+**Affected URLs:**
+- `http://localhost:N/...`
+- `http://host.docker.internal:N/...`
+- `http://192.168.x.x:N/...`, `http://10.x.x.x:N/...`
+- Any URL that only resolves on the agent's local network
+
+**Fix:** Use `Bash: curl ...` instead for private/local URLs. Add `curl:*` to `--allowedTools` (or project `settings.json` permissions). Ensure `curl` is installed in any Docker image that needs it (node slim images exclude it).
+
+**Never design system-prompt fallbacks that call `WebFetch http://host.docker.internal:...`** — the fallback silently does nothing, and there's no error to surface the failure.
+
+Source: shopper Docker container system-prompt fallback bug (2026-06-03) — `WebFetch http://host.docker.internal:3092/fetch?url=...` silently failed for weeks because the page-reader proxy was only reachable via the container's local network namespace, not Anthropic's edge.
+
 ## Runtime & Environment Gotchas (moved)
 
 Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tunnels, cron cooldown + Node lock files, the four PM2 traps, Next.js mcpServer + SSR timezone, Claude OAuth refresh in autonomous agents, Python HTTP client gotchas, WSL headless rendering, Node 22 HTTP) live in `knowledgeBase/patterns/runtime-gotchas.md`. Read that page when touching those systems.
