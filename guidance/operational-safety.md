@@ -1,3 +1,4 @@
+<!-- Load when: self-deploy loops, restart storms, hook loops -->
 # Operational Safety
 
 Prevent feedback loops, restart storms, and cascading failures in automated systems.
@@ -488,3 +489,7 @@ When a poller or executor dispatches jobs to BOTH local and remote workers (e.g.
 **Fix:** Verify the current branch is a strict subset of `origin/<default>` first (`git diff origin/main HEAD --stat` should be empty or default-only), then `git checkout main && git merge --ff-only origin/main && git branch -d <stale-branch>`. Do not force anything — if the diff isn't empty, treat it as in-progress human work per the git-safety protocol (stash/investigate, don't discard).
 
 **Prevention:** The existing WORKTREE RULE (learnings-pass/prompt.md) already covers learning-agent's own commits. Extend the same discipline to any session opening a PR from a main checkout: `git -C ~/repos/<repo> worktree add /tmp/<label> -b <branch>`, work there, and leave the main checkout untouched on its default branch throughout.
+
+## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
+
+`ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.

@@ -1,3 +1,4 @@
+<!-- Load when: diagnosing issues, log analysis -->
 # Debugging Guidance
 
 A systematic approach to diagnosing and fixing issues.
@@ -228,3 +229,20 @@ async function restartBrowserSystem() {
 Also increase the base CLI timeout from 60s to 120s to avoid false-positive timeouts on slow page loads (separate from CDP hangs).
 
 Source: reddit-referral-poster commit 48af749 (2026-06-10) — CDP sessions were silently hanging after connectivity loss; retries piled up with no recovery.
+
+### 13. Reading a SQLite DB Another Process Is Actively Writing (WAL Mode)
+
+When polling a SQLite database that a running app writes to (e.g. an Electron app's `*.sqlite` in WAL mode), a `mode=ro` / `SQLITE_OPEN_READONLY` connection can return a **stale snapshot** — it reads committed WAL frames as of some earlier point and doesn't advance, even across freshly-spawned reader processes. Classic symptom: "it caught the first change but never the next ones," while the process is alive and manual one-off queries look current.
+
+Fix: open a **normal (read-write-capable) connection with `PRAGMA query_only=ON`** instead. It participates in the WAL protocol correctly and reliably sees the latest committed rows, while `query_only` guarantees you never modify the app's data. Add `.timeout <ms>` so a momentary writer lock yields a retry instead of an empty read.
+
+```sh
+# stale under load:
+sqlite3 "file:app.sqlite?mode=ro" "SELECT ..."
+# reliable:
+sqlite3 -cmd ".timeout 2000" -cmd "PRAGMA query_only=ON" app.sqlite "SELECT ..."
+```
+
+Second gotcha when your reader writes to the macOS clipboard: an app that pastes via the clipboard often does save→paste→**restore**, clobbering your write. Re-assert (re-`pbcopy`) for ~1s, checking `pbpaste`, to win the race.
+
+Source: wispr-flow-clipboard (2026-07-10) — watcher on Wispr Flow's `flow.sqlite` History table; `mode=ro` froze on the first dictation. See https://github.com/npezarro/wispr-flow-clipboard.

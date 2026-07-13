@@ -1,3 +1,4 @@
+<!-- Load when: self-review checklist before committing -->
 # Code Review Guidance
 
 Self-review checklist to run before every commit and PR.
@@ -274,3 +275,6 @@ if (!distanceM || !durationSec || distanceM <= 0 || durationSec <= 0) return und
 **Self-review trigger:** Any guard on an externally-sourced numeric that represents a measured, non-negative quantity — ask "does `!x || x === 0` let negatives through?" If yes, change to `<= 0`.
 
 **Real case (`runEvaluator computePace`, 2026-07-01):** Guard `distanceM === 0` let `computePace(8000, -100)` return −12.5 (invalid negative pace) which propagated into `avgPace`. The sibling Strava `paceFromSpeed` already used `speed <= 0` correctly — the two adapters were inconsistent. Fixed in autonomousDev run #323 (PR #267).
+
+### Isolate per-item failures in batch loops; guard operations that throw on stored/external data (2026-06-30)
+When a loop processes a batch (DB rows, files, API records) and each iteration does an operation that can throw on bad data, an unguarded throw aborts the ENTIRE batch — not just the bad item. Two-layer defense: (1) guard the throwing operation itself (e.g. compile a stored regex via a safeCompile() that returns null on SyntaxError; JSON.parse external files in try/catch; check divisor != 0 before dividing on externally-sourced deltas), and (2) wrap each loop iteration in try/catch + continue so one bad record is skipped, not fatal. Real case (finance-tracker PR #74): benefit auto-detection compiled 'new RegExp(template.merchantPattern)' from stored card-benefit template strings at 3 sites with no guard, inside detectAllBenefits() which looped mappings with no try/catch. One malformed pattern threw SyntaxError and 500'd /api/cards/detect, killing detection for ALL the user's cards. Same shape seen elsewhere: url-vault JSON.parse on index/metadata files without try/catch; waymo-sim waypoint interpolation alpha=(t-t0)/(t1-t0) with no guard for duplicate timestamps. Self-review trigger: any new RegExp(non-literal), JSON.parse(file/network), or division by a data-derived value inside a loop → ask 'does one bad input abort the whole batch?'. Bonus: compile invariant regexes once before the loop, not per-iteration.

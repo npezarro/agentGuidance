@@ -60,7 +60,15 @@ for f in "${FILES[@]}"; do
   fi
 
   # Invisible Unicode detection (zero-width spaces, bidi overrides, BOM)
-  if LC_ALL=C grep -Pn '[\x{200B}-\x{200F}\x{2028}-\x{202F}\x{2060}\x{FEFF}]' "$f" 2>/dev/null | head -1 | grep -q .; then
+  # python3 instead of GNU-only grep -P (BSD grep on Mac OrbStack lacks -P);
+  # python3 is already a dependency of other hooks.
+  if python3 -c '
+import sys
+bad = set(range(0x200B, 0x2010)) | set(range(0x2028, 0x2030)) | {0x2060, 0xFEFF}
+with open(sys.argv[1], encoding="utf-8", errors="ignore") as fh:
+    data = fh.read()
+sys.exit(0 if any(ord(c) in bad for c in data) else 1)
+' "$f" 2>/dev/null; then
     REL=$(realpath --relative-to="$PWD" "$f" 2>/dev/null || echo "$f")
     WARNINGS="${WARNINGS}\n  INVISIBLE UNICODE in ${REL}: contains zero-width or bidi override characters"
   fi

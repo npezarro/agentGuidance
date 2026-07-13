@@ -1,3 +1,4 @@
+<!-- Load when: ephemerality, output design, crash recovery -->
 # Session Lifecycle
 
 Understanding how your session works — and how it ends — prevents lost work and produces better output for every audience.
@@ -40,7 +41,7 @@ Frame every `context.md` update as crash recovery: "If I die right now, does `co
 
 ## Session End Checklist
 
-The core rules in `agent.md` cover the full wrap-up procedure. This is the mental model behind it:
+The full wrap-up procedure is `guidance/session-wrapup.md`. This is the mental model behind it:
 
 1. **State is saved** — `context.md` reflects reality, `progress.md` has the entry
 2. **Work is pushed** — committed and pushed to remote, not just staged

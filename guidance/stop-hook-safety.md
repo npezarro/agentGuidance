@@ -1,3 +1,4 @@
+<!-- Load when: tiered stop hook classification, guard library, Tier 3 recursion prevention -->
 # Stop Hook Safety
 
 Stop hooks fire on every Claude CLI session exit, including pipe-mode (`-p`) sessions spawned by autonomous scripts, subagents, and other hooks. This makes them powerful for enforcement but dangerous for recursion.

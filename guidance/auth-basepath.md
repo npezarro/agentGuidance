@@ -1,3 +1,4 @@
+<!-- Load when: authentication and base path patterns -->
 # Auth.js v5 + Next.js basePath
 
 Preventing the AUTH_URL/basePath mismatch that breaks OAuth on subpath deployments.
@@ -276,6 +277,46 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
 
 **Add to the new-app checklist:** When adding a new app, assign a unique cookie name following this pattern.
 
+## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11)
+
+WebView-shell apps (e.g. `pezant-mobile`) can't do OAuth in the WebView — Google blocks
+embedded WebViews with `disallowed_useragent`. Instead they do **native** Google Sign-In
+via Credential Manager (`@capgo/capacitor-social-login`), get an ID token, and POST it to
+a server endpoint that mints the web app's session cookie(s). The mint endpoint verifies
+the token's `aud` against the **web** OAuth client id (the `serverClientId`).
+
+**The trap that silently breaks sign-in for every user:** Credential Manager authorizes
+the *calling app* by package name + its **signing-cert SHA-1**, matched against an
+**Android** OAuth client in the Google Cloud project. If the SHA-1 of the *installed*
+build is not registered, the plugin returns **no idToken** and sign-in fails silently —
+the server never even sees a request (its mint logs stay empty).
+
+**An Android OAuth client holds exactly ONE package + ONE SHA-1** — there is no "add
+fingerprint" (that only exists for API-key restrictions). So you need a **separate Android
+OAuth client per signing cert**, all sharing the same package name. With **Play App Signing
+ON** (the default), the installed app is re-signed by Google, so its cert is NOT your
+upload key. Create a client for the SHA-1 of **every distribution channel**:
+- **Play App Signing key** SHA-1 (Play Console -> App integrity -> App signing key
+  certificate) — required for all Play installs (testers + prod). A client for only the
+  upload key breaks 100% of Play installs.
+- **Debug key** SHA-1 (`~/.android/debug.keystore`) — for `assembleDebug` sideloads.
+- Upload-key SHA-1 alone is never sufficient once Play App Signing is on.
+
+Debugging checklist for "mobile sign-in does nothing / broken across the board":
+1. Confirm the mint endpoint is up and web OAuth works (`curl .../api/auth/providers`).
+2. Check the mint endpoint's logs — zero "minted" lines means the failure is on-device,
+   before the POST (points at SHA-1 / Credential Manager, not the server).
+3. Get the installed build's channel + that channel's SHA-1; verify an Android OAuth client
+   (same package) exists for it, and create one if not. Don't swallow the plugin's error in
+   JS — log it so `adb logcat` shows it.
+
+**Automation caveat (browser-agent):** it can read the Cloud Console client *list* to
+confirm what's registered, but it CANNOT reliably drive the "Create OAuth client" form (the
+Application-type dropdown / Material form is not automatable) and CANNOT read the Play App
+Signing SHA-1 (Play Console renders the cert inside a frame the content script can't reach).
+Treat client creation as a manual Cloud Console step, driven on the project-owner's browser
+profile (not an alt account that lacks project access).
+
 ## Rules for Future Work
 
 1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.
@@ -323,16 +364,15 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **⚠️ CORRECTED (2026-06-17): Standalone DOES strip basePath — do NOT use dynamic basePath in NextAuth config.** Item 8 previously stated the opposite and was wrong. Both `next dev` and `node server.js` (standalone) strip the Next.js `basePath` from `req.url` before Route Handlers see it. NextAuth always receives `/api/auth/...` regardless of the app's basePath. Correct config:
-   ```typescript
-   // CORRECT — always unprefixed. Standalone strips /finance, dev strips /finance.
-   basePath: "/api/auth",
+8. **Standalone basePath stripping — RESOLVED for Next.js 16.2.8+ (updated 2026-07-09).** Historically this file carried two contradictory claims: (a) standalone STRIPS the basePath so NextAuth `basePath` must be `/api/auth` (shopper/foodie/humans note above), and (b) standalone does NOT strip it so `basePath` must be `/<app>/api/auth` (the finance-tracker note this bullet used to assert). **Both cannot be true, and the version matters.** As of **Next.js 16.2.8+ (verified on 16.2.9)**, `output: 'standalone'` **STRIPS the basePath** from `req.url` before Route Handlers AND middleware run — identical to `next dev`. The "does NOT strip" behavior belonged to an earlier Next.js and is no longer correct.
 
-   // WRONG — will break auth in standalone. Gemini/AI agents frequently suggest this:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,  // produces "/finance/api/auth"
-   // NextAuth can't match "/api/auth/providers" against "/finance/api/auth" → 404 or silent failure
-   ```
-   **Why this was confusing:** The runeval proxy does its own URL rewriting before reaching the Next.js server, which is why runeval's own config looks different. Apps behind a standard Apache `ProxyPass` (no URL rewrite) all behave identically: standalone strips basePath. Verified live 2026-06-17: shopper (`basePath: "/api/auth"`, 200 OK) and finance-tracker master (`basePath: "/api/auth"`, 400 from NextAuth's own validation) both confirm routing works correctly. The 400 on finance-tracker is an unrelated NextAuth config issue, not a basePath issue.
+   **This caused a total OAuth outage on runeval (2026-07-09)** after a Dependabot bump 16.2.7 → 16.2.9. runeval used `basePath: "${NEXT_PUBLIC_BASE_PATH}/api/auth"` = `/runeval/api/auth`; once standalone started stripping, the incoming path became `/api/auth/...` and every `/runeval/api/auth/*` endpoint threw `[auth][error] UnknownAction: Cannot parse action at /api/auth/session` (HTTP 400). Insidious detail: server-side `auth()` session reads keep working (they build the URL via `createActionURL(AUTH_URL + basePath)`, not the request path), so **pages return 200 while sign-in is dead** — a homepage uptime check misses it entirely.
+
+   Two valid fixes:
+   - **(A) `basePath: "/api/auth"`** (the stripped form). Simplest, but `createActionURL` then builds the OAuth `redirect_uri` WITHOUT the subpath (`https://host/api/auth/callback/google`), so you must restore `/<app>` via a `customFetch` or an Apache redirect (finance-tracker does this).
+   - **(B) keep `basePath: "/<app>/api/auth"` and re-prepend the subpath to the request pathname in a thin `route.ts` wrapper** before delegating to next-auth's `handlers.GET/POST`. Keeps `redirect_uri` correct with NO customFetch — preferred when the app forbids customFetch hacks (e.g. runeval). runeval's `restoreAuthBasePath()` (`lib/basePath.ts`) does this; it is idempotent so it survives a future Next reverting to non-stripping. runeval commit `5032c55`.
+
+   **Always verify a Next.js bump against a REAL standalone build, not `next dev`:** `curl http://127.0.0.1:PORT/<app>/api/auth/providers` must return 200 JSON, and a signin POST must 302 to the IdP with `redirect_uri` including `/<app>`.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
@@ -551,3 +591,16 @@ Standard web OAuth (state JWT encoding between Auth.js instances) uses a shared 
 - Do NOT share the web `AUTH_SECRET` between all apps without verifying each app's actual secret — travel proved this assumption wrong.
 
 **Source:** auth-proxy commit `d4d2eca` (2026-06-30) — POST `/api/auth/mobile` endpoint; pezant-mobile Capacitor integration (run #856).
+
+## Gating a secret/page to one Google identity: reuse the Apache OIDC gate (2026-06-23)
+
+Before reaching for Cloudflare Access / Zero Trust (which needs first-time onboarding: a team-domain choice + a payment method on file), check the Apache config. The VM already runs `mod_auth_openidc` gating admin surfaces:
+```apache
+<Location /tools>
+    AuthType openid-connect
+    Require user <owner-email>
+</Location>
+```
+Same pattern protects `/tm-scripts` and the auto-shorts admin. To gate a secret behind Google-login-restricted-to-one-email, serve it from a path UNDER `/tools` (e.g. a Node route `/tools/<name>` sourcing the value from env) — it's automatically OIDC-gated, single login, no new infra. Carve-outs use `AuthType None; Require all granted` (e.g. `/tools/downloads`, `/tools/health`, `/api/notify`).
+
+**M2M caveat:** headless pollers and shell hooks CANNOT be interactively OAuth-gated (they'd get an HTML login page instead of JSON). Keep those on a rotated bearer token (`Require all granted` at Apache, token-auth in the app) and gate only the human *retrieval* of the token.

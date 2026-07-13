@@ -1,3 +1,4 @@
+<!-- Load when: spawned processes, temp files, port conflicts -->
 # Process Hygiene
 
 Track what you start. Clean up what you leave behind.
@@ -208,87 +209,6 @@ Never give the user long commands, URLs, or multi-line text to copy-paste manual
 
 **Why:** Repeated incidents of mangled pastes causing failed commands. The user works in Termius SSH client which breaks on multi-line and long-string paste. Writing to files and transferring is always reliable.
 
-## SCP Over Reverse SSH Tunnels
-
-`scp` hangs indefinitely when used over the reverse SSH tunnel (VM → localhost:2222 → WSL). The SSH command channel works fine, but the SCP data channel negotiation fails silently.
-
-**Why:** Reverse tunnels forward the SSH control channel correctly, but SCP's separate data channel negotiation fails silently over loopback tunnels.
-
-**Fix:** Use `ssh+cat` piping for file transfers over the reverse tunnel:
-```bash
-# Instead of: scp vm:remote/path local/path
-ssh -p 2222 localhost 'cat /remote/path' > local/path
-
-# Or push from VM to local:
-cat local/path | ssh -p 2222 localhost 'cat > /remote/path'
-```
-
-**When this applies:** Any file transfer from the VM to local WSL workers via the reverse tunnel. Direct VM→WSL paths via the tunnel are fine for commands, only broken for file data.
-
-**Source:** Discord bot media-transfer bug (2026-05-28) — Discord image attachments silently never arrived at local workers because `scp` hung indefinitely over the tunnel.
-
-## Cron Cooldown Guard
-
-When a PM2-managed job runs on a schedule (cron trigger), external systems (fix-checker, manual restart, deploy scripts) can cause it to run outside its intended window. Add a **cooldown guard** to prevent duplicate runs:
-
-- Check a timestamp file (e.g., `data/<name>-last-run.txt`) at startup. If the last run was within the cooldown window, exit early.
-- Always support a `--force` flag to override the guard for manual runs.
-- Write the current timestamp to the file after a successful run, not before.
-
-**Why:** deal-scout's housing-scout ran ~24 times/day instead of once because fix-checker (10-min scan interval) retriggered it via the shared ecosystem config. Adding a 20-hour cooldown guard fixed this. Any scheduled job that runs via PM2 cron or `pm2 restart` is vulnerable to the same pattern.
-
-## Node.js Concurrent-Run Lock File
-
-For jobs where overlapping runs are the problem (two cron triggers 5 minutes apart, second fires before first finishes), use a **PID-based O_EXCL lock file** instead of a cooldown guard:
-
-```javascript
-const LOCK_FILE = path.join(__dirname, '..', 'backups', '.job.lock');
-
-function acquireLock() {
-  try {
-    // O_EXCL: atomic create-or-fail — no race condition
-    const fd = fs.openSync(LOCK_FILE, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
-    fs.writeSync(fd, String(process.pid));
-    fs.closeSync(fd);
-    return true;
-  } catch {
-    // Lock exists — check if holder is still alive
-    try {
-      const pid = parseInt(fs.readFileSync(LOCK_FILE, 'utf8').trim());
-      process.kill(pid, 0); // throws ESRCH if process doesn't exist
-      return false; // lock holder still running
-    } catch {
-      // Stale lock — remove and retry once
-      try { fs.unlinkSync(LOCK_FILE); } catch {}
-      try {
-        const fd = fs.openSync(LOCK_FILE, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
-        fs.writeSync(fd, String(process.pid));
-        fs.closeSync(fd);
-        return true;
-      } catch { return false; }
-    }
-  }
-}
-
-function releaseLock() {
-  try { fs.unlinkSync(LOCK_FILE); } catch {}
-}
-
-if (!acquireLock()) {
-  console.log('[job] Another instance already running, skipping.');
-  process.exit(0);
-}
-process.on('exit', releaseLock);
-process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
-process.on('SIGINT', () => { releaseLock(); process.exit(0); });
-```
-
-**Key differences from cooldown guard:**
-- **Cooldown guard**: prevents re-runs within a time window (deal-scout, once per 20h)
-- **Lock file**: prevents concurrent overlap (shopper recovery, prevents duplicate bridge slots being consumed)
-
-**Why:** A 06:15 cron fire can overlap with a 06:10 run still processing through a slow bridge call (10-20 min). Lock file catches this; cooldown guard doesn't (it's based on when the job *started*, not whether it's still running). Source: shopper commit ba47e21.
-
 ## Stale Git Lock Files
 
 When automated processes (hooks, cron jobs, PM2 services) get killed mid-git-operation (by hook timeout, OOM, SIGTERM), they leave `.git/index.lock` files that silently block all subsequent git operations in that repo. No error is surfaced to the caller; git commands simply fail.
@@ -364,6 +284,14 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Runtime & Environment Gotchas (moved)
+
+Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tunnels, cron cooldown + Node lock files, the four PM2 traps, Next.js mcpServer + SSR timezone, Claude OAuth refresh in autonomous agents, Python HTTP client gotchas, WSL headless rendering, Node 22 HTTP) live in `knowledgeBase/patterns/runtime-gotchas.md`. Read that page when touching those systems.
+
+### Additions pending migration to knowledgeBase/patterns/runtime-gotchas.md
+
+The six items below were added on `claude/learnings-775` after the 2026-07-01 process-hygiene split and are NOT yet in the KB runtime-gotchas page (verified by diff 2026-07-12). Keep them here until a follow-up moves them; do not re-duplicate the other 16 sections this file already points to above.
+
 ## Bash `set -e` Kills Error Handlers Before They Fire
 
 When using `set -e` (errexit), a failing command causes the script to exit **immediately** before the next line executes. This makes bare `$?` capture after a command dead code — the error handler that reads `$?` never runs.
@@ -409,67 +337,6 @@ trap '[ "$STASHED" = true ] && git stash pop --quiet 2>/dev/null || true' EXIT
 
 **Why:** autonomousDev-private's `verify.sh` had an unconditional `git stash pop` in its `trap cleanup EXIT`. Any user with staged work could have it silently overwritten when the verify script ran. Fixed in f6e304e (2026-06-09) by adding the `STASHED=false` guard flag.
 
-## PM2 wait_ready Anti-Pattern
-
-Do **not** set `wait_ready: true` in PM2 ecosystem configs unless the app explicitly calls `process.send('ready')` after initialization.
-
-Without that signal, PM2 treats every startup as a timeout and enters a crash loop.
-
-```js
-// BAD — crash loop if app never sends 'ready'
-{ name: "my-app", wait_ready: true }
-
-// GOOD — omit it (defaults to false)
-{ name: "my-app" }
-```
-
-Only set `wait_ready: true` when you also add `process.send('ready')` to the app startup code. Source: netflix-social (2026-05).
-
-## PM2 `--node-args` Breaks Bash-Interpreter Services
-
-When a PM2 service uses `interpreter: "bash"` (i.e., the `script` is a `.sh` wrapper), passing `--node-args` on the command line **crashes the service immediately**. PM2 passes `--node-args` as `interpreter_args`, which are forwarded to the interpreter binary — bash in this case. Bash does not understand V8 flags like `--max-old-space-size` and exits immediately.
-
-```bash
-# BAD — crashes bash-interpreter services (passes V8 flags to bash, not node)
-pm2 restart foodie --node-args="--max-old-space-size=512"
-
-# GOOD — export NODE_OPTIONS in start.sh instead
-export NODE_OPTIONS="--max-old-space-size=512"
-exec node .next/standalone/server.js
-```
-
-**Affected services:** Any PM2 process with `interpreter: "bash"` in its ecosystem config (e.g., Next.js apps using `start.sh` wrappers). Node-interpreter PM2 services (the default) are not affected — `--node-args` works correctly for them.
-
-Source: VM memory tuning session 2026-05-25 — applying `--node-args` caused immediate crashes on all bash-wrapped Next.js services (shopper, foodie, travel-assistant, finance-tracker).
-
-## PM2 `cron_restart` Causes False Positive Crash Loop Alerts
-
-Do **not** use `cron_restart` in a PM2 ecosystem config if you have crash-loop alerting. PM2 counts a `cron_restart`-triggered restart as an unexpected restart — incrementing the `restarts` counter and potentially triggering "restart loop" Discord alerts or monitoring dashboards.
-
-```js
-// BAD — the 5 AM restart increments the restarts counter, firing false crash alerts
-module.exports = {
-  apps: [{
-    name: "my-service",
-    max_restarts: 100,
-    cron_restart: "0 5 * * *",  // triggers false positive alerts
-  }]
-};
-
-// GOOD — use max_memory_restart to restart only when memory leaks accumulate
-module.exports = {
-  apps: [{
-    name: "my-service",
-    max_restarts: 10,
-    max_memory_restart: "500M",  // restarts on actual leak, not on schedule
-  }]
-};
-```
-
-**Rule:** Use `max_memory_restart` (e.g. `500M`) instead of `cron_restart` to handle memory leaks. If scheduled daily restarts are genuinely needed, adjust the alerting threshold to account for the planned restart count.
-
-Source: pezantTools commit `924897e` (2026-05-29) — `cron_restart: "0 5 * * *"` was triggering false positive crash loop alerts. Replaced with `max_memory_restart: "500M"` and lowered `max_restarts` from 100 to 10.
-
 ## PM2 Periodic-Exit Scripts Must Use `autorestart: false` with `cron_restart`
 
 When a PM2 process is a **script** (runs, does work, then exits with code 0), PM2's default `autorestart: true` immediately re-fires it after every clean exit. Combined with `cron_restart`, this creates a restart loop: the cron fires, the script runs, exits 0, PM2 immediately re-fires it again — bypassing the cron schedule entirely.
@@ -500,28 +367,7 @@ module.exports = {
 
 **Contrast with long-running services:** Always-on servers (Next.js, Express, supervisors) should keep `autorestart: true` (the default) so PM2 recovers from crashes. The `autorestart: false` pattern is only for scripts that exit normally after each run.
 
-**Why:** finance-tracker `dashboard-push` was registering hundreds of restarts because the push script exits 0 after successfully flushing metrics, and PM2 treated every exit as a completed process eligible for immediate re-launch. Fix: commit `63b80ca` added `autorestart: false`. Also check: PM2 health allowlists (see the next section) since `autorestart: false` processes appear in `waiting restart` state between cron fires.
-
-## PM2 Cron Scripts Must Source Secrets at Runtime, Not via PM2 Env Injection
-
-PM2 captures environment variables **at `pm2 start` time only**. If a secret (e.g. `CRON_SECRET`, an API key) changes after the process is registered — or was not in the shell when `pm2 start` ran — every scheduled fire silently fails with 401/403 with no diagnostic output.
-
-**Rule:** Cron shell scripts must read bearer tokens and secrets directly from `.env` at execution time:
-
-```bash
-# BAD — CRON_SECRET captured at pm2 start; stale after rotation
-curl -X POST http://localhost:3001/api/cron/daily-push \
-  -H "Authorization: Bearer $CRON_SECRET"
-
-# GOOD — source from .env at run time
-CRON_SECRET=$(grep '^CRON_SECRET=' /var/www/myapp/.env | cut -d= -f2-)
-curl -X POST http://localhost:3001/api/cron/daily-push \
-  -H "Authorization: Bearer $CRON_SECRET"
-```
-
-**Why:** `pm2 save` + `pm2 resurrect` restores process configuration but not the live env from when `pm2 start` ran. After a reboot, a credential rotation, or a fresh deploy, the env block is empty or stale for values not in `ecosystem.config.cjs`.
-
-Source: runEvaluator `runeval-daily-push.sh` (commit `0719185`, 2026-06-07) — `CRON_SECRET` was added as a runtime grep after observing silent 401s when the secret changed between `pm2 start` and later cron fires.
+**Why:** finance-tracker `dashboard-push` was registering hundreds of restarts because the push script exits 0 after successfully flushing metrics, and PM2 treated every exit as a completed process eligible for immediate re-launch. Fix: commit `63b80ca` added `autorestart: false`. Also check: PM2 health allowlists since `autorestart: false` processes appear in `waiting restart` state between cron fires.
 
 ## Cron Wrappers on Remote Machines: Self-Sync via `git pull --ff-only`
 
@@ -542,75 +388,6 @@ git pull --ff-only 2>&1 | grep -v "^Already up to date" || true
 
 Source: arc-prize-2026 `cron_overnight_run.sh` commit `673235e` (2026-06-14) — without self-sync, a CUDA allocator fix pushed at 09:00 would not have reached PC2 in time for the 02:00 overnight run.
 
-## New PM2 Cron Processes Must Be Registered in All Health-Checker Allowlists
-
-A PM2 process with a `schedule` (via `cron_restart` or an external cron shell script that calls the app) enters `waiting restart` state between fires. Health-monitoring scripts that check PM2 process states must know which processes are cron-triggered (expected to be stopped between runs) vs. always-on (unexpected if stopped).
-
-When you add a **new** PM2 cron process, update every health-checker registry that maintains this distinction:
-
-1. **`wsl-watchdog.sh` `CRON_PROCESSES` array** (in `~/repos/scripts/`) — processes listed here are exempt from the "waiting restart" false-positive alert. Missing entry → spurious Discord alert every time the cron process waits between fires.
-
-2. **Discord bot's process registry** — the Discord health monitor maintains its own `CRON_PROCESSES` allowlist. Processes not listed are reported as unexpectedly stopped.
-
-**Why:** On 2026-06-07, adding `runeval-daily-push` without updating `CRON_PROCESSES` in `wsl-watchdog.sh` generated false-positive "waiting restart" alerts for every cron cycle. Fix: commit `26875f1` added the process to the allowlist.
-
-**Checklist for any new PM2 cron process:**
-- [ ] Add to `wsl-watchdog.sh` `CRON_PROCESSES` array
-- [ ] Add to Discord health monitor `CRON_PROCESSES` allowlist
-- [ ] Document in the repo's `CLAUDE.md` with its cron schedule and the `CRON_PROCESSES` registration note
-
-## Next.js `experimental.mcpServer` Causes Extra Port Binding
-
-If `experimental: { mcpServer: true }` (or any truthy value) is set in `next.config.ts`, Next.js binds an additional port for its built-in MCP server. This causes `EADDRINUSE` when PM2 restarts overlap with that port still being held.
-
-**Fix:** Explicitly disable it:
-```ts
-const nextConfig: NextConfig = {
-  experimental: { mcpServer: false }
-};
-```
-
-Always set `mcpServer: false` in all PM2-managed Next.js apps. Source: travel-assistant (commit 20a2611, 2026-05).
-
-## Next.js SSR Timezone/Hydration Mismatch
-
-Server-side rendering in Next.js formats dates with the **server's timezone** (UTC on the VM). The browser hydrates with the user's local timezone, causing hydration mismatch warnings and inconsistent timestamp display (e.g., "May 25, 2026, 12:00 AM" on server vs "May 24, 2026, 5:00 PM" in browser).
-
-**Fix:** Use a `"use client"` component with `Intl.DateTimeFormat(undefined, options)` and `suppressHydrationWarning` on the `<time>` element. Using `undefined` as the locale defers formatting to the browser's own locale and timezone:
-
-```tsx
-"use client";
-
-type Variant = "full" | "date" | "compact";
-
-const OPTIONS: Record<Variant, Intl.DateTimeFormatOptions> = {
-  full: { dateStyle: "medium", timeStyle: "short" },
-  date: { month: "short", day: "numeric", year: "numeric" },
-  compact: { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
-};
-
-export function LocalTimestamp({ date, variant = "full" }: { date: string; variant?: Variant }) {
-  const d = new Date(date);
-  return (
-    <time dateTime={d.toISOString()} suppressHydrationWarning>
-      {new Intl.DateTimeFormat(undefined, OPTIONS[variant]).format(d)}
-    </time>
-  );
-}
-```
-
-**Do NOT** use `new Date().toLocaleString()` or `date-fns` formatting directly in server components or shared components — these will use server timezone. Always route timestamps through a `"use client"` wrapper.
-
-Source: shopper, foodie, travel-assistant (commits 49da1e1, 78bbb74, d8b65c9 — 2026-05-25).
-
-## Claude OAuth Token Refresh in Autonomous Agents
-
-**Do NOT rely on `claude -p` to refresh OAuth tokens.** It doesn't reliably trigger refresh — tokens can expire silently. Autonomous jobs that depend on a valid Claude token then fail with cryptic auth errors.
-
-**Correct approach:** Use the direct OAuth refresh_token grant via the platform API. Reference implementation: `~/repos/scripts/refresh-claude-token.sh` (cron every 3h, 6h-before-expiry threshold, intra-cycle retry with backoff, consecutive-failure Discord alerting, temp files for token data to avoid shell interpolation). The threshold was raised from 4h to 6h after the 2026-05-28 incident where 4 consecutive rate-limited cycles caused token expiry — see `guidance/operational-safety.md` § "OAuth Refresh Rate-Limiting".
-
-**Why it matters:** The usage API and all autonomous agent token reads go through the credentials file. An expired token causes every quota-gating job to silently fail or report misleading usage data.
-
 ## `claude -p` vs `claude --print`: Positional Argument Trap
 
 `-p` is NOT a clean alias for `--print`. The `-p` flag treats the **next CLI argument as a positional prompt string**, which means any flag that follows it gets consumed as prompt text instead.
@@ -627,45 +404,7 @@ echo "my prompt" | claude --print --model claude-sonnet-4-6
 
 **Rule:** In any script or cron job that pipes stdin to `claude`, use `--print` (not `-p`) whenever other flags follow. Reserve `-p` for single-argument invocations like `claude -p "inline prompt"` (no piped stdin).
 
-## Python HTTP Client Gotchas
-
-### urllib3.Retry: Unsupported Constructor Parameters
-
-`requests.urllib3.util.retry.Retry` does NOT accept `retry_on_connection_error` as a constructor parameter — it crashes the worker on import.
-
-```python
-retry = Retry(
-    total=5, connect=3, read=3, backoff_factor=1,
-    status_forcelist=[500, 502, 503, 504],
-    # DO NOT: retry_on_connection_error=True  ← unsupported
-)
-```
-
-Source: auto-shorts-worker PRs #39/#40.
-
-### Localhost-First Probe for Co-Located Services
-
-When a Python worker and its API server are on the same VM, probe for localhost at startup instead of defaulting to the public HTTPS URL (avoids DNS/SSL overhead and DNS failures in isolated networks):
-
-```python
-import socket, os
-
-API_BASE = os.environ.get("SERVICE_API_BASE", "")
-if not API_BASE:
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.5)
-            if s.connect_ex(('127.0.0.1', 3007)) == 0:
-                API_BASE = "http://localhost:3007/service"
-    except Exception:
-        pass
-    if not API_BASE:
-        API_BASE = "https://your-vm.example.com/service"
-```
-
-Source: auto-shorts-worker transient DNS failures (2026-05).
-
-### Retrying Transient ConnectionError / Timeout on External APIs
+### Retrying Transient ConnectionError / Timeout on External APIs (Python)
 
 WSL2 suffers intermittent DNS blips (especially during cron windows at night), causing `requests.exceptions.ConnectionError` (`NameResolutionError`) on calls to external APIs. One blip drops the entire poll cycle and generates noisy ERROR logs.
 
@@ -686,109 +425,11 @@ def _api_get(url, params=None, _retries=2):
                 raise
 ```
 
-**Why not `urllib3.Retry`?** The `retry_on_connection_error=True` parameter crashes the process on import — see the subsection above. The manual loop is the safe cross-platform approach.
+**Why not `urllib3.Retry`?** The `retry_on_connection_error=True` parameter crashes the process on import (see `knowledgeBase/patterns/runtime-gotchas.md` § Python HTTP Client Gotchas). The manual loop is the safe cross-platform approach.
 
 **When to apply:** any Python service polling an external API from WSL2 or a cron context. Wrap the raw `requests.get()` in a helper like `_api_get()` and route all calls through it.
 
 Source: trading-agent `edgar.py` commit `ff111bb` (WSL2 midnight DNS blips dropping SEC EDGAR insider-trade poll cycles).
-
-### Python `logging.basicConfig()` Does Not Override Existing Handlers
-
-`logging.basicConfig()` is a no-op if the root logger already has handlers (e.g., from an imported module that configured logging). The named logger you create with `getLogger(name)` may then inherit a different level than intended.
-
-**Fix:** Always call `logger.setLevel()` explicitly after `getLogger()`:
-```python
-logging.basicConfig(level=logging.INFO, format="...", stream=sys.stdout, force=True)
-logger = logging.getLogger("my-daemon")
-logger.setLevel(logging.INFO)  # explicit — basicConfig may have been a no-op
-```
-
-Note: `force=True` (Python 3.8+) removes existing root handlers before configuring, which helps. But the explicit `setLevel` on the named logger is still the safest pattern for long-running daemons that import third-party libraries.
-
-Source: trading-agent `error_handler.py` commit 2af1a41 (2026-05-25).
-
-### Python `-c` Inline Scripts: Add `sys.path` Before Module Imports
-
-When calling `python3 -c "..."` (inline script via bash substitution or heredoc), the containing directory is NOT automatically added to `sys.path`. Relative module imports fail with `ModuleNotFoundError`.
-
-**Fix:** Insert `sys.path.insert(0, ...)` at the top of the inline script:
-```bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-$VENV -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR')
-from mypackage.module import func
-func()
-"
-```
-
-Source: trading-agent `run.sh` commit 4958408 (2026-05-25).
-
-**When applying this fix: search ALL shell scripts for inline Python blocks.** The same import pattern may exist in multiple scripts. Use:
-```bash
-grep -rn 'python.*-c\|-c "' *.sh
-```
-Real incident: fix was applied to `run.sh` but missed `run-daytrade.sh`, requiring a follow-up commit (a0426cc, 2026-05-25).
-
-## WSL Headless Rendering: DRI3 / LIBGL Errors
-
-**The scenario:** A PM2 service on WSL2 that uses GPU/OpenGL-backed libraries (Chromium, Puppeteer, MediaPipe, OpenCV, PyTorch) logs DRI3 errors and may crash or degrade silently. WSL2 does not provide a DRI3-compatible GPU context for headless processes, so any library that tries to initialize GPU rendering fails at the driver layer.
-
-**Typical error signatures:**
-```
-MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
-libEGL warning: MESA-LOADER: failed to open zink
-dri3_open: Authentication failed
-```
-
-**Fix:** Set `LIBGL_ALWAYS_SOFTWARE=1` in the PM2 ecosystem config env block. This forces Mesa to use software (CPU) rendering via LLVMpipe, bypassing the missing GPU driver entirely:
-
-```js
-// ecosystem.config.js / ecosystem.config.cjs
-env: {
-  LIBGL_ALWAYS_SOFTWARE: '1',
-}
-```
-
-**For MediaPipe specifically**, also force the CPU delegate in model options — MediaPipe may still attempt GPU delegate even with software rendering:
-
-```python
-from mediapipe.tasks.python import BaseOptions
-base_options = BaseOptions(
-    model_asset_path=str(model_path),
-    delegate=BaseOptions.Delegate.CPU,  # force CPU — GPU delegate fails on WSL2
-)
-```
-
-**Affected tools (non-exhaustive):** Chromium/Puppeteer, MediaPipe, OpenCV (via OpenGL backend), PyOpenGL, any MESA-dependent library.
-
-**When to apply:** Any new PM2 service on WSL2 that imports OpenGL-dependent libraries. Add `LIBGL_ALWAYS_SOFTWARE: '1'` to the ecosystem env block by default — it has no downside on GPU-less hosts and prevents hard-to-debug silent failures.
-
-**Source:** auto-shorts-worker commits 4828bfe/03e17e2 (MediaPipe face detector, yt-dlp rendering), browser-agent commit 35adba7 (Puppeteer screenshot failures) — 2026-05-15/29.
-
-## Node.js 22 HTTP Gotchas
-
-### Built-in `fetch` headersTimeout
-
-Node.js 22's built-in `fetch` (undici) has a default **5-minute `headersTimeout`**. Requests taking longer than 5 minutes fail silently with no clear indication the timeout is the cause.
-
-**Affected:** any long-running downstream call — Claude research queries (10-20 min), large file downloads, slow ML inference.
-
-**Fix:** Use `http.request` with an explicit timeout:
-```javascript
-const http = require('http');
-function longRequest(options, body, timeoutMs = 20 * 60 * 1000) {
-  return new Promise((resolve, reject) => {
-    const req = http.request(options, (res) => { /* handle */ });
-    req.setTimeout(timeoutMs, () => req.destroy(new Error('Timeout')));
-    req.on('error', reject);
-    if (body) req.write(body);
-    req.end();
-  });
-}
-```
-
-Source: shopper recovery scripts (commit a0caa5a, 2026-05-24).
 
 ### SSH Tunnel Bridge: Use 127.0.0.1 and Retry Transient Errors
 
@@ -2206,3 +1847,14 @@ When permanently suspending an autonomous service, stopping PM2 alone is not eno
 **Why multi-machine matters:** The trading-agent was suspended WSL-side (2026-07-01: pm2 stop + pm2 save) but the GCP VM had a fully independent installation with its own PM2 instance, crontab, and no SUSPENDED.md. The VM continued firing the fast-loop cron every 30 minutes, posting noise journal entries for 2 days after the WSL-side suspension.
 
 **Source:** trading-agent multi-machine suspension gap (WSL suspended 2026-07-01, VM suspended 2026-07-03). Fix: SSH to each remote host, comment out cron entries with `sed "/service-name/s/^/# PAUSED YYYY-MM-DD /"`, and add SUSPENDED.md to the repo on that machine.
+
+### Cron jobs that invoke `claude` must use an absolute binary path (2026-06-29)
+Cron runs with a minimal PATH (`/usr/bin:/bin`) that does NOT include `/usr/local/bin`, where the global `claude` install lives. A cron script calling bare `claude ...` fails silently with `claude: command not found` (exit 127). On the VM this broke the host CLI auth keep-alive for ~10 days: every run failed, the OAuth refresh token expired from disuse, and the CLI started returning 401 — with no alert.
+
+How to apply:
+- Resolve the binary up front: `CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || echo /usr/local/bin/claude)}"` and call `"$CLAUDE_BIN"`. Works under both interactive PATH and bare cron PATH.
+- `claude` is itself a node script (`#!/usr/bin/env node`), so cron also needs `node` on PATH or the CLI dies exit 127 (`env: node: No such file`) BEFORE doing anything — a probe that treats 127 as "transient" then goes blind to real outages. Prepend both bin dirs: `export PATH="$(dirname "$(command -v node 2>/dev/null || echo /usr/local/bin/node)"):$(dirname "$CLAUDE_BIN"):$PATH"`. Verify the whole script under cron conditions with `env -i PATH=/usr/bin:/bin HOME=$HOME bash your-script.sh`.
+- Prefer auth keep-alives that do NOT depend on the CLI at all: refresh directly via the OAuth `refresh_token` grant (curl + python3). See `~/repos/scripts/refresh-claude-token.sh`.
+- The OAuth `refresh_token` grant is rate-limited account-wide: 3+ refreshes in a few minutes trips a sustained 429 throttle (observed lasting ~2h) that blocks BOTH hosts. Never loop-retry a refresh — space attempts hours apart and let cron self-heal. A fresh `claude auth login` (authorization_code grant) is a separate bucket if you must recover sooner.
+- Always pair an auth keep-alive with a probe that pages on failure (`claude-auth-probe.sh`), so a silent keep-alive failure surfaces in hours, not days.
+- Refresh tokens ROTATE and are single-use: two hosts cannot share one credentials chain (whoever refreshes first breaks the other). Give each host its own `claude auth login` device session. Full write-up: `~/repos/scripts/VM-CLAUDE-AUTH.md`.

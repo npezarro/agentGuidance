@@ -1,3 +1,4 @@
+<!-- Load when: writing style, multi-destination design -->
 # Auto-Posting Awareness and Writing Style
 
 For WordPress hook setup details, see `guidance/wordpress-auto-posting.md`.

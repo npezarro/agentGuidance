@@ -1,3 +1,4 @@
+<!-- Load when: end-of-session 7-step checklist -->
 # Session Wrap-Up
 
 For the reasoning behind these requirements, see `guidance/session-lifecycle.md` and `guidance/process-hygiene.md`.
@@ -81,11 +82,7 @@ When the closeout surfaces open items or follow-ups, **address them independentl
 
     Memory is personal recall for this user's sessions. Repo instruction files are the durable, authoritative source that travels with the code. Both are required. Saving to memory alone means the learning is invisible to Discord bot jobs, autonomous dev runs, and any other agent that doesn't load your memory.
 
-12. **Score this session.** After posting to `#cli-interactions`, run the ecosystem supervisor scorer in the background:
-    ```bash
-    ~/repos/autonomousDev-private/supervisor/score-interactive.sh &
-    ```
-    This scores the session against ESSENTIAL.md rules and writes a JSON score file for the daily supervisor to analyze. No need to wait for the result or report it to the user.
+12. **Session scoring is automatic.** The `score-session.sh` Stop hook scores every session against ESSENTIAL.md rules when the session ends; do NOT run a scorer manually. (`score-interactive.sh` exists only for ad-hoc/backfill scoring from Discord or a file.)
 
 **Key distinction:** `progress.md` is updated on every commit (append-only, uses `merge=union`). `context.md` is updated only on the final branch commit or at session end (mutable snapshot, can't be auto-merged).
 

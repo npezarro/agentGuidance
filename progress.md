@@ -10,6 +10,16 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+2026-07-12 | feature | Provenance + source-capture system (PR #314): guidance/provenance.md, scripts/source-registry.sh, agent.md + ESSENTIAL.md wiring. Companion private repo sourceLibrary created. Marks Claude-generated facts vs Nick's writing; captures cited sources with cached material.
+
+- 2026-07-09 | guidance | `c1ef193` — ESSENTIAL rule 5 new bullet "Intended state before config changes": read a project's docs before altering config/lifecycle (restart policy, enable/disable). From the 2026-07-09 power-cut recovery where `humans-pg` (documented on-demand dev DB, `restart:no` by design) was made `unless-stopped` on a hunch.
+- 2026-07-04 | guidance | `8e41e02` — ESSENTIAL rule 3 externally-verifiable-facts clause + `guidance/fact-checking.md` + agent.md index line; companion `/fact-check` skill in claude-skills. From the 2026-07-03 CC-thread postmortem.
+
+| 2026-06-30 | fix | `9c81340` bound the always-loaded MEMORY.md index to its ~24.4KB budget: `propagate-learning.sh` caps the index hook to ~128 chars on append (flock-coordinated); new `hooks/compact-memory-index.sh` SessionStart self-heal (non-destructive, idempotent, warns/`--check` over hard limit); `guidance/learning-capture.md` "MEMORY.md Index Budget" section. Root cause: unbounded SUMMARY append. Index 32KB→~22.5KB, 12 redundant/superseded memories archived. |
+| 2026-06-30 | fix | `25be864` made `compact-memory-index.sh` machine-agnostic: hook mode heals the current project's index (CLAUDE_PROJECT_DIR/PWD slug, fallback to interactive primary); `--check` audits all indexes. Required because the VM's home-dir project slug (non-`npezarro`) wasn't matched by the original hardcoded globs. Wired+verified on this host + VM; pc2 pending (WSL sshd down). Surfaced a 626KB malformed autonomousDev-private index (warns, can't auto-fix). |
+| 2026-06-30 | docs | knowledgeBase `agent-system/memory-system.md` + `infra/{windows-pc,macbook}-claude-code.md`: new machines wire `compact-memory-index.sh` into global SessionStart (curl-from-main pattern); per-machine wiring caveat documented. |
+| 2026-06-29 | docs | `a34adbb` wired the page-access waterfall into `guidance/browser-page-reader.md` (WebFetch → page-reader → feed/transcript tricks → authenticated browser-agent → WebSearch + sub-agent rule) and `guidance/deep-research.md` (2 anti-patterns: don't surrender at first block; don't let WebFetch-only sub-agents launder search summaries). Companion `page-access` skill in claude-skills. |
+| 2026-06-23 | feat | `dbeea10` post-to-discord hook: extract `message.model` from transcript → `/ingest` payload metadata, so #cli-interactions becomes a model-tagged outcome feed (enables forward model A/B). Pairs with a Discord bot renderer change. |
 
 | Date | Type | Description |
 |------|------|-------------|
@@ -43,3 +53,16 @@
 | 2026-03-04 | PR #3 | Add Discord stop hook for agent turn logging |
 | 2026-03-04 | PR #2 | Add Regression & Functional Verification to Testing rules |
 | 2026-03-01 | PR #1 | Comprehensive guidance improvements with modular sub-guidance and templates |
+
+## 2026-07-01 — Full-repo review implementation
+- `b83772a` review report (16 findings); `32e6c3b` agent.md v4.1.0 ESSENTIAL dedup; `c5bc0c6` hygiene (untrack logs/personal data, orphan hooks); `674a176` profiles/ removed; `da658ca` services extracted to private agentRuntime; `3793370` hooks bug batch; `5e1bbe9` portability (grep -P/flock); `2c093fc` guidance consolidation (Load-when headers, session-end dedup, process-hygiene split); `b505d00` generated MANIFEST + drift check.
+- Cross-repo: knowledgeBase `patterns/runtime-gotchas.md`; autonomousDev-private `e82f05f` (learning-agent Pass 5 retired); new repo github.com/npezarro/agentRuntime; crontab updated; VM clone re-created (was divergent+stale), pc2 synced.
+- check-commit-deploy gate: honor /tmp/claude-deploy-ack-<sid> for docs-only commits and subagent-performed deploys (which run under a different session_id and never register in track-deploy); dropped the undetectable "note in context.md" escape from the block message. Both branches tested.
+- Stop-hook state lifecycle fix: verify-deploy.sh consumed AND deleted /tmp/claude-deploys-<sid>, so check-commit-deploy re-blocked on every Stop after the first. Tracker now archived to -verified on consumption; the gate reads live + verified + ack files. Regression-tested across two simulated Stops.
+
+## 2026-07-10 — Interactive Opus→Fable parity rollout (WSL) with 85/15 holdout A/B
+- `6af79d0` new SessionStart hook `hooks/parity-layer-injection.sh` + `guidance/opus-fable-parity.md` "Interactive-session rollout" section. Injects the parity layer into interactive Opus WSL sessions only; guards skip headless (`/proc/$PPID/cmdline` has `-p`/`--print`) and non-Opus, fail closed. Deterministic 85/15 arm (`cksum(session_id)%100<85`), both arms logged to `~/.claude/parity-telemetry/interactive-arms.jsonl`. Wired as `~/.claude/settings.json` SessionStart entry #9 (local, not in repo).
+- Empirical: SessionStart hooks DO fire on local `claude -p` runs (verified via security-scan log), hence the headless guard. Public-repo security scan #70 clean (0/30). Closeout: privateContext/deliverables/closeouts/2026-07-10-interactive-parity-rollout-and-security-review.md
+
+## 2026-07-02 — Skill routing rule from library audit
+- `guidance/deployment.md`: new "Skill Routing" section (staging apps list, generic deploy path, fix-static-asset-drift for styling-broken symptoms, vm-health/vm-cleanup). Audit context: 97 zero-skill ssh+pm2 sessions found in 21 days of transcripts. Companion edits in `~/.claude/rules/deploy-safety.md` (not this repo). Closeout: privateContext/deliverables/closeouts/2026-07-02-skill-library-audit-rework.md

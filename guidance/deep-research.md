@@ -1,3 +1,4 @@
+<!-- Load when: research depth and methodology before producing guides or recommendations -->
 # Deep Research Before Recommendations
 
 When the user asks you to research a topic and produce a guide, recommendation, analysis, or buying decision, the research phase must be thorough before you start writing. Surface-level research produces surface-level guides, and the user ends up doing the real research themselves. That defeats the purpose.
@@ -89,6 +90,8 @@ A well-researched deliverable includes:
 - Omitting known limitations to make the recommendation sound cleaner
 - Not checking whether a free tool has gone paid or vice versa
 - Recommending a specific version without checking if it's still current
+- **Giving up on a source at the first empty/blocked fetch.** Login walls, paywalls, and JS SPAs are *climbable*, not terminal: escalate through the page-access waterfall (WebFetch → page-reader → feed/transcript tricks → **authenticated browser-agent** → WebSearch). See the `page-access` skill + `guidance/browser-page-reader.md`. Auth-gated pages (LinkedIn, paid newsletters) are exactly what browser-agent is for.
+- **Spawning research sub-agents armed only with WebFetch for auth-gated/SPA sources** — they hit the same wall and silently "resolve" by writing a confident summary from search snippets. Hand sub-agents the waterfall (incl. the browser-agent command), or retrieve via browser-agent in the main thread and pass the text down. Always label anything search-derived as secondhand.
 
 ## Company-Specific Deliverables — No Invented Product Claims
 

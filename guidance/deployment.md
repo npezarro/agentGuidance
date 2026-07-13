@@ -1,6 +1,16 @@
+<!-- Load when: pre-deploy and post-deploy checklists -->
 # Deployment
 
-## Staging-First Apps
+## Skill Routing (check before any ad-hoc ssh + pm2)
+
+A 2026-07-01 transcript audit found 97 sessions doing raw `ssh + pm2 restart` deploys with zero skill usage, while the deploy skills sat unused. Before running any ad-hoc deploy or restart command, route through the right skill:
+
+- **shopper, foodie, finance-tracker, travel-assistant, employ** (Next.js subpath apps): `staging` skill. Always.
+- **Any other PM2 service on the VM** (bots, APIs, workers): `deploy` skill.
+- **"Styling is broken" / unstyled page / dead buttons / `_next/static` 500s** on any production Next.js app: `fix-static-asset-drift` skill; do not debug CSS first.
+- **VM feels slow / disk warnings**: `vm-health`, then `vm-cleanup`.
+
+Invoke the skill (Skill tool), don't just Read its SKILL.md — invocation is what loads the full procedure and logs usage.
 
 **shopper, finance-tracker, and travel-assistant always deploy through staging.** Use the `/staging` skill. Do not deploy these apps directly to production unless the user explicitly requests it (e.g., emergency hotfix).
 
@@ -51,6 +61,10 @@ Two hooks mechanically enforce post-deploy verification, even if the agent skips
 2. **`hooks/verify-deploy.sh`** (Stop hook): When a session ends, reads the tracker and curls each deployed service's health endpoint and user-facing URLs from the registry. **Blocks the session exit** if any check fails, forcing the agent to diagnose and fix before stopping.
 
 **Why this exists:** The #1 failure mode was agents deploying, declaring "done," and leaving without testing. The Stop hook makes this structurally impossible for registered services.
+
+3. **`hooks/check-commit-deploy.sh`** (Stop hook): Detects when files were modified in a repo that has a live deployment (per `deploy-registry.json` `repo` field) but no deploy was performed during the session. **Blocks the session exit** until the agent either deploys or documents the pending deploy in context.md.
+
+**Why this exists:** The #2 failure mode was agents committing code to deployed repos and ending the session without deploying. The committed code sat stale while production served the old build (employ incident, 2026-06-29).
 
 ## Next.js Standalone Symlink Fix
 

@@ -1,4 +1,5 @@
 <!-- browser-page-reader.md | Last updated: 2026-05-10 -->
+<!-- Load when: page-reader CLI for JS-heavy pages -->
 # Browser Page Reader (page-reader)
 
 ## What It Is
@@ -147,6 +148,20 @@ When the relay server is updated with changes that involve new content-script me
 3. Spawn fresh tabs via `browser-cli ensure <url>` after reload so content scripts re-register
 
 **v2.8.0 example (commit `6431607`, 2026-07-01):** The extension gained an `internalId→chromeTabId` registry populated by `ba-register-tab` content-script registration. Without an extension reload, `resolveTabId` fell through to the active-tab fallback, causing CDP commands (screenshot, click, close, focus) to silently target the WRONG tab instead of the named tab.
+
+## The Page-Access Waterfall (escalate; don't surrender at the first empty fetch)
+page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with commands) lives in the **`page-access` skill** — invoke it whenever a fetch returns empty, login-walled, paywalled, or JS junk:
+
+1. **WebFetch** — static pages, fast.
+2. **page-reader** (`node ~/repos/page-reader/src/index.js --text-only <url>`) — JS SPAs. A 500/empty here is an escalation trigger, not "page is dead."
+3. **Feed / alt-endpoint tricks** — clean, no-JS, no-auth; try BEFORE the browser when the host is known:
+   - Medium → `medium.com/feed/@USERNAME` (full bodies); Substack → `SUB.substack.com/feed`; blogs → `/feed` `/rss`.
+   - YouTube/podcast transcripts → `yt-dlp --skip-download --write-auto-sub --sub-lang en --sub-format vtt`, then clean the VTT.
+   - Reddit → append `.json`; GitHub → `raw.githubusercontent.com`.
+4. **browser-agent** (`~/repos/browser-agent/browser-cli.sh open|tabs|text`) — drives the **logged-in Chrome**, so it beats **auth walls AND paywalls** (LinkedIn, paid newsletters, gated dashboards). This is the rung WebFetch-only sub-agents are missing.
+5. **WebSearch** — secondhand, LAST resort, always flagged as search-derived. Never launder a search summary into a deliverable as if you read the source.
+
+**Sub-agent rule:** never delegate auth-gated or SPA retrieval to a sub-agent armed only with WebFetch — hand it the waterfall (and the browser-agent command) or retrieve via browser-agent in the main thread and pass the text down. An auth/paywall wall is *climbable*, not terminal.
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.

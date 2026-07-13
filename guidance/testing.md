@@ -1,3 +1,4 @@
+<!-- Load when: writing and running tests, cross-layer invariants -->
 # Testing Guidance
 
 Detailed testing standards that extend the core rules in `agent.md`.

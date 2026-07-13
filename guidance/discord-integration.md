@@ -1,3 +1,4 @@
+<!-- Load when: session reporting, posting, threading, file-links -->
 # Discord Integration
 
 A private Discord server is the central communication hub for all Claude agents. Every agent session is connected to it: your turns are posted there automatically, the owner issues requests there, and other agents can be reached through it.

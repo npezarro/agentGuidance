@@ -1,3 +1,4 @@
+<!-- Load when: writing in the owner's voice -->
 # Nicholas Pezarro — Written Voice Style Guide
 
 **Source of truth:** The dedicated voice repository contains the full validated guide (V2, scored 9/10 in A/B bakeoff) plus the pre-2025 real writing samples it was built from. Always pull from there for the latest voice guidance. This file is a synopsis.

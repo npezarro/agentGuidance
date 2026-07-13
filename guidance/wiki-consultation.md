@@ -1,3 +1,4 @@
+<!-- Load when: when and how to consult knowledgeBase wiki pages -->
 # Wiki Consultation
 
 The KnowledgeBase wiki (`~/repos/knowledgeBase/`) contains synthesized cross-repo knowledge. It sits above guidance files and memory, connecting patterns across repos.

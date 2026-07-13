@@ -23,7 +23,7 @@ MEMORY_BASE="$HOME/.claude/projects"
 
 # ── Parse arguments ──────────────────────────────────────────────────
 TYPE="" SUMMARY="" BODY="" REPO="" GUIDANCE_FILE="" CROSS_CUTTING=false
-MEMORY_NAME="" PRIVATE=false DRY_RUN=false
+MEMORY_NAME="" PRIVATE=false DRY_RUN=false NO_OP_OK=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,11 +36,16 @@ while [[ $# -gt 0 ]]; do
     --memory-name) MEMORY_NAME="$2"; shift 2 ;;
     --private)     PRIVATE=true; shift ;;
     --dry-run)     DRY_RUN=true; shift ;;
+    --no-op-ok)    NO_OP_OK=true; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
 if [ -z "$SUMMARY" ] || [ -z "$BODY" ]; then
+  if [ "$NO_OP_OK" = true ]; then
+    # Caller signals zero new patterns this session — satisfies mandatory Rule 1 trigger idempotently
+    exit 0
+  fi
   echo "Error: --summary and --body are required" >&2
   echo "Usage: propagate-learning.sh --type feedback --summary '...' --body '...'" >&2
   exit 1
@@ -74,10 +79,36 @@ type: ${TYPE}
 
 $BODY
 MEMEOF
-    # Add to MEMORY.md index if not already present
+    # Add to MEMORY.md index if not already present.
+    # Cap the hook so the always-loaded index stays under its context budget —
+    # the full detail lives in the memory file, not the one-line index entry.
+    # A companion SessionStart hook (compact-memory-index.sh) re-compacts and
+    # warns if the index ever exceeds its hard limit.
     MEMORY_INDEX="$PRIMARY_MEMORY/MEMORY.md"
     if [ -f "$MEMORY_INDEX" ] && ! grep -q "$MEM_FILE" "$MEMORY_INDEX" 2>/dev/null; then
-      echo "- [${MEM_FILE}](${MEM_FILE}) — ${SUMMARY}" >> "$MEMORY_INDEX"
+      HOOK_MAX=$(( 128 - ${#MEM_FILE} - ${#MEM_FILE} - 8 ))   # 8 = len("- [](\) — ")
+      [ "$HOOK_MAX" -lt 24 ] && HOOK_MAX=24
+      HOOK="$SUMMARY"
+      if [ "${#HOOK}" -gt "$HOOK_MAX" ]; then
+        HOOK="$(printf '%s' "$SUMMARY" | cut -c1-"$HOOK_MAX" | sed 's/[[:space:],;:.—-]*$//')…"
+      fi
+      # flock is not universal (absent on some Macs/minimal boxes): fall back
+      # to an mkdir lock with the same wait-up-to-5s-then-proceed semantics.
+      # compact-memory-index.sh takes the same locks around its rewrite.
+      if command -v flock >/dev/null 2>&1; then
+        ( flock -w 5 9 2>/dev/null || true
+          echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
+        ) 9>"$MEMORY_INDEX.lock" 2>/dev/null
+      else
+        LOCK_D="$MEMORY_INDEX.lock.d" LOCK_HELD=false WAITED=0
+        while :; do
+          if mkdir "$LOCK_D" 2>/dev/null; then LOCK_HELD=true; break; fi
+          [ "$WAITED" -ge 5 ] && break   # timed out: proceed anyway (matches flock -w 5 || true)
+          sleep 1; WAITED=$((WAITED + 1))
+        done
+        echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
+        [ "$LOCK_HELD" = true ] && rmdir "$LOCK_D" 2>/dev/null || true
+      fi
     fi
     DESTINATIONS+=("memory:$MEM_PATH")
   fi

@@ -1,3 +1,4 @@
+<!-- Load when: checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure -->
 # Repo Creation Checklist
 
 When creating a new repo or writing a new CLAUDE.md, follow this checklist to ensure cross-cutting guidance is incorporated from the start.

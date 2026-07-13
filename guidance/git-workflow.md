@@ -1,3 +1,4 @@
+<!-- Load when: branching, PRs, merge procedures, commit messages -->
 # Git Workflow
 
 ## Branch Rules
@@ -122,3 +123,9 @@ git -C ~/repos/<repo> worktree remove /tmp/learnings-wt-<repo>
 **Real incident (2026-06-10, e721c06):** the learning agent checked out its staging branch inside `~/repos/agentGuidance`. The ESSENTIAL.md rules reverted to the pre-section-7 version (16 rules), new hooks disappeared, and the live harness ran in the wrong state for the duration of the session. All of this was silent — no error, no warning.
 
 **Repos requiring worktrees:** any repo where `~/repos/<repo>/` appears in a hook path, SessionStart hook, or PM2 config that loads guidance at runtime.
+
+### autonomousDev must self-verify its own PRs actually merged (2026-07-05)
+fix-checker runs 600-601: three separate autonomousDev-created `claude/auto-*` PRs across different repos (valueSortify #148, runeval #267, and one other) sat MERGEABLE + CI SUCCESS for 2-4 days before fix-checker caught and merged them. Each was a genuine, already-verified fix — the PR just never got merged after creation. Root cause: autonomousDev's closeout logs "PR: <link>" but doesn't check `gh pr view <n> --json state` before ending the session, so a merge step that silently didn't fire (or was never attempted) goes unnoticed until the next fix-checker pass. **Fix:** autonomousDev should re-check `gh pr view --json state,mergeable` for the PR it just created as the last step of its own session, and merge it right then if MERGEABLE + CI SUCCESS, instead of relying on fix-checker as a merge backstop.
+
+### Merged-PR scope notes are sanctioned follow-up work, not dedup blockers (2026-07-03)
+autonomous-dev run 325: When candidate work looks like a duplicate of a recently MERGED PR, read the merged PR's body before rejecting it. An explicit 'out of scope / flagged as a follow-up' note converts the candidate from forbidden duplicate into sanctioned, pre-vetted follow-up work — and the merged PR often ships infrastructure the follow-up should reuse instead of re-inventing (health-hub PR #66 scope note + safeJsonParse helper -> PR #67 per-event webhook batch isolation). Cite the scope note in the new PR body to make the lineage reviewable.
