@@ -1,0 +1,77 @@
+name: sensitive-identifier-scan
+
+# Server-side, un-bypassable-by-`--no-verify` scan for infra identifiers that must never
+# reach this public repo (VM username / IP / home path). Patterns live in the
+# SENSITIVE_PATTERNS Actions secret (NOT in this file), so the list itself never leaks.
+# The job reports only the offending FILENAME, never the matched string — public run logs
+# stay clean. Detect-and-alert: a hit fails the check and pings Discord. It becomes a hard
+# merge block only if/when branch protection requires this check.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan added lines for blocked identifiers
+        env:
+          SENSITIVE_PATTERNS: ${{ secrets.SENSITIVE_PATTERNS }}
+        run: |
+          set -euo pipefail
+          PAT="$RUNNER_TEMP/pat.txt"
+          printf '%s\n' "$SENSITIVE_PATTERNS" | grep -v '^[[:space:]]*$' > "$PAT" || true
+          if [ ! -s "$PAT" ]; then
+            echo "::warning::SENSITIVE_PATTERNS secret not configured — scan skipped."
+            exit 0
+          fi
+
+          # Determine the diff range: PR = base..head, push = before..after.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch -q origin "${{ github.base_ref }}"
+            RANGE="origin/${{ github.base_ref }}...HEAD"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              RANGE="HEAD"      # new branch / first push: scan the tip commit
+              PARENT="$(git rev-parse --verify -q HEAD~1 || true)"
+              [ -n "$PARENT" ] && RANGE="$PARENT HEAD"
+            else
+              RANGE="$BEFORE ${{ github.sha }}"
+            fi
+          fi
+
+          viol=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # Added lines only (drop the +++ header). grep -q = quiet: never prints the match.
+            if git diff --unified=0 $RANGE -- "$f" 2>/dev/null | grep '^+' | grep -v '^+++' \
+                 | grep -E -q -f "$PAT"; then
+              echo "::error file=$f::Blocked infra identifier in added lines. Sanitize per privateContext/sensitive-identifiers.md (content withheld to avoid leaking it)."
+              viol=1
+            fi
+          done < <(git diff --name-only $RANGE 2>/dev/null)
+
+          if [ "$viol" -ne 0 ]; then
+            echo "::error::Sensitive-identifier scan FAILED — see the annotated file(s) above."
+            exit 1
+          fi
+          echo "Sensitive-identifier scan passed."
+
+      - name: Alert Discord on detection
+        if: failure()
+        env:
+          WH: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          [ -z "${WH:-}" ] && exit 0
+          curl -s -X POST "$WH" -H 'Content-Type: application/json' \
+            -d "{\"content\":\"🚨 sensitive-identifier scan FAILED on agentGuidance @ ${{ github.ref_name }} (${{ github.sha }}). A commit added a blocked infra identifier — check the Actions run and sanitize before it spreads.\"}" \
+            >/dev/null 2>&1 || true
