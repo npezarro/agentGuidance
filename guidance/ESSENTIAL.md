@@ -7,6 +7,8 @@ When you learn something new or receive a correction, save it to ALL relevant de
 
 **Mandatory trigger for automated sessions (fix-checker, learning-agent, autonomousDev-private, autonomous-dev):** At the END of every automated session, call `propagate-learning.sh` unconditionally. Qualifying events: any error worked around, any assumption that proved wrong, any retry requiring a different approach, any service config that needed changing. If you completed with zero surprises, a single no-op call still satisfies this rule — it is idempotent. This rule fires regardless of whether you received a correction.
 
+**Artifact requirement:** Paste the `propagate-learning.sh` output (or an explicit "no-op: nothing to propagate" line) into the session's final message. Sessions ending without this line are non-compliant regardless of whether the script actually ran — a claim that propagation happened is not evidence it happened. (Escalated by ecosystem-supervisor across 3+ daily reports — MDL sat flat at ~21-22% violation rate with this exact fix proposed and not applied each time; see `supervisor/reports/2026-07-14.md` Proposal 2 in `autonomousDev-private`.)
+
 ## 2. Guidance Updates Go to Repo Files, Not Just Memory
 "Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
 

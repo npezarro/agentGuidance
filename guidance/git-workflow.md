@@ -95,6 +95,10 @@ await octokit.rest.pulls.create({ head: `${owner}:${branch}`, ... });
 
 **Note:** The `gh pr create` CLI handles head qualification internally. This only applies when using the REST API directly (e.g., in automated bots like claude-auto-merger). Source: auto-merger "invalid head" race condition fix (2026-05-15).
 
+**Confirmed 2026-07-13 (parity-layer work spanning centralDiscord + agentGuidance + privateContext):** given `pezant-auto-merger`'s speed advantage, the reliable agent workflow is to just `git push` the branch and **not** call `gh pr create` at all — let the auto-merger squash-merge it. After the push, the remote branch vanishing and `gh pr create` failing with "No commits between main and `<branch>`" / "Head sha can't be blank" is **success**, not failure; don't retry or treat it as an error.
+- **Verify by content, not ancestry.** The squash commit is NOT an ancestor of your local commit (`git merge-base --is-ancestor <mine> origin/main` returns false), but `git diff origin/main <mine> -- <file>` will show identical content. Check the diff, not `git log --ancestry-path`.
+- **Shared checkouts under `~/repos/*` can switch branches mid-operation** on a local worker that concurrent Discord jobs also use. Don't trust the ambient staging area for a clean single-file commit — build it via a temp index (`GIT_INDEX_FILE=<tmp> git read-tree` + `git commit-tree`) and push via an explicit refspec (`git push origin <sha>:refs/heads/<branch>`) instead of relying on the current checkout's HEAD.
+
 ## Branch Hygiene
 
 Open PRs that sit unmerged cause cascading merge conflicts across all other branches. **This is the #1 cause of stuck work.** Prevent this:
