@@ -1,1 +1,0 @@
-CI self-test line containing PZNT_SENSITIVE_CANARY_DO_NOT_REMOVE
