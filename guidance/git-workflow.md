@@ -34,6 +34,14 @@ When committing to any repo, **ALWAYS push to the GitHub remote branch as well**
 
 **Common gap:** When working across multiple repos in one session (e.g., agentGuidance + llm-tasks + voice-data), it's easy to push some and forget others. After finishing a multi-repo task, verify all repos are clean: `git status` in each one.
 
+## Staging Hygiene in Shared Repos (concurrent agents)
+
+Repos like agentGuidance, privateContext, and knowledgeBase are worked by many agents at once (interactive sessions, hourly learning-agent, doc-sync, autonomousDev). Two rules prevent one agent's commit from corrupting another's work or leaking secrets:
+
+- **Stage explicit paths, never `git add -A` / `git add .`** in a shared repo. A blanket add sweeps whatever another agent left uncommitted in the working tree into *your* commit. This actually happened 2026-07-12: a concurrent session's `git add -A` bundled an unrelated agent's `testing.md` with its own change (and staged a secret — see below). Name the files you touched: `git add guidance/foo.md scripts/bar.sh`.
+- **Never `--no-verify` on a public repo.** The pre-commit sensitive-identifier scanner is the last line of defense before a VM username / internal path / token reaches a public GitHub repo. Bypassing it is how leaks ship. If the scanner blocks you, sanitize using `privateContext/sensitive-identifiers.md`; don't override. (The scanner correctly blocked the 2026-07-12 leak — the proper fix went out sanitized via a PR; the `--no-verify` local commit was orphaned.)
+- **Before committing, `git status` and confirm ONLY your files are staged.** If you see files you didn't touch, unstage them (`git restore --staged <path>`) — they belong to another agent.
+
 ## Creating PRs (with retry)
 
 After `git push`, GitHub may take a few seconds to register the branch. Always verify the branch exists remotely before creating the PR, and retry on failure:
