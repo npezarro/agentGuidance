@@ -134,3 +134,20 @@ YouTube frequently changes DOM structure, removing elements and attributes witho
 - **Use session-scoped variables for SPA state.** For state that should persist across SPA navigation (e.g., user-set speed surviving Shorts swipes) but reset on page leave, use module-level variables instead of GM_setValue. GM_setValue is for persistent cross-session storage; module-level vars naturally reset when the page unloads.
 - **Detect navigation via video src changes, not container observers.** For SPA navigation detection (e.g., Shorts swipes), track `video.src || video.currentSrc` changes in the body-level MutationObserver rather than watching for platform-specific container mutations (`ytd-*` on desktop, `ytm-*` on mobile). This is platform-agnostic and works regardless of DOM structure differences. Compare against a `lastVideoSrc` variable with debouncing (300ms) to avoid redundant re-injection.
 - **Bump the major version** when adapting to YouTube DOM changes, as the fix typically affects multiple code paths (desktop, mobile, Shorts, fullscreen)
+
+## DOM Interaction Gotchas (Browser Automation Scripts)
+
+Three patterns discovered 2026-07-13 during live Domino's bookmarklet testing via browser-agent. Apply to any userscript or chrome-automation module that drives UI.
+
+### Re-query Selectors in Click Loops
+Modern JS frameworks (React, Vue, Lit) replace DOM nodes on each state update. If a script loops N times to click the same button (e.g., incrementing a quantity), **the cached element reference is stale after the first click** — the page re-renders the component, detaching the old node. Subsequent clicks have no effect (no error, just silence), and the loop stalls short of the target.
+
+Pattern that works:
+1. Re-query `document.querySelector()` on every iteration, not once before the loop.
+2. Add a stall guard: read the current value after each click; if it didn't change, break or retry.
+
+### Prefer `<button>` Matches Over Generic Text Matches
+When searching for a clickable element by text, a non-interactive wrapper `<div>` or `<span>` with the same text often appears BEFORE the real `<button>` in the DOM. Clicking the wrapper does nothing. Query order: `button` elements first (filter by innerText or aria-label), then `[aria-label*="..."]` for icon-only controls, generic text search last.
+
+### Dismiss Cookie Banners Before Interacting
+Cookie consent overlays intercept all pointer events. Any click on a covered element silently fails. Dismiss banners (ALLOW ALL / REJECT ALL / Accept) **at the start of the automation flow**, before any other interaction. If a well-targeted click has no effect, check for an overlay as a first diagnostic.
