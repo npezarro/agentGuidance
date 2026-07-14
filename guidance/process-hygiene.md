@@ -1834,6 +1834,8 @@ trap 'rc=$?; [[ $rc -ne 0 ]] && alert_email "⚠️ script-name failed (exit $rc
 
 **Source:** `scripts/send-alert-email.sh` + `claude-auto-relogin-container.sh` overhaul (commit `b7691c7`, 2026-07-02).
 
+**Refinement — suppress email for known-benign recurring failures, keep the lower-priority channel (2026-07-13):** Not every non-zero exit deserves an inbox page. If a specific failure mode is diagnosed as recurring, self-healing, and already covered by an independent recovery mechanism, set a local `SUPPRESS_EXIT_EMAIL` flag before that branch and check it in the EXIT trap — post to Discord as usual (still useful as a low-priority signal) but skip `alert_email`. Keep the suppression scoped to the *specific classified wall/error kind*, not the whole script, so a genuinely new failure mode still emails. Example: `claude-auto-relogin-container.sh`'s `reauth|google_login` wall (claude.ai auth-age expiry, distinct from the sliding idle-expiration case) recurs nightly whenever auth-age lapses, but the bridge keeps serving via its refresh token and a separate 10-minute health-driven restart script catches real token death — so the nightly email was pure noise while the underlying condition was already handled elsewhere. Commit `9c1c0b9`, 2026-07-13.
+
 ## Suspending an Autonomous Agent — Full Checklist (2026-07-03)
 
 When permanently suspending an autonomous service, stopping PM2 alone is not enough. Three separate systems keep an agent alive: PM2 (restores on reboot and deploy-path restarts), cron (fires on schedule regardless of PM2 state), and remote copies (the same repo may run on multiple machines with independent PM2 + crontab).
