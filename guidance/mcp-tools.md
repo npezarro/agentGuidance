@@ -26,7 +26,17 @@ Rules for choosing between available MCP tool providers when multiple cover the 
 
 ## Google Docs Formatting
 
-**Never write raw Markdown to Google Docs.** Google Docs does not render Markdown syntax — `#`, `**`, `---`, etc. appear as literal characters.
+**Job-material and prep docs: use the deterministic renderer (works headless).** For resumes, cover
+letters, and prep/report docs, the canonical publish path is the `push-to-gdoc` skill's renderer, which
+is the ONLY path that formats correctly in headless `#requests`/`#tasks` runs (those lack the piotr
+`mcp__google-drive__*` tools, so the old skills silently produced flat, unstyled docs):
+1. `node ~/.claude/skills/push-to-gdoc/render-app-doc.js <src.md> --type resume|cover|generic --out /tmp/x.html`
+2. upload via `mcp__claude_ai_Google_Drive__create_file(..., contentMimeType:"text/html", textContent:<HTML>)`
+3. `node ~/.claude/skills/push-to-gdoc/set-doc-font.js <docId> Calibri` (HTML import applies font-family
+   nondeterministically — Calibri one upload, Arial the next — so force it here; structure/sizes/colors/
+   headings/bullets DO import reliably). Source: headless Tavus packet came out flat, 2026-07-15.
+
+**Never write raw Markdown to Google Docs.** Google Docs does not render Markdown syntax — `#`, `**`, `---`, etc. appear as literal characters. In particular, `contentMimeType:"text/markdown"` is NOT a safe fallback for resumes: their sources use plain "Summary"/"Experience" labels (no `#`/`-`), so the auto-convert has nothing to convert and yields a flat doc.
 
 **Preferred: HTML upload (handles all formatting automatically)**
 
