@@ -198,6 +198,16 @@ kwargs["env"] = env
 
 **Implication:** When debugging a prolonged OAuth failure, check both paths. If the cron log shows persistent `rate_limit_error` and the access token is expired and the refresh token is still valid, the keep-alive cron will self-heal once the throttle clears — do NOT trigger `claude-auto-relogin.sh` (it will error immediately). If the refresh token itself is dead, manual `claude setup-token` is required until the script is updated.
 
+### Never Pause an Alerting/Probe Cron Alongside Its Paired Keep-Alive Cron
+
+**The trap:** When a keep-alive/refresh cron (e.g. `refresh-claude-token.sh`) is stuck in a rate-limit storm, it's tempting to pause it AND its paired alerting/probe cron (e.g. `claude-auth-probe.sh`) together — they look like one feature, so silencing both "to stop the noise" feels natural.
+
+**Why this is dangerous:** The probe cron's only job is to detect and page on failure. If the keep-alive cron never recovers (the throttle clears but the underlying refresh token has actually gone dead), the probe is the only thing that would catch it. Pause it too, and the failure goes fully silent.
+
+**Real incident (2026-07-10):** Both `refresh-claude-token.sh` and `claude-auth-probe.sh` were commented out with a `#PAUSED-20260710-throttle` tag to stop an OAuth rate-limit storm. The keep-alive path never recovered — with the probe also paused, no alert fired, and VM host `claude` CLI auth was silently dead for ~5 days, 401ing every automated review cycle depending on it.
+
+**Rule:** A probe/alarm cron that only tests cheap, already-issued-token state (e.g. `claude -p "ok"`, not an OAuth refresh grant) is typically throttle-safe and should stay running even while its paired keep-alive cron is paused. If it must be paused too, tag it with an explicit re-enable trigger (date + condition to check), not a bare `#PAUSED-<date>` — a pause with no removal trigger is a landmine that outlives the incident it was meant for.
+
 ### React SPA Hydration Race in Browser-Agent OAuth Scripts
 
 **Symptom:** A browser-agent script clicks the OAuth Authorize button on `claude.ai`. The click reports success but nothing happens — no navigation, no callback. The same script works fine minutes later.
