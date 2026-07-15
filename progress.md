@@ -10,6 +10,11 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+2026-07-15 | ci | `.github/workflows/sensitive-scan.yml` (PR #323): server-side sensitive-identifier scan on push+PR; patterns in SENSITIVE_PATTERNS secret; reports filename only (leak-safe); Discord alert. Paired with claude-auto-merger hard merge gate.
+2026-07-15 | feat | Session-aware cron deferral: hooks/session-heartbeat.sh (PostToolUse, interactive-only) + scripts/interactive-session-active.sh; 4 autonomousDev crons defer while a live session heartbeat is fresh (fixes shared-tree collisions). Wired into user settings.json.
+2026-07-15 | guidance | git-workflow.md "Staging Hygiene in Shared Repos" (PR #321): explicit paths, no `git add -A` / `--no-verify` on shared/public repos.
+2026-07-15 | fix | `b4cf94b` git-pre-push new-branch scan used single-arg `git diff $SHA` (vs WORKING TREE) → false-blocked pushes on concurrent drift; now merge-base(origin/main|master,tip)..tip with empty-tree fallback.
+2026-07-15 | fix | `d4cf06b` install-hooks.sh `--all-public` capped at 30 repos (gh default, no --limit); 5 public repos incl. claude-auto-merger were unprotected. Added `--limit 1000`, re-propagated to all cloned public repos + template.
 2026-07-12 | guidance | testing.md: "Fallback Chains Hide Dead Rungs" rule (PR #318) — test each fallback branch in isolation; ship a canary asserting the winning rung; verify the real code path not a reimplementation. From the fetch-page.sh silent-miss (rung 1 dead, rung 2 masked it).
 2026-07-12 | incident | Quarantined an unpushed concurrent-automation commit (f68e8c5) that added sensitive identifiers (VM SSH username + a Discord-bot module path) to guidance/opus-fable-parity.md in this PUBLIC repo. Local-only, never pushed; held in git stash@{0} pending sanitization. See closeout.
 2026-07-12 | feature | Provenance + source-capture system (PR #314): guidance/provenance.md, scripts/source-registry.sh, agent.md + ESSENTIAL.md wiring. Companion private repo sourceLibrary created. Marks Claude-generated facts vs Nick's writing; captures cited sources with cached material.
