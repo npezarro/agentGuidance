@@ -92,3 +92,16 @@ A well-researched deliverable includes:
 - Recommending a specific version without checking if it's still current
 - **Giving up on a source at the first empty/blocked fetch.** Login walls, paywalls, and JS SPAs are *climbable*, not terminal: escalate through the page-access waterfall (WebFetch → page-reader → feed/transcript tricks → **authenticated browser-agent** → WebSearch). See the `page-access` skill + `guidance/browser-page-reader.md`. Auth-gated pages (LinkedIn, paid newsletters) are exactly what browser-agent is for.
 - **Spawning research sub-agents armed only with WebFetch for auth-gated/SPA sources** — they hit the same wall and silently "resolve" by writing a confident summary from search snippets. Hand sub-agents the waterfall (incl. the browser-agent command), or retrieve via browser-agent in the main thread and pass the text down. Always label anything search-derived as secondhand.
+
+## Company-Specific Deliverables — No Invented Product Claims
+
+When building materials ABOUT a specific product or company (interview memos, prototype decks, product analyses, competitive write-ups), only include product capabilities that are:
+
+1. **Verified via public sources** — official docs, press releases, tech blog posts, shareholder letters, or news articles. Date-stamp and link the source.
+2. **Confirmed in the user's own sketch or brief** — if the user described the feature themselves, use their framing exactly.
+
+Do NOT extrapolate, assume, or invent features that "seem like they should exist" or "fit the product vision."
+
+**Why this matters:** Fabricated features read as authoritative claims to a hiring panel, client, or stakeholder. When challenged, the error is harder to recover from than a knowledge gap. Real case: Netflix final-panel prep required a full ground-up rebuild after agents invented watch parties (not a Netflix feature), a 50% TV access target (no such target exists), and kids-profiles-with-games (false) — costing a full session.
+
+**Self-check before submitting any company-specific deliverable:** For each product claim, ask "where is the public source for this?" If you can't point to one, mark it as assumed or cut it. Reference the user's own words as the floor for what's in scope. Source: Netflix panel prep correction (2026-07-01), S199.

@@ -47,6 +47,10 @@ node ~/repos/page-reader/src/index.js --compact <url>
 
 # Custom timeout (default 30000ms)
 node ~/repos/page-reader/src/index.js --timeout 60000 <url>
+
+# Authenticated read using a saved Playwright storageState (cookies + localStorage)
+# Missing/unreadable file silently falls back to anonymous browsing
+node ~/repos/page-reader/src/index.js --storage-state /path/to/session.json <url>
 ```
 
 ## Output Structure (JSON mode)
@@ -102,6 +106,48 @@ The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible ins
 **Pattern:** Use as a WebFetch fallback in Docker-bridged Claude CLI system prompts. If `WebFetch` returns a 500, 403, empty body, or bot-block page, retry via the proxy. Only fall back to this after direct WebFetch fails — the proxy uses a full headless browser and is slower.
 
 Source: shopper `docker/CLAUDE.md`, auth resilience session 2026-05-24.
+
+## Browser Automation: Content Script vs External Driver
+
+When automating a site (form submission, navigation, clicking), choose between:
+
+- **browser-agent (content script):** Injected into the live page's JavaScript context. Subject to the site's Content Security Policy. Some sites (payment processors, subscription management pages) block injected scripts or go silent — commands time out with no error.
+- **Playwright / puppeteer (external driver):** Owns its own browser process. Not subject to the page's security context. Resistant to CSP blocks.
+
+**Rule:** If browser-agent commands go silent (heartbeat stale, every command times out), the site is blocking content-script injection. Spin up a dedicated Playwright script instead. Do NOT keep retrying browser-agent.
+
+**DOM discovery harness when a scripted flow breaks:** When a site redesigns and selectors stop working, don't guess. Write a throwaway script that walks the new flow and dumps — at each page — visible headings, button labels, link text + hrefs, radio/checkbox labels, and a screenshot. Encode the real selector against actual DOM structure, not guesses.
+
+**Key off structure, not marketing copy:** When detecting page state (e.g., "is the account active?"), prefer durable structural signals (link href patterns, presence/absence of a cancel vs reactivate anchor) over page text strings. Marketing copy changes with every redesign; href patterns change only when the flow changes.
+
+Source: Peloton cancel automation rewrite (2026-06-22) — browser-agent blocked by site; Playwright worked. See `privateContext/recurring-tasks/scripts/peloton-cancel.sh`.
+
+## Browser-Agent Background Tab Command Timeouts
+
+Chrome throttles content-script/page timer polling to ~1 request per minute for tabs that are backgrounded or unfocused. `browser-agent` eval, navigate, click, and type commands targeting a background tab will appear to succeed (the relay accepts the command) but sit unpolled and time out ("Timeout waiting for browser response") — while `/health` and tab listings look healthy.
+
+**Fix (relay v2.7+, 2026-06-30, commit `55d1a74`):** The relay's `translateToExtension()` detects when a target tab's content-script is stale (>10s since last ping) and routes the command to the MV3 extension's CDP path (`cdpEval`/`cdpClick`/`cdpType`) instead. The extension polls via `chrome.alarms` (not throttled by Chrome) and drives any tab via `chrome.debugger`. This routing is automatic and transparent to callers.
+
+**Symptom pattern to recognize:**
+- Command targets a tab not currently in the foreground
+- `/agent/tabs` shows the tab as alive; `/health` returns OK
+- `eval`/`navigate`/`type` all time out with "Timeout waiting for browser response"
+- Content-script heartbeat is stale (tab unfocused >10s)
+
+**If you still see background-tab timeouts:** the relay is likely pre-fix. Pull `55d1a74` (`agent-server.js` + `lib/core.js`) and `pm2 restart browser-agent`. No extension update needed.
+
+## Browser-Agent Extension Reload After Updates
+
+When the relay server is updated with changes that involve new content-script messaging (new `ba-*` registration commands, new `resolveTabId` lookup paths), the Chrome extension MUST be reloaded to activate the new content-script features. The relay restart alone is not enough.
+
+**When required:** any update to content-script message handlers or extension-side tab registry logic.
+
+**How to reload:**
+1. Open `chrome://extensions` in Chrome
+2. Find "Browser Agent" and click the reload icon (↺)
+3. Spawn fresh tabs via `browser-cli ensure <url>` after reload so content scripts re-register
+
+**v2.8.0 example (commit `6431607`, 2026-07-01):** The extension gained an `internalId→chromeTabId` registry populated by `ba-register-tab` content-script registration. Without an extension reload, `resolveTabId` fell through to the active-tab fallback, causing CDP commands (screenshot, click, close, focus) to silently target the WRONG tab instead of the named tab.
 
 ## The Page-Access Waterfall (escalate; don't surrender at the first empty fetch)
 page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with commands) lives in the **`page-access` skill** — invoke it whenever a fetch returns empty, login-walled, paywalled, or JS junk:

@@ -32,4 +32,6 @@ Output is one JSON line: `verdict`, `confidence`, `median`, `behaviorChangeFract
 
 ## Calibration Duty
 
-The harm gate is deliberately strict and may over-flag (known day-1 example: benign price-drop alerts flagged for undisclosed data collection). If you see a verdict that looks miscalibrated, record the jobId and the disagreement in the synthetic-panel repo's context.md. Calibration fixes go in the persona HARM CHECK prompt wording only; the aggregation thresholds are final by design.
+The harm gate applies only to what the change description **states** — not to inferred implementation details (data sourcing, logging, third-party calls, storage). Unstated potential harms go to `topConcerns`, not `harmReasons`. This was calibrated 2026-07-02 (commit `2a611e6`) to fix systematic over-flagging of benign changes (price-drop alerts, sparklines) that shared no stated consent/privacy behavior. Verified two-sided: benign changes lose harm flags; dark-pattern changes still KILL.
+
+If you see a verdict that looks miscalibrated, record the `jobId` and the disagreement in the synthetic-panel repo's `context.md`. Calibration fixes go in the persona HARM CHECK prompt wording only; the aggregation thresholds are final by design.

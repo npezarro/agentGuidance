@@ -75,9 +75,36 @@ Each app needs:
 - **Matcher excludes auth paths**: If the middleware matcher excludes `api/auth` (common for auth-protected apps), add `/api/auth/signin/:path*` as a separate matcher entry so the cookie-setting code runs.
 - **NextAuth `basePath` must always be `"/api/auth"`, never `"/<app>/api/auth"`**: In Next.js standalone output (`output: 'standalone'`), the basePath is stripped from `req.url` before reaching server code. NextAuth always receives `/api/auth/...` regardless of the Next.js basePath. Setting `basePath: "/<app>/api/auth"` in `auth.ts` prevents NextAuth from matching action routes and silently breaks auth. Source: shopper debugging loop (2026-05-18, commit 832c47b).
 - **Middleware/proxy matcher must NOT include basePath prefix** (Next.js 16 standalone, re-verified 2026-06-05): The basePath is stripped from `req.nextUrl.pathname` before middleware/proxy fires (same behavior as Route Handlers, just above). Both `config.matcher` and any `req.nextUrl.pathname.startsWith()` body check must use the UNPREFIXED path, e.g., `matcher: ["/api/auth/signin/:path*"]`. Verified against shopper (`src/middleware.ts`), humans (`src/proxy.ts`), and foodie (`src/proxy.ts`, fix commit f27c340) -- all Next.js 16.2.6, all unprefixed, all working. *Earlier revision of this note (2026-05-17) claimed Next.js 16 needed the prefix after a shopper debugging loop; that was a misattribution and broke foodie auth for ~2 weeks before this 2026-06-05 fix.*
+- **Local-dev vs. standalone middleware path divergence**: Standalone mode strips the Next.js basePath from `req.nextUrl.pathname` before middleware fires; local dev does NOT. This means `matcher: ["/api/auth/signin/:path*"]` works in standalone but misses signin requests in local dev (cookie is never set, auth loop). For cross-environment compatibility include both variants: `matcher: ["/api/auth/signin/:path*", "/<app>/api/auth/signin/:path*"]` and check both in the body (`pathname.startsWith("/api/auth/signin/") || pathname.startsWith("/<app>/api/auth/signin/")`). Source: humans commit `a879347` (2026-06-10).
 - **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
+- **`router.push()` (useRouter) also auto-prepends basePath**: Client-side `useRouter().push("/search")` behaves identically -- it becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in `router.push` paths either (e.g., `router.push("/shopper/search")` becomes `/shopper/shopper/search`, a 404). Source: shopper/foodie/travel-assistant SharedJobView fix 2026-06-15 -- same double-prefix crash as `redirect()` but on client-side navigation.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
+- **Session cookie `path` must be the app subpath, not `"/"`**: When an app runs under a basePath (e.g., `/travel`), set the session cookie's path to match that subpath. A `path: "/"` cookie is readable by every other subpath app on the same domain, causing cross-app cookie contamination and CSRF validation failures (the CSRF token and session cookie must match paths). Correct config in `auth.ts`:
+  ```typescript
+  cookies: {
+    sessionToken: {
+      name: "__Secure-<appname>.session-token",
+      options: { httpOnly: true, sameSite: "lax", path: "/<appname>", secure: true },
+    },
+  },
+  ```
+  Note: the unique `name` per app (see "Session Cookie Isolation" section) prevents cross-read, but `path` scoping is also required to prevent CSRF mismatch. Source: travel-assistant (commit b56aa27, 2026-06-27).
+- **JWT decode must be wrapped in try/catch to prevent crash spirals**: After a secret rotation, stale JWTs throw during decode. If the `decode` function is unwrapped, every authenticated request to the auth handler crashes, causing a restart loop. Wrap it to return `null` (treat as anonymous) instead:
+  ```typescript
+  jwt: {
+    encode,
+    decode: async (params) => {
+      try {
+        return await decode(params);
+      } catch (err: any) {
+        console.warn("[auth] JWT decode failed; treating as anonymous:", err?.message || String(err));
+        return null;
+      }
+    },
+  },
+  ```
+  Source: travel-assistant (commit b56aa27, 2026-06-27).
 
 ### Apps using the proxy
 
@@ -91,6 +118,15 @@ Each app needs:
 ### AUTH_URL origin-only pattern for tunneled apps
 
 When an app is tunneled (e.g., WSL -> VM via SSH), Apache's `ProxyPreserveHost On` and `X-Forwarded-Host` may not correctly reach the Next.js standalone server. NextAuth then uses `localhost:PORT` as the origin, producing wrong callback URLs. Fix: set `AUTH_URL=https://example.com` (bare origin, no path). With pathname="/", `setEnvDefaults()` won't override the explicit `basePath: "/api/auth"`, but origin is set correctly. This is simpler than debugging header forwarding through SSH tunnels.
+
+**Defensive code guard for misconfigured AUTH_URL:** If the env var might arrive with a subpath (e.g., copy-pasted from another app), strip the pathname at module load time before NextAuth processes it:
+```typescript
+// auth.ts — top of file, before NextAuth() call
+if (process.env.AUTH_URL) {
+  process.env.AUTH_URL = new URL(process.env.AUTH_URL).origin;
+}
+```
+This prevents `setEnvDefaults()` from extracting the pathname as `basePath` and silently overriding the explicit `basePath: "/api/auth"` setting. The `.env` should still use bare origin (this is a belt-and-suspenders guard). Source: travel-assistant (commit b56aa27, 2026-06-27).
 
 ### Why this replaced per-app workarounds
 
@@ -356,6 +392,83 @@ profile (not an alt account that lacks project access).
 
 11. **Exclude internal API routes from auth when the page is already protected.** If a page is behind auth and its API route only serves that page, session cookies may not forward correctly through the NextAuth middleware chain. Add the route to the middleware matcher's negative lookahead (e.g., `api/ai-edit`) rather than fighting cookie forwarding.
 
+12. **Guard the NextAuth route handler with a VALID_ACTIONS allowlist to prevent UnknownAction crashes.** Bots and crawlers frequently probe `/api/auth/<random-slug>`, causing Auth.js v5 to throw `UnknownAction` (fills logs, can crash non-resilient setups). Only forward requests with known action slugs:
+   ```typescript
+   const VALID_ACTIONS = ["signin", "signout", "callback", "session", "csrf", "providers", "error"];
+
+   export const GET = async (req: NextRequest) => {
+     const action = req.nextUrl.pathname.split("/").pop();
+     if (req.method !== "GET" || !action || !VALID_ACTIONS.includes(action)) {
+       return new Response(null, { status: 200 });
+     }
+     try {
+       return await handlers.GET(req);
+     } catch (e) {
+       console.error("[auth] GET error:", e);
+       return new Response(null, { status: 500 });
+     }
+   };
+   // Mirror for POST handler with req.method !== "POST"
+   ```
+   Apply to both GET and POST handlers in `app/api/auth/[...nextauth]/route.ts`. Source: humans commit `314a5ca` (2026-06-08).
+
+13. **Add a stale-session-cookie guard in proxy.ts to prevent broken auth state.** If a user has a session cookie but the session has expired or been invalidated, the default behavior is to render the dashboard (cookie present) but fail all API calls (session missing). Fix: in `proxy.ts`, check `auth()` on page navigations when the session cookie is present, and redirect + clear the cookie if the session is invalid:
+   ```typescript
+   const SESSION_COOKIE = "__Secure-<appname>.session-token";
+
+   export async function proxy(req: NextRequest) {
+     // ... existing signin handler ...
+
+     // Stale-cookie guard: if a session cookie is present but session is
+     // invalid/expired, clear it so the user reaches sign-in, not a broken UI.
+     // Only check on page navigations (not API/asset paths).
+     if (
+       !req.nextUrl.pathname.startsWith("/api/") &&
+       req.cookies.has(SESSION_COOKIE)
+     ) {
+       const session = await auth();
+       if (!session?.user) {
+         const response = NextResponse.redirect(new URL("/", req.url));
+         response.cookies.delete(SESSION_COOKIE);
+         return response;
+       }
+     }
+     return NextResponse.next();
+   }
+
+   export const config = {
+     matcher: ["/api/auth/signin/:path*", "/dashboard/:path*", "/dashboard"],
+   };
+   ```
+   Extend the `matcher` to include all authenticated page paths (`/dashboard/:path*` etc.) so the guard runs on navigation. Source: employ commit `986b4e5` (2026-06-14).
+
+14. **Strip `NEXTAUTH_URL` to bare origin in auth.ts to prevent `UnknownAction` errors.** When `NEXTAUTH_URL` is set to a value that includes a path (e.g., `https://example.com/myapp`), Auth.js v5 may misparse the action segment from the URL and throw `UnknownAction`. Fix: in `auth.ts`, overwrite `NEXTAUTH_URL` with just the origin before `NextAuth()` initializes, then set `AUTH_URL` explicitly:
+   ```typescript
+   if (process.env.NEXTAUTH_URL) {
+     try {
+       const origin = new URL(process.env.NEXTAUTH_URL).origin;
+       process.env.NEXTAUTH_URL = origin;           // bare origin only
+       process.env.AUTH_URL = `${origin}/api/auth`; // explicit auth base
+     } catch { /* ignore invalid URL */ }
+   }
+   ```
+   The existing guidance (item 1 checklist: `AUTH_URL=https://example.com`) covers setting `AUTH_URL` to a bare origin, but NEXTAUTH_URL also needs to be stripped — leaving it with a path causes Auth.js to derive incorrect action slugs. Source: finance-tracker commit `4c4aeab` (2026-06-17).
+
+15. **Add `import 'dotenv/config'` to auth.ts and db.ts in Next.js standalone apps.** In some deployment contexts (standalone `node server.js`, Prisma adapter, or when modules are imported before Next.js's own env loading runs), `.env` variables may not be available when `auth.ts` or `db.ts` initialize. Explicitly importing dotenv at the top of both files guarantees env vars are present regardless of import order:
+   ```typescript
+   // auth.ts — first line
+   import "dotenv/config";
+   import NextAuth from "next-auth";
+   // ...
+   ```
+   ```typescript
+   // lib/db.ts — first line
+   import "dotenv/config";
+   import { PrismaClient } from "@/generated/prisma/client";
+   // ...
+   ```
+   Source: finance-tracker commit `4448d3b` (2026-06-17).
+
 ## Simpler Alternative: Provider-Level redirect_uri Override [Legacy]
 
 When you only need the OAuth callback URL to include the basePath (and don't need the full Apache redirect setup), override `redirect_uri` directly in the provider config:
@@ -417,6 +530,67 @@ Without silent refresh, **any automated job that runs daily against a ~24h-lived
 **Source:** health-hub commit `69aa711` (2026-06-07) — Garmin push route switched from 401-on-expiry to silent auto-refresh, fixing the automated daily push-to-watch cron.
 
 **Trade-off:** Simpler (no Apache redirect needed), but couples the callback URL to the env var. The three-part pattern is more robust for complex proxy setups.
+
+## User-Facing URL Construction: Use Request Origin, Not AUTH_URL
+
+When building share links, email links, or any URL that the browser will open, derive the origin from the **actual HTTP request** (`req.nextUrl.origin`), not from `AUTH_URL` or `NEXTAUTH_URL`.
+
+```typescript
+// route.ts — share link generation (shopper, foodie, travel-assistant)
+const origin = req.nextUrl.origin;
+const shareUrl = `${origin}/<basePath>/share/${token}`;
+```
+
+**Why:** `AUTH_URL` / `NEXTAUTH_URL` are set at deploy time and often point to a specific host (e.g., `https://example.com` or `http://localhost:3090`). Share links generated from these env vars break when:
+- The user hits the app from a different hostname (staging, Tailscale, local dev tunneled to VM)
+- The app is behind a proxy that changes the visible origin
+- The env var is set for OAuth callback purposes only and doesn't include the basePath correctly
+
+`req.nextUrl.origin` resolves dynamically to whatever domain+port the browser used, so the link always works from the user's current context.
+
+**When NOT to use request origin:**
+- OAuth callback URLs → use `AUTH_URL` / `NEXTAUTH_URL` (must be pre-registered with provider)
+- Internal service-to-service API calls → use env vars (more stable, no user context)
+
+**Source:** shopper, foodie, and travel-assistant all received the same fix (2026-06-28) — share route handlers were building share URLs from `AUTH_URL`, which broke when the app was accessed from Tailscale or a staging hostname.
+
+### Refinement: Same-App Self-Fetch Must Use `localhost`, Not the Public/Proxied URL
+
+The "internal service-to-service calls → use env vars" rule above assumes the env var points somewhere safe to hairpin through. It does not, when the target is the **same app calling its own API route** (e.g., a Next.js SSR server component fetching one of its own route handlers during render) and the env var in question (`APP_URL`, `AUTH_URL`) is the **external, publicly-proxied URL**.
+
+**Why it breaks:** A same-box self-fetch to the public URL routes back out through Cloudflare and the OAuth auth-proxy. If the proxy intercepts the request (e.g., returns an HTML redirect/login page instead of the expected JSON), the SSR fetch tries to `JSON.parse()` HTML and 500s — intermittently, since it depends on proxy/session state.
+
+**Fix:** For an app's own internal self-fetch, always use `http://localhost:<PORT>` (the port the process itself listens on), never `APP_URL`/the public domain. Reserve the public-URL env var for genuinely cross-service calls and user-facing contexts (callbacks, share links).
+
+**Source:** promptlibrary PR #195/#194 (2026-07-05) — SSR server components self-fetched via `APP_URL` (the external `https://` domain), which round-tripped through Cloudflare + the OAuth proxy and intermittently 500'd when the proxy returned a redirect page instead of JSON. Fixed by switching the internal self-fetch to `http://localhost:PORT`.
+
+## Mobile WebView Auth: Google blocks OAuth in Android WebViews (2026-06-30)
+
+Google OAuth returns `disallowed_useragent` when launched from an Android WebView (Capacitor, standard WebView). The OAuth flow never completes. This affects any Capacitor-based or hybrid app that tries to open a standard OAuth sign-in URL inside the WebView.
+
+### Solution: native sign-in → ID token → server-side session minting
+
+Replace the WebView OAuth flow with a native sign-in flow:
+
+1. Use `@capgo/capacitor-social-login` (Google Credential Manager) to get a Google ID token natively
+2. POST the ID token to the auth-proxy's `/api/auth/mobile` endpoint
+3. The endpoint verifies the token against Google's public keys, then mints per-app session cookies using `@auth/core/jwt` encode
+4. The mobile client stores the cookies and attaches them to subsequent WebView/API requests — the user is authenticated in all apps simultaneously
+
+### Key gotcha: AUTH_SECRET is NOT shared across apps in the mobile path
+
+Standard web OAuth (state JWT encoding between Auth.js instances) uses a shared `AUTH_SECRET`. The mobile path is different: `@auth/core/jwt` encodes each app's session cookie using that app's own `AUTH_SECRET` (the cookie name is the salt).
+
+- The auth-proxy holds each app's secret as `MOBILE_SECRET_<APP>` (e.g., `MOBILE_SECRET_SHOPPER`, `MOBILE_SECRET_TRAVEL`)
+- shopper/foodie/employ share one `AUTH_SECRET`; **travel uses a different one**
+- When adding a new app to the mobile endpoint, always add its corresponding `MOBILE_SECRET_<APP>` to the auth-proxy's env (see privateContext)
+
+### What NOT to do
+
+- Do NOT try to open a standard OAuth URL in a WebView — `disallowed_useragent` is a hard Google block, not a configuration issue.
+- Do NOT share the web `AUTH_SECRET` between all apps without verifying each app's actual secret — travel proved this assumption wrong.
+
+**Source:** auth-proxy commit `d4d2eca` (2026-06-30) — POST `/api/auth/mobile` endpoint; pezant-mobile Capacitor integration (run #856).
 
 ## Gating a secret/page to one Google identity: reuse the Apache OIDC gate (2026-06-23)
 

@@ -146,6 +146,21 @@ When the automated hook isn't installed, verify before committing to any public 
 4. No private repo names or usernames in test fixtures, docs, or comments (check against the private reference database)
 5. `.gitignore` covers `.env*` files
 6. Config files use environment variables, not hardcoded values
+7. `git remote -v` — no credentials embedded in remote URLs (see "Credentials in Git Remote URLs" below)
+
+## Credentials in Git Remote URLs
+
+Using an HTTPS remote with an embedded PAT (`https://<token>@github.com/user/repo.git`) stores the token in `.git/config` in plaintext — visible in `git remote -v`, shell history, and any process that reads the config.
+
+**Correct approaches:**
+- Use SSH remotes: `git remote set-url origin git@github.com:user/repo.git`
+- Or use the git credential store / helper — no token in the URL
+
+**If already set:** Rotate the PAT immediately (it was already exposed), then re-set the remote: `git remote set-url origin git@github.com:user/repo.git`
+
+**How it happens:** `git clone https://<token>@github.com/...` bakes the token into `.git/config`; CI automation that sets remotes directly does the same. Check all remotes with `git remote -v` before considering a repo "clean."
+
+Root cause of the documented incident (2026-06-23): a pezant-tools VM git remote was set as `https://<token>@github.com/...` — the PAT was live and visible until rotated.
 
 ## Architecture Documentation
 
@@ -239,6 +254,28 @@ This is the right tool when `npm audit` or security scans flag personal emails i
 4. Verify on every machine the repo is cloned to (local + VM). A hard reset on the VM to match the rewritten remote will wipe gitignored `.env` files there too.
 
 **Scope replacements narrowly.** Replace the full string (e.g., the complete webhook URL) rather than substrings that appear in innocent contexts (e.g., a username that's also part of standard paths).
+
+## Push-Forbidden Archive Repos
+
+Some repos on disk are deliberately local-only archives — pre-sanitization backups, forensic copies, or experimental trees whose history must never reach a remote. These repos often carry `CLAUDE.md` annotations like "NEVER PUSH" or "local-only archive." But the `origin` remote may still be configured and point at a live GitHub repo.
+
+**The trap (2026-07-11, S218):** A session read a suggestion mentioning "3 copies of a file" and applied a fix to all three repos — including the local archive. The push was rejected only because another push from the real checkout had already used the same branch name seconds earlier, a coincidence that prevented the archive's pre-sanitization history (30+ commits with unsanitized secrets) from reaching the public repo. No safety mechanism stopped it.
+
+**Required when designating a repo as push-forbidden:**
+```bash
+# Immediately after writing "NEVER PUSH" in CLAUDE.md:
+git remote remove origin
+# Verify — should produce no output:
+git remote -v
+```
+
+**Before touching any unfamiliar repo:**
+```bash
+grep -i "never push\|push.forbidden\|archive\|local.only" CLAUDE.md
+# If any match: do NOT push from this repo under any circumstances
+```
+
+Disconnecting but keeping the remote name is not sufficient — a remote still listed in `git remote -v` creates false confidence. Remove it entirely so any accidental push fails immediately with "no remote configured" rather than silently landing on a live repo.
 
 ## When a Secret is Accidentally Committed
 

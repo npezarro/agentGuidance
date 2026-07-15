@@ -46,7 +46,7 @@ If you intentionally skip deploying (e.g., batching changes), note it in context
 3. `pm2 logs <process> --lines 20` to scan for errors, uncaught exceptions, or crash loops in the first 30 seconds.
 4. If the app has authentication, verify the sign-in flow works end-to-end.
 5. **Test the actual user-facing behavior yourself** before asking the user to verify. Use the browser agent for interactive pages, `curl` for APIs, or direct tool invocation. Never declare "done, try it out" without verifying it works.
-   - For Next.js apps: curl a real page (not just the health endpoint) and check for the error boundary pattern (`This page could not be found` or `couldn't load`). The health API can return 200 while every page is broken due to stale chunks.
+   - For Next.js apps: curl a real page (not just the health endpoint) and check for the error boundary pattern (`couldn't load` or `application error`). The health API can return 200 while every page is broken due to stale chunks. **Do NOT grep for "could not be found"** — Next.js RSC payloads embed the 404 handler template inside `<script>` tags, causing false positives even on healthy pages. Strip script tags first: `curl -sL <url> | sed 's/<script[^>]*>.*<\/script>//g' | grep -qi "couldn't load\|application error"`.
 6. Update `context.md` with deployment status and any issues observed.
 7. If any check fails, **do not move on**. Diagnose and fix before declaring the deploy complete.
 
@@ -80,6 +80,18 @@ npm runs `postbuild` automatically after `build`. This pattern is used in financ
 
 **Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
 
+### Static copy collision on re-deploy
+
+When deploying via `cp -r .next/static .next/standalone/.next/` on the VM, the copy **fails with a "same file" error** if a symlink already exists at `.next/standalone/.next/static` from a previous deploy. Remove the target first:
+
+```bash
+ssh "$VM" "rm -rf $VM_DIR/.next/standalone/.next/static && cp -r $VM_DIR/.next/static $VM_DIR/.next/standalone/.next/"
+```
+
+A symlink at the copy destination (from an earlier postbuild or hand-placed) causes `cp -r` to write into the symlink's target directory, not replace it — or fail outright. `rm -rf` before the copy is idempotent: it harmlessly no-ops if nothing is there.
+
+Source: finance-tracker `dfb291b` (2026-06-26).
+
 ## GitHub Pages Static Export (No-Server Alternative)
 
 For apps that don't require SSR, auth, or server-side API routes, `output: 'export'` produces a static site that can be hosted on GitHub Pages for free — no VM, no PM2, no Apache config needed.
@@ -92,11 +104,13 @@ const nextConfig: NextConfig = {
 };
 ```
 
+**CRITICAL: GitHub Pages requires a PUBLIC repo on free GitHub plan.** Making a repo private immediately breaks GitHub Pages — the site goes 404. If a site must be private (e.g., it embeds the production domain or sensitive content), host on VM Apache with `Alias /path /var/www/dir` instead. Source: netflix-social-platform (2026-07-01) went private for panel prep → GitHub Pages broke → switched to Apache Alias at `/var/www/games-social`.
+
 **When to use GitHub Pages over VM PM2:**
-- Pure demo/portfolio/static-content apps
+- Pure demo/portfolio/static-content apps with a PUBLIC repo
 - No server-side API routes, database, or OAuth
 - No need for Apache ProxyPass config
-- App is public (no auth gate needed)
+- App is public (no auth gate needed) AND repo can stay public
 
 **When to stay on VM PM2:**
 - Needs dynamic API routes, SQLite, or server-side rendering
@@ -104,7 +118,18 @@ const nextConfig: NextConfig = {
 - Needs a Docker bridge or external service integration
 - Needs Discord notifications, webhooks, or cron jobs
 
-**Deploy pattern:** Build locally → commit `out/` or let GitHub Actions build → GitHub Pages serves from the branch. Source: netflix-social (commit 928a1d7, 2026-05).
+**Deploy pattern (GitHub Actions):** Push a workflow that runs `next build` and uploads the `out/` artifact to gh-pages. Requires `contents: write` permission on the Actions token — if the repo lacks it, use the manual pattern below.
+
+**Deploy pattern (manual gh-pages branch, no Actions):** `next build` with `output: 'export'` **wipes `out/` entirely at the start of every build**, deleting any `.git` you initialized there. Never `git init` inside `out/` expecting it to survive the next build. Instead use a temp dir outside the project:
+```bash
+npm run build
+rm -rf /tmp/deploy-staging && cp -r out /tmp/deploy-staging
+cd /tmp/deploy-staging && touch .nojekyll
+git init -q && git checkout -q -b gh-pages && git add -A
+git commit -q -m "Deploy $(date -u +%FT%TZ)"
+git push -f <repo-url> HEAD:gh-pages
+```
+Source: netflix-social-platform deploy.sh (commit 62e4dd4, 2026-06-30 — learned after the initial attempt had its `out/.git` wiped by `next build`).
 
 ## Next.js Standalone: Missing Packages (`serverExternalPackages`)
 
@@ -181,6 +206,20 @@ RedirectMatch ^/app$ /app/
 This pattern affected ClaudeNet, Epic Auth, and other services after adding an OIDC-protected project index page (2026-04-28). The `/manchu` route already had this redirect, which is why it worked while others broke.
 
 **When adding a new ProxyPass directive**, always check whether it uses trailing slashes and add the `RedirectMatch` if so.
+
+## Apache Lowercase Rule Breaks Vite SPA Asset Hashes
+
+The production VM's Apache vhost has a global rule that 301-redirects any URL with uppercase letters to its lowercase form (`RewriteMap lc int:tolower` / `RewriteRule ^(.*)$ ${lc:$1} [R=301,L]`). Vite builds emit mixed-case content hashes (e.g., `index-BqcsSXEO.js`); every JS/CSS asset 301s to a lowercase 404, so the page HTML returns 200 but the app never boots. Next.js `/_next/static/` hashes happen to be lowercase, so Next.js apps deployed on the same server are unaffected — only new Vite-based SPAs hit this.
+
+**Symptom:** New SPA "doesn't load / loads forever" after deploy. Page HTML returns 200 but every JS/CSS asset 301s → 404.
+
+**Fix:** Add an exemption for the new app's subpath before the lowercase rule in the Apache vhost:
+```apache
+RewriteCond %{REQUEST_URI} !^/my-spa-path
+```
+
+**Cloudflare cache gotcha:** The 301 response is cached at the CDN edge (~4h, `max-age=14400`). The CDN API token lacks Cache-Purge scope, so after adding the exemption you must either wait ~4h or force a new asset hash by triggering a rebuild with a minor change. Diagnosed 2026-06-23.
+
 ## .env Protection During rsync Deploys
 
 When using `rsync --delete` to deploy, **always `--exclude '.env'`**. The `--delete` flag removes server-side files not in the source, which will overwrite the production `.env` (with its production-specific values like database ports, API endpoints) with local dev config.
@@ -195,7 +234,48 @@ rsync -az --delete ./dist/ "$DEPLOY_TARGET"
 
 **Post-deploy .env integrity check:** After rsync, verify critical env vars on the server still have production values. A silent overwrite causes hard-to-diagnose failures (e.g., wrong database port, wrong API base URL) that look like application bugs.
 
+**Also exclude SQLite WAL files.** Apps using `better-sqlite3` or any SQLite WAL-mode database write live WAL/SHM files alongside the database file. `rsync --delete` will wipe these mid-transaction if they're not excluded:
+
+```bash
+rsync -az --delete \
+  --exclude '.env' \
+  --exclude '*.db' \
+  --exclude '*.db-wal' \
+  --exclude '*.db-shm' \
+  --exclude 'node_modules' \
+  .next/ "$DEPLOY_TARGET/.next/"
+```
+
+**Why:** A deploy that rsync'd without WAL exclusions wiped the live WAL file mid-write, corrupting the database state and requiring a restart to recover. Database files and WAL/SHM sidecars must always be excluded from rsync --delete deploys.
+
 **Why this matters:** A real deploy overwrote a production database port with a local dev port, causing all connections to fail silently. The root cause was `rsync --delete` without `--exclude .env`.
+
+## Pre-Deploy Backup + Automatic Rollback for rsync Deploys
+
+For artifact-only (non-git) deployments using rsync, take a server-side backup of the current build before deploying and roll back automatically if the health check fails.
+
+```bash
+# 1. Backup current build on the VM before rsync
+ssh "$VM" "cp -r .next .next-backup && cp server.js server.js.bak"
+
+# 2. rsync new build (with WAL + .env exclusions)
+rsync -az --delete --exclude '.env' --exclude '*.db' --exclude '*.db-wal' --exclude '*.db-shm' \
+  .next/ "$VM_PATH/.next/"
+scp .next/standalone/server.js "$VM:$VM_PATH/server.js"
+
+# 3. Restart and health check
+ssh "$VM" "pm2 restart $APP && sleep 4 && curl -sf http://localhost:$PORT/api/health"
+
+# 4. On failure, rollback and exit 1
+if [ $? -ne 0 ]; then
+  ssh "$VM" "mv .next-backup .next && mv server.js.bak server.js && pm2 restart $APP"
+  exit 1
+fi
+```
+
+**When to use:** Any Next.js standalone app deployed via rsync to a non-git VM directory (the "flat-layout" pattern where PM2 runs `node ./server.js` from the app root, not from `.next/standalone/`). Apps deployed via `git pull + npm run build` on the VM use git as the rollback mechanism instead.
+
+**Flat-layout note:** When PM2 is configured to run `node ./server.js` from the project root (not `.next/standalone/server.js`), deploying only `.next/` leaves a stale root `server.js`. Always `scp .next/standalone/server.js` back to the root as a separate step.
 
 ## Concurrent Bot Deploys Race Against PM2 — Serialize with flock
 
@@ -225,6 +305,35 @@ fi
 **Repos with this pattern:** runeval (`deploy.sh` commit `810573e` + `23e8036`), health-hub (`deploy.sh` commit `4a031fe`). Apply to any Next.js standalone app whose fix-checker is active.
 
 **Env knobs:** `DEPLOY_LOCK_WAIT=0` to fail fast, `DEPLOY_LOCK_BYPASS=1` as a break-glass escape hatch (coordinate before using).
+
+## Webhook-Triggered Deploy: Timeout and In-Flight Dedup
+
+When a webhook handler spawns a build process via `execFile`/`child_process.spawn`, two failure modes arise:
+
+**1. Timeout too short for the actual build.** Next.js builds on the VM take 5-10 minutes. A 120s `execFile` timeout SIGTERMs the build mid-type-check, leaving `.next/` gutted (no `standalone/`, no `BUILD_ID`). PM2 keeps serving HTML from open file handles while every static chunk 404s (or worse: Cloudflare caches the 500s under immutable headers). **Fix:** Set `execFile` timeout to at least 900,000ms (15 min) for any build that includes `next build`.
+
+**2. Burst webhook events trigger concurrent builds for the same target.** PR-merged + branch-delete push events arrive within seconds of each other. Without dedup, two builds run in the same directory simultaneously, producing the same gutted-artifact failure mode as the flock section above. **Fix:** Track in-flight deploys in a `Set` keyed by target name; skip (and log) any trigger whose target is already building:
+
+```js
+const deploysInFlight = new Set();
+
+async function triggerDeploy(target) {
+  if (deploysInFlight.has(target)) {
+    log(`deploy for ${target} already running — skipping duplicate trigger`);
+    return;
+  }
+  deploysInFlight.add(target);
+  try {
+    await execFile('deploy.sh', [target], { timeout: 900_000 });
+  } finally {
+    deploysInFlight.delete(target);
+  }
+}
+```
+
+**Source:** claude-auto-merger `e98b4a8` (2026-06-12), which hardened the deploy pipeline after a doc-sync PR fired two triggers within 2s and a 120s timeout killed the build mid-type-check.
+
+**Diagnosing stuck Cloudflare-cached 500s after a bad deploy:** If static assets return errors even after a successful re-deploy, Cloudflare may have cached a 500 response under `cache-control: immutable` headers. Diagnose with `curl -sI <asset-url>` — look for `cf-cache-status: HIT` on a 4xx/5xx. Recovery: add a temporary bypass-cache rule for the affected path prefix (see `cloudflare-site-setup` skill for the API commands). The bypass rule forces CF to re-fetch from origin on every request. Remove it once the 500 is no longer live. If your CF API token lacks `Cache Purge:Purge` scope, this bypass-rule workaround is the only programmatic option (dashboard only for adding purge scope). Source: 2026-06-14 runeval incident; documented in `cloudflare-site-setup/SKILL.md`.
 
 ## Concurrent rsyncs Silently Drop Subdirectories
 
@@ -308,19 +417,179 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 - Some VM app dirs are NON-GIT, artifact-only (`.next`+`node_modules`+`package.json`) — deploy via /staging artifact promotion (rsync `.next`), sync loose scripts via scp.
 - Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
 
+**WSL-to-VM artifact-only deploy sequence (stop → rsync → patch → symlink → start):**
+
+For apps where the VM dir is artifact-only (no git repo), use this sequence to avoid file conflicts, appDir mismatch, and start.sh guard failures:
+
+1. Build locally: `npm run build`
+2. Stop PM2 BEFORE copying: `ssh $VM "pm2 stop <app>"` — avoids file-in-use conflicts during rsync
+3. Rsync standalone and static dirs:
+   ```bash
+   rsync -az .next/standalone/ "$VM:$REMOTE_DIR/.next/standalone/"
+   rsync -az .next/static/ "$VM:$REMOTE_DIR/.next/static/"
+   ```
+4. Patch `appDir` in `required-server-files.json` to the production path (both root-level copy and the copy inside `.next/standalone/`). Failure causes Next.js to detect a build-dir mismatch and trigger an unwanted on-VM rebuild at next start.
+5. Create a `node_modules` symlink to satisfy `start.sh`'s npm-install guard:
+   ```bash
+   ssh $VM "ln -sfn $REMOTE_DIR/.next/standalone/node_modules $REMOTE_DIR/node_modules"
+   ```
+   Without this, `start.sh` finds no `node_modules/` at `$REMOTE_DIR/` and attempts `npm install` — which fails (no `package-lock.json` in an artifact-only dir). The symlink points to the already-bundled modules inside `.next/standalone/`.
+6. Start with `pm2 start` (NOT `pm2 restart`): after `pm2 stop`, the process is in `stopped` state; `pm2 restart` on a stopped process may not bring it online.
+
+Source: travel-assistant standalone deploy script (commit 1122624, 2026-06-27).
+
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
 
-## VM SSH: don't trip fail2ban with reconnect bursts
+## Next.js Standalone: Flat VM Layout vs Nested Dev Layout in start.sh
 
-**Incident 2026-06-30 (a PM2 service deploy):** A burst of short SSH connections to the production VM, plus one deploy SSH killed mid-run and immediately retried, tripped the VM's fail2ban jail on port 22. Result: a ~10-minute DROP ban on the source IP. Roughly 5 rapid or aborted connections are enough.
+When deploying a Next.js standalone build, `rsync` typically copies the **contents** of `.next/standalone/` to the target directory (e.g., `/var/www/app/`). This produces a **flat layout** where `server.js` is at the root:
 
-**The tell (so you diagnose it in seconds, not minutes):**
-- SSH connect **times out** (not "connection refused") and ICMP/ping is blocked.
-- The production site still returns **HTTP 200 via the CDN**, so the box and web tier are fine; only your SSH is banned.
-- Direct-to-origin ports 80/443 are *always* firewalled to CDN-only, so the **only new signal is port 22 timing out** while HTTP works.
+```
+/var/www/app/
+  server.js           ← direct (flat deploy)
+  .next/
+    server/
+    ...
+```
 
-**Recovery:** stop all SSH attempts (each retry re-arms/extends the ban), wait 10-12 minutes, then make ONE clean connection.
+A dev clone has the **nested layout** where the standalone dir is still under `.next/`:
+
+```
+<project>/
+  .next/
+    standalone/
+      server.js       ← nested (local dev)
+      .next/
+        server/
+```
+
+If `start.sh` only checks for `.next/standalone/server.js` (nested), it will not find the file in a flat VM deploy and fall through to `npm run build` — which fails on the VM if the `next` CLI isn't installed, or overwrites a working build unnecessarily.
+
+**Fix — detect layout in start.sh:**
+```bash
+if [ -f "./server.js" ] && [ -d "./.next/server" ]; then
+  # Flat VM deploy: standalone contents rsynced to this dir
+  exec node ./server.js
+elif [ -f "./.next/standalone/server.js" ]; then
+  # Nested dev layout
+  exec node ./.next/standalone/server.js
+else
+  echo "No server.js found in flat or nested location — build may be missing"; exit 1
+fi
+```
+
+**Why the layout differs:** `rsync -az .next/standalone/ /var/www/app/` (trailing slash on source) copies the directory's contents rather than the directory itself, flattening the path. `rsync -az .next/standalone /var/www/app/` (no trailing slash) would nest it. The flat rsync is the common idiom in deploy scripts here.
+
+Source: employ `start.sh` commit `1d369cc` (2026-06-14) — start.sh was always triggering `npm run build` on the VM because it only checked `.next/standalone/server.js`; flat rsync had placed `server.js` at root.
+
+## Auto-Deploy Wrapper Bootstrap Problem
+
+When you add a `git pull --ff-only` at the top of a cron or automated script to enable self-updating, the **already-deployed copy** on the remote machine does not have that wrapper yet. Since the remote is pinned at the pre-wrapper commit, it cannot self-pull the wrapper and stays stuck indefinitely.
+
+**The trap:** "Fixes will auto-deploy after I push the wrapper" is only true for the NEXT invocation after the wrapper is manually bootstrapped. Until a human runs `git pull` on the remote, the script runs the old version on every cron tick regardless of what you push.
+
+**Arc-prize-2026 incident (2026-06-14 to 06-23):** PC2's overnight runner was pinned at `04f00fa` (an unstable PyTorch config). The auto-pull wrapper and the revert were committed after that pin — so PC2 had no mechanism to receive them. Every overnight run from Jun 14–23 (9 days, 0/60 results each) was wasted. A one-time manual `git pull` on PC2 on 2026-06-23 broke the loop.
+
+**Rule:** When pushing a self-update wrapper to an existing deployed script, immediately follow up with a manual deploy to all remote machines. Add it to your deploy checklist: "verify remote is now running the wrapper version before trusting auto-deploy."
+
+**Corollary:** never claim "future changes will auto-deploy" in handoff docs unless the remote has already received and is running the auto-pull wrapper.
+
+## `npm install --production=false` in VM Build Scripts
+
+When a VM-side deploy script runs `npm install` inside a directory where `NODE_ENV=production` is set (common in PM2 ecosystem configs), npm skips `devDependencies`. Build tooling (`next`, `typescript`, `esbuild`, etc.) lives in devDeps and is absent after a production install — the subsequent `npm run build` fails.
+
+**Fix:** Always pass `--production=false` to npm install in build scripts, regardless of environment:
+
+```bash
+# In vm-deploy.sh or similar on-VM build scripts:
+npm install --production=false   # always install devDeps — they're needed for the build
+npx prisma generate              # if applicable
+npm run build
+```
+
+**Why the default is wrong here:** `NODE_ENV=production` is correct for the running app but wrong for the install-and-build step. A bare `npm install` in a production environment is a footgun: it silently omits the tools you need, with an error that looks like "next: command not found" rather than "missing devDependency."
+
+Source: finance-tracker `scripts/vm-deploy.sh` commit `a78a06b` (2026-06-14).
+
+## start.sh: Always `cd` to Script Directory First
+
+At the top of every `start.sh`, do `cd "$(dirname "$0")"` before any path operations:
+
+```bash
+#!/bin/bash
+cd "$(dirname "$0")"  # all subsequent paths are relative to the script's dir
+[ -f .env ] && source .env
+```
+
+Without this, if PM2 or a cron job invokes `start.sh` from a different working directory, every relative path (`./employ.db`, `./.next/standalone/`, `$(pwd)`) silently resolves to the wrong location. `$(dirname "$0")` is the script's own dir regardless of the caller's `$PWD`. Also use `$(pwd)` (not the capture `CURRENT_DIR=$(cd "$(dirname "$0")" && pwd)`) since after the leading `cd`, `$(pwd)` is already correct.
+
+Source: employ commit `207d378` (2026-06-14).
+
+## Bash Scripts: Use `node -e` for JSON Parsing, Not sed/grep
+
+When a shell script needs to extract a field from a JSON file, use `node -e` instead of `sed`/`grep`:
+
+```bash
+# Fragile — breaks on whitespace variations, nested keys, or multiline values
+MANIFEST_DIR=$(grep '"appDir":' "$MANIFEST" | sed 's/.*"appDir": "\([^"]*\)".*/\1/')
+
+# Robust — handles any valid JSON, fails cleanly on error
+MANIFEST_DIR=$(node -e "try { const m=require('$MANIFEST'); console.log(m.appDir || '') } catch(e) { process.exit(1) }" 2>/dev/null)
+```
+
+Check the exit code (`$?`) after the `node -e` call: exit 1 means the file was missing or unparseable. The `try/catch` ensures the process exits cleanly rather than printing a stack trace to stdout that gets captured as the value.
+
+**When to use:** Any bash script that reads a JSON build artifact (`.next/required-server-files.json`, `package.json`, health endpoint response) to make a branching decision. `sed`/`grep` on JSON is fragile and fails silently on minor format differences.
+
+Source: employ commit `207d378` (2026-06-14).
+
+## Next.js Flat Layout — Employ Deploy Model Exception
+
+Most VM-hosted Next.js apps use the standard **nested standalone layout**: PM2 runs `node .next/standalone/server.js` from inside `.next/standalone/` (or equivalent `start.sh`).
+
+**Employ uses a flat layout:** PM2 runs `node server.js` from the app root. `server.js` and `start.sh` live at the root alongside `.next/`. The repo's deploy script copies standalone artifacts flat to the app root rather than into a `standalone/` subdir.
+
+**Staging-to-prod promotion gotcha:** When the `/staging` skill promotes employ to production, the rsync must include root-level `server.js` and `start.sh` in addition to `.next/`. Promoting only `.next/` leaves stale root files, causing PM2 to run outdated code silently. Source: employ `claude-skills` staging updates (commits `1a20372`, `a2d5c7c`, 2026-06-28).
+
+**Staging port assignments — do not reuse ports already bound by running services:**
+
+| App | Staging Port | Conflict to avoid |
+|-----|-------------|-------------------|
+| shopper | 3090 | — |
+| foodie | 3094 | — |
+| travel | 3116 | 3112 is browser-logs |
+| employ | 3116 | 3112 is browser-logs |
+
+Before assigning a new staging port, check existing PM2 processes and `~/repos/scripts/` for bound ports.
+
+## Next.js Behind Reverse Proxy: Use `AUTH_URL` for Generated URLs, Not `req.nextUrl.origin`
+
+In Next.js apps served behind Apache `ProxyPass` (shopper, foodie, travel-assistant), `req.nextUrl.origin` resolves to the **internal server address** (e.g., `http://127.0.0.1:3009`), not the public domain. Any URL built from `req.nextUrl.origin` — share links, email links, webhook callbacks — will be broken for the end user.
+
+**Fix:** Use `process.env.AUTH_URL` as the base for all generated URLs. `AUTH_URL` is already set to the correct public base URL in each app's `.env`.
+
+```ts
+// WRONG — returns internal address behind proxy
+const shareUrl = `${req.nextUrl.origin}/app/share/${token}`;
+
+// CORRECT — uses the public base from env
+const baseUrl = process.env.AUTH_URL || "https://your-domain.com";
+const shareUrl = `${baseUrl}/app/share/${token}`;
+```
+
+**Why:** The same class of bug hit three Next.js apps simultaneously (2026-07-02). `req.nextUrl.origin` was used after a prior refactor that stopped using `AUTH_URL` as the base. `req.url` and `headers.get('host')` have the same problem behind a non-HTTPS proxy.
+
+**Self-review trigger:** Any route handler that builds a URL for external consumption (share link, redirect, email, webhook) must use an env-configured base URL, not anything derived from the request object.
+
+## VM SSH — Rapid Bursts Trip fail2ban (Port 22 Banned ~10 min)
+
+**Never fire a burst of short SSH connections to the GCP VM, and never kill a deploy SSH session mid-run then immediately retry.** The VM runs fail2ban on port 22; roughly 5 rapid or aborted connections from the same source IP trigger a ~10 minute DROP ban.
+
+**Symptom:** SSH connect TIMES OUT (not "connection refused"). ICMP is also blocked. The production web tier still returns HTTP 200 through Cloudflare (CDN serves cached responses), so the site looks healthy — the only new signal is port 22 timing out. Direct-to-origin ports 80/443 are always firewalled to Cloudflare-only.
+
+**Recovery:** Stop all SSH attempts immediately — each retry re-extends the ban. Wait 10-12 minutes, then make ONE clean connection.
 
 **Prevention:**
-- Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
-- Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
+- Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+).
+- Avoid trailing `pm2 jlist` / Python JSON parsing that can hang the session near the timeout boundary and tempt you into a kill+retry loop.
+- If a deploy SSH session hangs, wait for the natural timeout rather than killing and retrying immediately.

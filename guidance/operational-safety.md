@@ -227,6 +227,22 @@ fi
 
 **Rule:** Never do unbounded retries on a consent button. If two attempts both produce no callback, escalate via Discord alert — the problem is something other than a hydration race (rate limit, broken page, wrong selector).
 
+### Claude.ai Auth-Age Enforcement — All Bridges Fail Simultaneously
+
+**Symptom:** All alt-account bridge relogins (`claude-auto-relogin-container.sh`) fail on the same night with `callback tab not found` (exit 7). The browser session IS active (`claude.ai/new` shows the alt account logged in), but clicking Authorize redirects to `claude.ai/login?reauth=1&from=logout` instead of the OAuth callback.
+
+**Root cause:** claude.ai enforces a **max auth-age** — the elapsed time since the account last performed a real sign-in — in addition to activity-age, before granting the `claude_code`/`user:inference` OAuth scopes. `browser-session-keepalive.sh` slides the activity clock but cannot reset the auth-age clock. When auth-age exceeds the threshold, the consent flow forces a full logout regardless of session freshness.
+
+**Differentiator from the hydration race (above):** All 6 bridge containers fail on the same night. The hydration race is a single-container, timing-based event that a retry resolves. Simultaneous failure across all containers is diagnostic of the auth-age pattern.
+
+**Why automation cannot self-heal:** After the forced logout, the OAuth grant page lands on "Continue with Google" — whose popup Chrome blocks for extension-synthetic clicks (requires a real user-activation gesture). The script cannot complete the re-login loop unattended.
+
+**Recovery:** One-time manual action — sign the alt account (`nickthepezant@gmail.com`) out of and back into the controlling Brave browser. The browser session then satisfies the auth-age check and nightly relogins resume.
+
+**No user-facing impact during the failure window:** Bridge containers keep running. Their existing access tokens auto-refresh via the refresh-token OAuth flow. Only the nightly refresh-token rotation is broken, not the live inference path.
+
+**Operational rule:** When `claude-auto-relogin-container.sh` fires a final-failure alert, check whether the alert message says "alt session logged out at grant time". If it does, trigger manual Brave re-sign-in — do NOT attempt automated recovery, retry loops, or container restarts. Source: `scripts` repo commit d499c59 (2026-07-07) — improved error classification and actionable alert text.
+
 ### Claude CLI Binary Path on VM
 
 The Claude CLI binary is at `/usr/bin/claude` on the VM — **not** `/usr/local/bin/claude`. Using the wrong fallback path causes silent `[Errno 2] No such file or directory` failures that drop all AI processing without any obvious error in service logs.
@@ -430,6 +446,49 @@ logger.info(f"Claude fix complete (cost: ${cost:.4f})")
 ```
 
 Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25).
+
+## Gemini CLI Free GCA Tier Deprecated — `gemini -p` IneligibleTierError (2026-06-24)
+
+The free Gemini Code Assist for individuals auth (`GOOGLE_GENAI_USE_GCA=true`) is dead as of 2026-06-24. Any `gemini` CLI invocation on this account now throws:
+
+```
+IneligibleTierError: This client is no longer supported for Gemini Code Assist
+for individuals. To continue using Gemini, please migrate to the Antigravity
+suite of products: https://antigravity.google
+```
+
+This failure occurs in `_doSetupUser` before the first request — it cannot be suppressed with `--skip-trust`, `--model`, or cwd changes. It is account-wide.
+
+**Silent impact on automated runners:** Every consumer that shells out to `gemini -p` now silently errors (the process exits non-zero, but cron wrappers that ignore exit codes never alert):
+- trading-agent / auto-dev / fix-checker Gemini shadow runners
+- `gemini/fix-*` PR generator in autonomousDev-private
+- any `gemini --approval-mode yolo` offload task
+
+The "direct Gemini fix" fallback path referenced in this file (line 183) is also broken under the free GCA account.
+
+**Mitigation:** Until migrated to a paid `GEMINI_API_KEY` or the Antigravity product, treat `gemini` CLI as unavailable. Fall back to Claude (alt-account bridge) or Codex CLI for shadow runners. Before relying on any `gemini -p` call in automation, probe with `gemini -p "ok?" 2>&1` — `IneligibleTierError` confirms the path is dead.
+
+## Shared Poller Resource Gates Must Be Scoped to the Executing Machine
+
+When a poller or executor dispatches jobs to BOTH local and remote workers (e.g. `runClaude` on the VM, `runClaudeRemote` via SSH to a local worker), any resource gate based on the local machine's resources (RAM, CPU, disk) must NOT fire for remote jobs — those jobs consume zero local resources.
+
+**Real case:** A multi-worker Discord-bot dispatcher had ONE memory watchdog for all jobs: when VM `MemAvailable < 100MB`, it killed the tracked PID. For remote SSH jobs the tracked PID was only the SSH client on the VM; the real Claude ran on the local worker using zero VM memory. VM memory pressure was killing healthy offloaded sessions. Symptom: log showed "Memory watchdog: only 93MB available — killing claude process PID" while dispatch counts showed only `runClaudeRemote` dispatches and zero VM-local `runClaude` dispatches.
+
+**Fix pattern:** Add a `skipMemoryWatchdog` (or equivalent) flag to the polling function. Set it to `true` for remote-dispatched jobs. Timeout and output-size watchdogs can still apply to remote jobs (they guard a hung SSH or runaway output regardless of location).
+
+**Rule of thumb when adding any resource guard to a shared poller:** Ask "Does this resource live on the machine actually running the session?" If the job is remote, VM-local RSS/mem/CPU is irrelevant. Source: commit 716e149 (2026-06-29).
+
+## A Repo's Main Checkout Must Never Be Left on a Merged Feature Branch
+
+**Symptom:** `~/repos/<repo>` (the primary working copy, not a worktree) is checked out on a feature branch whose PR has already been merged on GitHub. The local branch is stranded and local `main`/`production` silently falls behind `origin/main` — sometimes by several commits — with no error surfaced anywhere.
+
+**Why this is worse than an ordinary stale branch:** SessionStart hooks, CLAUDE.md loads, and guidance-file reads for every concurrent session on that machine execute against whatever is checked out in the main checkout. A stranded branch means every other session (interactive or automated) silently reads outdated or divergent guidance/rules — the exact failure mode the learnings-pass WORKTREE RULE was written to prevent for the learning-agent's own commits. This incident (2026-07-11, run #903) showed the same failure can originate from **any** session that does a plain `git checkout <branch>` in the main checkout to open a PR (rather than a worktree) and never switches back after the merge.
+
+**Detection:** In any repo's main checkout, `git branch --show-current` should always equal that repo's default branch (`main` or `production`) except for the brief window a human is actively working on a real feature. If it isn't, check whether the current branch's PR is already merged (`gh pr list --head <branch> --state all`) — if so, the checkout was simply never returned home.
+
+**Fix:** Verify the current branch is a strict subset of `origin/<default>` first (`git diff origin/main HEAD --stat` should be empty or default-only), then `git checkout main && git merge --ff-only origin/main && git branch -d <stale-branch>`. Do not force anything — if the diff isn't empty, treat it as in-progress human work per the git-safety protocol (stash/investigate, don't discard).
+
+**Prevention:** The existing WORKTREE RULE (learnings-pass/prompt.md) already covers learning-agent's own commits. Extend the same discipline to any session opening a PR from a main checkout: `git -C ~/repos/<repo> worktree add /tmp/<label> -b <branch>`, work there, and leave the main checkout untouched on its default branch throughout.
 
 ## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
 

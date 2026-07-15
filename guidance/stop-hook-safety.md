@@ -20,7 +20,7 @@ Every stop hook falls into one of three tiers based on its risk profile:
 - No Claude invocation, so no recursion risk
 - Timeout: 15-30s
 - Risk: can delay session exit, but can't loop
-- Examples: `verify-deploy.sh`, `check-unpushed.sh`
+- Examples: `verify-deploy.sh`, `check-unpushed.sh`, `report-evidence-audit.sh` (bounces a final message that dangles a "shown above" reference or claims a green suite with no pasted output; doc: `guidance/opus-fable-parity.md`)
 
 ### Tier 3: Claude-invoking (DANGEROUS)
 - Session scoring, analysis, any LLM-powered post-processing

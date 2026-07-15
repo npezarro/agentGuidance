@@ -164,6 +164,9 @@ git bisect good <hash>  # this commit was working
   env: { NODE_OPTIONS: '--max-old-space-size=1024' }
   ```
   Also raise `max_memory_restart` to match (e.g., `1G`). Source: finance-tracker (2026-05-15).
+- **`datetime('now')` strings parse as LOCAL time in `new Date()`, not UTC.** SQLite stores UTC as `"YYYY-MM-DD HH:MM:SS"` (space-separated, no `T`/`Z`). The ECMAScript Date parser treats that non-ISO form as local time, so rendering a stored timestamp via `new Date(created_at)` silently shifts it by the viewer's UTC offset (7-8h for Pacific users), and can shift the displayed date near UTC midnight. This bites both Prisma-on-SQLite and raw `better-sqlite3` apps alike — it's a JS Date-parsing bug, not a Prisma one.
+  - **Fix**: normalize before parsing — strict-match `/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/` and rewrite to `` `${date}T${time}Z` ``; pass already-ISO strings through unchanged. SQL-side comparisons like `date(created_at) = utcToday` are unaffected (both sides stay UTC).
+  - Source: foodie `LocalTimestamp.tsx` (PR #48, 2026-07-06) fed raw DB strings straight to `new Date()` at 3 call sites. Verified: `new Date('2026-07-06 12:00:00').toISOString()` → `19:00Z` on a PDT host. shopper, travel-assistant, and employ carry identical `LocalTimestamp.tsx` clones with the same bug (grep-confirmed, not yet ported).
 
 ### 10. Prisma + PostgreSQL: Use pg.Pool, Not Raw Connection String
 
@@ -196,7 +199,38 @@ Fixes:
 
 Source: fb-marketplace-poster consolidation (2026-05-27) — main.js readline confirm + SDK key dependency forced the Discord agent into a fallback prompt that skipped shopper pricing. See `privateContext/deliverables/closeouts/2026-05-27-fbm-shopper-resale-pricing.md`.
 
-### 12. Reading a SQLite DB Another Process Is Actively Writing (WAL Mode)
+### 12. Browser CDP Timeout Recovery — Kill + Restart Pattern (2026-06-10)
+
+When a service calls a browser-agent CLI and receives "Timeout waiting for browser response", the Chrome/CDP session is stuck (not just slow). Recovery requires:
+
+1. Detect the specific timeout error string in your error handler
+2. Kill all chrome/chromium processes: `pkill -f chrome || true`
+3. PM2-restart the browser-agent service: `pm2 restart browser-agent`
+4. Implement a startup connectivity check that triggers recovery *before* the main task:
+
+```js
+async function checkBrowserConnectivity() {
+  try {
+    await runBrowserCLI(['status'], { timeout: 10000 });
+  } catch (err) {
+    if (err.message.includes('Timeout waiting for browser response')) {
+      await restartBrowserSystem();
+    }
+  }
+}
+
+async function restartBrowserSystem() {
+  execSync('pkill -f chrome || true');
+  execSync('pm2 restart browser-agent');
+  await new Promise(resolve => setTimeout(resolve, 3000)); // wait for startup
+}
+```
+
+Also increase the base CLI timeout from 60s to 120s to avoid false-positive timeouts on slow page loads (separate from CDP hangs).
+
+Source: reddit-referral-poster commit 48af749 (2026-06-10) — CDP sessions were silently hanging after connectivity loss; retries piled up with no recovery.
+
+### 13. Reading a SQLite DB Another Process Is Actively Writing (WAL Mode)
 
 When polling a SQLite database that a running app writes to (e.g. an Electron app's `*.sqlite` in WAL mode), a `mode=ro` / `SQLITE_OPEN_READONLY` connection can return a **stale snapshot** — it reads committed WAL frames as of some earlier point and doesn't advance, even across freshly-spawned reader processes. Classic symptom: "it caught the first change but never the next ones," while the process is alive and manual one-off queries look current.
 

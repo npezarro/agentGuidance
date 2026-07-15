@@ -118,6 +118,7 @@ Each reviewer agent should:
 | `head -c N` before parsing structured output | Silent data loss — truncation drops blocks downstream code depends on | Size limit to max expected output, or extract specific fields first |
 | `res.json({ error: err.message })` | Information disclosure — leaks paths, DB strings, stack traces | Return generic message, log details server-side (see below) |
 | `child_process.exec(cmd + userInput)` | Command injection via string interpolation | Use `execFile(binary, [args])` with separate args array (see below) |
+| `parseInt(queryParam)` without `\|\| default` fed to Prisma `skip`/`take` | `parseInt('abc')` is `NaN`; `Math.max(1, NaN)` stays `NaN`; Prisma `skip: NaN` → 500 | `Math.max(1, parseInt(String(raw ?? '1')) \|\| 1)` — the `\|\| 1` catches `NaN`. Define once in a shared helper; hand-rolling the same logic in both an API lib and SSR page components guarantees they diverge (botlink PR #199) |
 
 ## Error Detail Leak Prevention
 
@@ -159,6 +160,7 @@ execFile('open', [url]);
 | `path.join(base, userInput)` unsanitized | Path traversal via `../` sequences | Strip `..`, leading `/`, and non-alphanumeric chars from user path segments |
 | `Infinity` in API responses | `JSON.stringify(Infinity)` === `"null"`, client sees `null` not a number | Use a large finite number (e.g., `999999`) for "unlimited" values sent over JSON |
 | Tailwind `@apply text-blue-600` in CSS | `@apply` with certain utility classes silently drops from compiled output | Use raw CSS values (`color: #2563eb`) instead of `@apply` for critical styles |
+| Component hardcodes `relative` + caller passes `absolute inset-0` via `className` | Both position classes land on the element; Tailwind v4 stylesheet emission order (not JSX/prop order) decides which wins — `.relative` can beat `.absolute`, collapsing a full-bleed overlay to 0 height | Make position a component prop (e.g. `fill ? 'absolute inset-0' : 'relative'`); never stack conflicting position utilities. Found on netflix-social-platform's hero backdrop (2026-07-06, commit `87bd426`) — a 0-height lazy `<img>` never even issued a network request, which looks like a missing asset, not a layout bug. |
 
 ## Prisma globalThis Singleton — Always Cache in Production
 
@@ -242,6 +244,37 @@ When a prompt specifies a strict output format (e.g., "ONLY valid JSON", "no mar
 ## Update CLAUDE.md When Adding Features
 
 After implementing a new feature, route, export, or command, update the repo's CLAUDE.md before committing. Documentation lag is structural — close it at commit time. (Graduated from ESSENTIAL 2026-06-10: the CLAUDE.md drift-check PostToolUse hook now flags commits that add exports/routes/env vars without a CLAUDE.md update.)
+
+## `backdrop-filter` Ancestors Confine `position:fixed` Overlays — Portal to Body
+
+Any ancestor with a non-`none` `backdrop-filter` (e.g. glass-morphism / `backdrop-blur` cards) or `transform`/`filter` creates a CSS containing block for `position:fixed` descendants. A `fixed inset-0` modal, lightbox, or toast rendered inside such a card is silently clipped to the card's bounds, not the viewport.
+
+**Symptom:** overlay measures card dimensions instead of viewport; backdrop is unclickable or truncated.
+
+**Fix:** Use `ReactDOM.createPortal(overlay, document.body)` to render fixed overlays outside the containing ancestor.
+
+**Two follow-on gotchas after portaling:**
+1. Portals still bubble synthetic events through the React tree — clicks inside the overlay can still fire ancestor `onClick` handlers (e.g. a card's `navigate`). Add `e.stopPropagation()` on overlay and close-button handlers.
+2. `aria-modal=true` does NOT trap keyboard focus — implement an explicit Tab/Shift+Tab focus trap and reclaim focus if `document.activeElement` leaves the dialog.
+
+**Where to look:** Any `fixed` or `fixed inset-0` element inside a component that uses `backdrop-blur-*`, `blur-*`, `filter`, or CSS `transform`. Applies across all repos using the shared glass-morphism card design system. Source: autonomousDev run #324 (2026-07-02).
+
+## JS Truthiness Guards Don't Reject Negatives — Use `<= 0` for Non-Negative External Quantities
+
+When validating a physical or non-negative numeric value parsed from external input (webhook payloads, API responses, user data), `!x || x === 0` does NOT reject negative values — JavaScript treats negative numbers as truthy. A negative distance, duration, speed, price, or count flows through arithmetic and produces an invalid result.
+
+**Fix:** Use `<= 0` for any quantity that must be strictly positive:
+```js
+// BAD: lets negative durationSec through
+if (!distanceM || !durationSec || distanceM === 0) return undefined;
+
+// GOOD
+if (!distanceM || !durationSec || distanceM <= 0 || durationSec <= 0) return undefined;
+```
+
+**Self-review trigger:** Any guard on an externally-sourced numeric that represents a measured, non-negative quantity — ask "does `!x || x === 0` let negatives through?" If yes, change to `<= 0`.
+
+**Real case (`runEvaluator computePace`, 2026-07-01):** Guard `distanceM === 0` let `computePace(8000, -100)` return −12.5 (invalid negative pace) which propagated into `avgPace`. The sibling Strava `paceFromSpeed` already used `speed <= 0` correctly — the two adapters were inconsistent. Fixed in autonomousDev run #323 (PR #267).
 
 ### Isolate per-item failures in batch loops; guard operations that throw on stored/external data (2026-06-30)
 When a loop processes a batch (DB rows, files, API records) and each iteration does an operation that can throw on bad data, an unguarded throw aborts the ENTIRE batch — not just the bad item. Two-layer defense: (1) guard the throwing operation itself (e.g. compile a stored regex via a safeCompile() that returns null on SyntaxError; JSON.parse external files in try/catch; check divisor != 0 before dividing on externally-sourced deltas), and (2) wrap each loop iteration in try/catch + continue so one bad record is skipped, not fatal. Real case (finance-tracker PR #74): benefit auto-detection compiled 'new RegExp(template.merchantPattern)' from stored card-benefit template strings at 3 sites with no guard, inside detectAllBenefits() which looped mappings with no try/catch. One malformed pattern threw SyntaxError and 500'd /api/cards/detect, killing detection for ALL the user's cards. Same shape seen elsewhere: url-vault JSON.parse on index/metadata files without try/catch; waymo-sim waypoint interpolation alpha=(t-t0)/(t1-t0) with no guard for duplicate timestamps. Self-review trigger: any new RegExp(non-literal), JSON.parse(file/network), or division by a data-derived value inside a loop → ask 'does one bad input abort the whole batch?'. Bonus: compile invariant regexes once before the loop, not per-iteration.
