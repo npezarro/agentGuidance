@@ -1,0 +1,1 @@
+Gate hold test — contains PZNT_SENSITIVE_CANARY_DO_NOT_REMOVE (non-secret canary)
