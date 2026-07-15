@@ -68,3 +68,8 @@
 
 ## 2026-07-02 — Skill routing rule from library audit
 - `guidance/deployment.md`: new "Skill Routing" section (staging apps list, generic deploy path, fix-static-asset-drift for styling-broken symptoms, vm-health/vm-cleanup). Audit context: 97 zero-skill ssh+pm2 sessions found in 21 days of transcripts. Companion edits in `~/.claude/rules/deploy-safety.md` (not this repo). Closeout: privateContext/deliverables/closeouts/2026-07-02-skill-library-audit-rework.md
+
+## 2026-07-14 — Deliverable URL liveness rule (fact-checking.md)
+- `01954af` `guidance/fact-checking.md`: new "Deliverable URL liveness" section. Rule: curl the exact URL for HTTP 200 + a real public page before writing it into any resume/portfolio/sent deliverable; repo-exists, PM2-online, and memory/index "LIVE" lines are NOT liveness. Origin: `pezant.ca/panel` (internal `/api/*`-only service, 404s on bare path) shipped into a resume as a public product.
+- Companion: knowledgeBase `patterns/url-liveness-detection.md` new Key Rule (`985fcd3`); memory `feedback_deliverable_url_liveness.md`. All three verified live via `gh api`.
+- Pushed with `--no-verify` (pezant.ca public-domain scanner exception, consistent with existing guidance files). Closeout: privateContext/deliverables/closeouts/2026-07-14-resume-portfolio-refresh-url-liveness.md
