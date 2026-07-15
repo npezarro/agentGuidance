@@ -136,6 +136,14 @@ The hooks scan the full `git diff`, including removed lines. When you're *removi
 
 This pattern was validated across 7+ repos during the 2026-05 infrastructure redaction sweep (claude-tray-notifier, claudeNet, groceryGenius, manchu-translator, valueSortify, youtubeSpeedSetAndRemember, claude-bakeoff, agentGuidance).
 
+### Don't Abandon a Hook-Blocked Commit Uncommitted
+
+If the sensitive-scan pre-commit hook blocks a commit for a real reason (a genuine identifier that needs genericizing, not the removal-line catch-22 above), fix the wording and recommit in the same session. Don't leave the edit sitting uncommitted in the working tree for a future session to find.
+
+**Why:** A guidance edit (a valid pino-logger pattern addition) sat as a stray uncommitted diff on the shared `~/repos/agentGuidance` main checkout for at least a day — a prior session hit the hook block (the draft named an internal private repo), abandoned it uncommitted instead of genericizing the wording, and moved on. It was only recovered because a later session's stray-diff sweep happened to catch it (learning-agent run #943). On a repo multiple concurrent sessions read from (SessionStart hooks execute from the working copy), an uncommitted diff is invisible to everyone but the session that made it, and a stale one can be mistaken for another session's in-progress work.
+
+**How to apply:** When the hook blocks a commit, resolve it before ending the turn — genericize the flagged term or drop the offending detail, then recommit. If you truly can't resolve it now, either discard the edit (`git checkout -- <file>`) or stash it with a clear message; never leave a bare uncommitted diff on a shared main checkout.
+
 ## Pre-Commit Checklist (Manual Fallback)
 
 When the automated hook isn't installed, verify before committing to any public repo:
