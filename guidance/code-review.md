@@ -118,6 +118,7 @@ Each reviewer agent should:
 | `head -c N` before parsing structured output | Silent data loss — truncation drops blocks downstream code depends on | Size limit to max expected output, or extract specific fields first |
 | `res.json({ error: err.message })` | Information disclosure — leaks paths, DB strings, stack traces | Return generic message, log details server-side (see below) |
 | `child_process.exec(cmd + userInput)` | Command injection via string interpolation | Use `execFile(binary, [args])` with separate args array (see below) |
+| In-memory `Map` keyed by external input (IP, user ID) with no eviction | Unbounded memory growth — every new key is a permanent entry | Sweep expired entries lazily on access, or cap size with an LRU |
 
 ## Error Detail Leak Prevention
 
@@ -140,6 +141,14 @@ catch (error) {
 **Common leak vectors:** `details: String(error)`, `error: err.message`, `os.hostname()` in health endpoints, MulterError raw messages, CLI exit codes in spawn error handlers.
 
 **Affected repos (fixed 2026-05):** health-hub, freeGames, manchu-translator, auto-shorts, claude-auto-merger, promptlibrary.
+
+## Unbounded In-Memory Maps (Rate Limiters, Caches)
+
+A `Map` (or plain object) keyed by request-derived input — IP address, user ID, session token — that only ever adds entries has no natural upper bound. Every distinct key becomes a permanent resident; under real traffic (or a scripted probe hitting many IPs) this is a slow memory leak that only shows up after days of uptime, not in a quick smoke test.
+
+**Real case (manchu-translator, commit `db872c1`, 2026-07-15):** `lib/rate-limiter.js` maintained a module-level `ipMap` incremented on every `/api/translate` request, with no removal path — expired-window entries stayed forever. Fixed with a lazy, once-per-window `sweep()` that deletes only already-expired entries (called opportunistically on access, not via a separate timer), plus a `size()` export so tests can assert the map stops growing.
+
+**Self-review trigger:** any module-level `Map`/`Set`/object keyed by an externally-controlled value (IP, user ID, session ID, request ID) — ask "what removes an entry, and when?" If the answer is "nothing", add eviction (lazy sweep on access is usually simplest; reach for a proper LRU only if access patterns need it) and a size assertion in tests.
 
 ## Command Injection: exec vs execFile
 
