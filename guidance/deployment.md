@@ -358,6 +358,13 @@ If `journal_mode=WAL` appears in `DATABASE_URL` (e.g., from an old deploy.sh), *
 - Some VM app dirs are NON-GIT, artifact-only (`.next`+`node_modules`+`package.json`) — deploy via /staging artifact promotion (rsync `.next`), sync loose scripts via scp.
 - Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
 
+**Promoting a LOCAL BUILD to an in-place-rebuild prod dir (foodie, travel-assistant):** the `start.sh` reads `.next/required-server-files.json` and compares `appDir` to the prod dir. A WSL-built `.next` records the local dev path (`/home/npezarro/repos/<app>`), which mismatches the prod path, setting `NEEDS_BUILD=1`. Critical step order:
+1. `pm2 stop <app>` FIRST — a running `pm2 restart` hits the mismatch on every restart and loops rebuild attempts indefinitely (pm2 re-triggers start.sh each crash).
+2. Kill any in-flight rebuild: `pkill -9 -f "next build"` (killing the build can drop the SSH session — reconnect and continue).
+3. rsync the clean local `.next/` to both prod `.next/` paths.
+4. Patch `appDir` in `.next/required-server-files.json` AND `.next/standalone/.next/required-server-files.json` to the prod path.
+5. `pm2 restart <app>` and verify no rebuild fires: `ps -eo pid,cmd | grep "next build"` should be empty.
+
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
 
 ## VM SSH: don't trip fail2ban with reconnect bursts

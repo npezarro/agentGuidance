@@ -120,6 +120,8 @@ Each reviewer agent should:
 | `child_process.exec(cmd + userInput)` | Command injection via string interpolation | Use `execFile(binary, [args])` with separate args array (see below) |
 | In-memory `Map` keyed by external input (IP, user ID) with no eviction | Unbounded memory growth — every new key is a permanent entry | Sweep expired entries lazily on access, or cap size with an LRU |
 | `useEffect(() => setState(...), [prop])` to reset state when a prop changes | Flagged as an error (not warning) by modern `eslint-plugin-react-hooks` (`set-state-in-effect`); also costs an extra render pass | Adjust state during render instead: `const [prev, setPrev] = useState(prop); if (prop !== prev) { setPrev(prop); setState(reset); }` |
+| `logger.error('Failed to post:', err.message)` (pino) | pino's first-arg-is-string path treats the message as a printf format — the second arg is an interpolation value (no `%s` placeholder → silently discarded). Error detail is lost. | `logger.error({ err: err.message }, 'Failed to post')` — pass data as a merging object in the first arg. For full stacks: `logger.error({ err }, 'msg')` with a pino serializer. Grep: `logger\.(error\|warn)\('[^']*', [a-z]` |
+| SQLite `datetime('now')` string → `new Date()` | SQLite stores UTC as `"YYYY-MM-DD HH:MM:SS"` (space-separated, no `T`, no `Z`). ECMAScript's Date parser treats non-ISO forms as **local** time → every stored timestamp shifts by the viewer's UTC offset at render time. | Normalize before parsing: detect `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$` and rewrite to `${date}T${time}Z`; pass through ISO strings unchanged. |
 
 ## Error Detail Leak Prevention
 
