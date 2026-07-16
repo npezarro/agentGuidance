@@ -94,6 +94,7 @@ The learning agent needs a focused prompt that:
 3. **Append-only for experience logs** — Never edit or delete existing profile experience entries
 4. **Diff review** — Before committing, show the full diff and validate against secrets-hygiene
 5. **Idempotent** — Running twice on the same data should produce no additional changes
+6. **claude-skills edits require the actual sync, not a claim of one** — editing any file under `~/repos/claude-skills/` does NOT propagate anywhere by itself; `~/.claude/skills/` (active) and the VM's `~/.claude/skills/` (used by `#requests`/`#tasks` jobs) are separate copies that only update via the documented rsync (`claude-skills/CLAUDE.md` "Sync Command", full-tree `--delete`). Run it and `diff` the active copy against the repo copy to confirm before writing "synced" in the run summary. Confirmed 2026-07-16: runs #945/#946 both wrote "synced to `~/.claude/skills/` and the VM per the three-copy rule" after editing `push-to-gdoc/SKILL.md` and `pezant-web-design/SKILL.md`, but neither actually ran the rsync — both copies sat stale (one ~24h) until run #950 caught it by diffing. This is the same failure class as ESSENTIAL Rule 4 ("never say 'already handled' unless you can point to actual output"), specific enough to a non-obvious command that it needs its own callout here.
 
 ## Integration with Existing Systems
 
