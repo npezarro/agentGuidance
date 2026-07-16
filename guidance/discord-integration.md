@@ -104,3 +104,11 @@ Create Discord channels and webhooks yourself using the bot API — don't ask th
 - Check `#claude-agent-logs` and `#running-job-logs` to see what other agents are doing before starting work on a shared repo.
 - Use per-project channels for handoffs, context dumps, and progress updates.
 - Avoid conflicting changes. If another agent is on the same branch, coordinate first.
+
+## Discord Strips ALL Image EXIF on Upload
+
+Discord re-encodes every uploaded image attachment and strips ALL EXIF/TIFF/GPS metadata (GPS coordinates, capture date, camera make/model). Only JFIF + ICC color-profile data survives. Verified 2026-07-16 against real Pixel `PXL_*.jpg` photos uploaded via Discord: `exifr.gps()` returned undefined and `Make`/`Model`/`DateTimeOriginal` were all undefined.
+
+**Why it matters:** Any feature that reads uploaded-image metadata (location, capture date, camera) from a Discord attachment gets nothing. Google Photos shared albums strip GPS the same way. EXIF-based extraction only works on direct local files that were never routed through Discord or Google Photos.
+
+**How to apply:** Never rely on EXIF from Discord-sourced or Google-Photos-sourced images; always fall back gracefully (e.g. to a configured default location). Also note sharp's re-encode strips EXIF too, so read metadata from the ORIGINAL bytes before any resize/convert step.
