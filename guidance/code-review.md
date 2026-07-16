@@ -119,6 +119,7 @@ Each reviewer agent should:
 | `res.json({ error: err.message })` | Information disclosure — leaks paths, DB strings, stack traces | Return generic message, log details server-side (see below) |
 | `child_process.exec(cmd + userInput)` | Command injection via string interpolation | Use `execFile(binary, [args])` with separate args array (see below) |
 | In-memory `Map` keyed by external input (IP, user ID) with no eviction | Unbounded memory growth — every new key is a permanent entry | Sweep expired entries lazily on access, or cap size with an LRU |
+| `useEffect(() => setState(...), [prop])` to reset state when a prop changes | Flagged as an error (not warning) by modern `eslint-plugin-react-hooks` (`set-state-in-effect`); also costs an extra render pass | Adjust state during render instead: `const [prev, setPrev] = useState(prop); if (prop !== prev) { setPrev(prop); setState(reset); }` |
 
 ## Error Detail Leak Prevention
 
