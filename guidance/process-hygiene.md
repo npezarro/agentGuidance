@@ -93,6 +93,20 @@ When PM2 restarts a process, the old Node instance may not release its port befo
 
 **Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
 
+### PM2 Lifecycle Traps (2026-07-16 Discord/cloud review)
+
+Four PM2 behaviors that each caused a real silent failure; check all four when a PM2 service misbehaves around restarts or monitoring:
+
+1. **Ecosystem config fields only register at process CREATION.** `pm2 restart` (even with the config file as argument) does not apply changed fields like `kill_timeout`, `treekill`, `shutdown_with_message`, log paths. To apply them: `pm2 delete <app> && pm2 start ecosystem.config.js --only <app> && pm2 save`. Verify what PM2 actually has registered with `pm2 jlist` (`pm2_env` keys), not what the ecosystem file says.
+
+2. **`kill_signal` is not a PM2 option.** PM2 sends SIGINT on stop/restart/delete (global `PM2_KILL_SIGNAL` daemon env is the only override). A `kill_signal: 'SIGTERM'` key in ecosystem.config is silently ignored — design your shutdown handler around SIGINT or use `shutdown_with_message`.
+
+3. **`shutdown_with_message: true` replaces the signal entirely.** PM2 sends the IPC string message `'shutdown'` and NO signal, then SIGKILLs after `kill_timeout`. If the app doesn't have a `process.on('message', m => m === 'shutdown' && ...)` listener, EVERY restart is a full `kill_timeout` hang ending in SIGKILL — with zero log evidence, because no signal handler ever fires. Ship the ecosystem flag and the listener in the same commit; verify with `time pm2 restart <app>` (graceful = ~1-2s, hang = exactly kill_timeout). This exact half-shipped state ran in claude-bot 2026-07-14→16.
+
+4. **One zombie process entry poisons monitoring for the whole fleet.** A process stuck `online` with `pid: null` (process died outside PM2's view) makes PM2's pidusage batch call throw `TypeError: One of the pids provided is invalid` (~2 lines every few seconds in `~/.pm2/pm2.log`), which zeroes `monit.memory`/`cpu` for ALL apps — and silently disables every `max_memory_restart`. Diagnosis: `pm2 jlist` and look for `status: online` with no live pid. Fix: stop/delete the zombie, `pm2 save`. Ran undetected for 44 days (epic-claimer, repo deleted from under a still-registered app).
+
+Also: after customizing `out_file`/`error_file`, the default `~/.pm2/logs/<app>-*.log` files stop updating but stay on disk — months later they read as plausible "current" logs and mislead debugging. Delete them when you move log paths, and check mtimes before trusting any log's content.
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
