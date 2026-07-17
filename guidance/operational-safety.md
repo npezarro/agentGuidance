@@ -491,3 +491,16 @@ Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25)
 ## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
 
 `ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.
+
+## A "reverting" deployed artifact may be a second concurrent session, not cache or cron (2026-07-17)
+
+When multiple agent sessions run in the same home directory (common under `--dangerously-skip-permissions`), nothing prevents two of them from owning the same deploy target or repo file. If a deployed file "keeps reverting to the old version" after you redeploy it, suspect a **second live session writing the same path** before jumping to caching or a stray cron job. This is a distinct failure mode from the `git add -A` staging collision documented above (that one corrupts a commit at staging time; this one is two processes racing on the same deploy target repeatedly, well after either committed).
+
+**Diagnostic order (cheapest signal first):**
+1. `stat` the origin file's mtime/size against your own deploy time — if it changed AFTER you deployed, someone else wrote it.
+2. Check the edge cache header (`curl -sI ... | grep cf-cache-status`) — `DYNAMIC`/`no-store` rules out Cloudflare as the cause.
+3. `git log --format='%h %ci %s' -- <path>` — look for a foreign commit between yours and the current state. A `git add -A` closeout commit is a common clobberer.
+4. `ps -eo pid,etimes,cmd | grep claude`, then grep the most-recently-modified transcripts under `~/.claude/projects/<proj>/*.jsonl` for the path in question — the session with recent writes to it is the culprit.
+5. Fix by coordinating targets (point the other session at a different path), not by re-deploying repeatedly to "win" the race. Killing a live interactive session is destructive — ask first, don't just kill it.
+
+Source: two concurrent sessions both deploying to the same static-site `index.html` target on `example.com`, one repeatedly clobbering the other's report-feed redesign with a stale finance-dashboard rebuild (2026-07-17).
