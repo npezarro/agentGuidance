@@ -2,7 +2,10 @@
 # parity-layer-injection.sh -- SessionStart hook.
 #
 # Injects the validated Opus->Fable parity layer (guidance/opus-fable-parity.md,
-# marker block) into INTERACTIVE OPUS sessions only, as an 85/15 holdout A/B.
+# marker block) into INTERACTIVE OPUS sessions only, as a 50/50 A/B.
+# (85/15 from 2026-07-10 to 2026-07-16; flipped to 50/50 because control accrued
+# ~0.35 sessions/day and the test was unreadable — see the guidance doc's
+# "Interactive-session rollout" section. Analyzer: scripts/parity-arm-analyzer.py.)
 # The arm is derived deterministically from the session id, so it is stable across
 # resume/compact (a control session never flips to treated mid-way). Every
 # interactive Opus session's arm is logged so layer-on vs control outcomes can be
@@ -27,8 +30,11 @@ set -uo pipefail
 LAYER_FILE="$HOME/repos/agentGuidance/guidance/opus-fable-parity.md"
 TELEMETRY_FILE="${PARITY_TELEMETRY_FILE:-$HOME/.claude/parity-telemetry/interactive-arms.jsonl}"
 TELEMETRY_DIR="$(dirname "$TELEMETRY_FILE")"
-LAYER_VERSION="v4"
-TREAT_PCT=85   # percent of interactive Opus sessions assigned the layer
+# version is read from the layer file's PARITY-LAYER-VERSION marker so telemetry
+# tracks a future v5 automatically; fallback matches the last known version
+LAYER_VERSION="$(grep -oE 'PARITY-LAYER-VERSION: v[0-9]+' "$LAYER_FILE" 2>/dev/null | head -1 | sed 's/.*: //')"
+[ -n "$LAYER_VERSION" ] || LAYER_VERSION="v4"
+TREAT_PCT=50   # percent of interactive Opus sessions assigned the layer (50/50 since 2026-07-16)
 
 [ -f "$LAYER_FILE" ] || exit 0
 

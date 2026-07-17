@@ -46,6 +46,11 @@ autonomy, persistence, and reporting.
 
 ## The layer (inject verbatim into the target's CLAUDE.md or system prompt)
 
+<!-- PARITY-LAYER-VERSION: v4 -->
+<!-- On a layer bump: update the version line above AND the text between the markers.
+     Consumers (parity-layer-injection.sh, parityLayer.js) read both from this file;
+     the version line sits OUTSIDE the START/END block so the injected text stays
+     byte-identical to what was validated. -->
 <!-- PARITY-LAYER-START -->
 ## Operating principles
 
@@ -147,18 +152,40 @@ Guards (all fail toward protecting non-interactive pipelines):
   misfires on Sonnet/Haiku).
 - **Fail closed.** If the claude process can't be identified, it does nothing.
 
-**Holdout A/B (85/15).** Arm is derived deterministically from the session id
-(`cksum % 100 < 85` → treated), so it is stable across resume/compact — a control
-session never flips to treated. Only the treated arm gets the layer; both arms are
-logged. This is a *forward* causal design (same operator, same period, treated vs
-control) rather than a confounded before/after-deploy comparison.
+**A/B split: 50/50 since 2026-07-16** (was 85/15 from 2026-07-10). Arm is derived
+deterministically from the session id (`cksum % 100 < TREAT_PCT` → treated), so it is
+stable across resume/compact — a control session never flips to treated. Only the
+treated arm gets the layer; both arms are logged. This is a *forward* causal design
+(same operator, same period, treated vs control) rather than a confounded
+before/after-deploy comparison. The 85/15 split was flipped after the first readout
+(2026-07-16, 6 days in): control had accrued 2 usable sessions, and even a true
+0%-vs-40% correction-rate gap would not have reached significance at that n. 85/15
+minimizes control exposure but makes the test unreadable for months at ~2 Opus
+sessions/day; 50/50 is the readable configuration. Revisit the split (or end the test)
+once each arm has ≥15-30 usable sessions.
 
 **Telemetry sink:** `~/.claude/parity-telemetry/interactive-arms.jsonl`, one line per
-session start: `{ts, session_id, model, arm, layer_version, source}`. Assess outcomes by
-joining `session_id` → the session transcript (via the `analyze-claude-usage` skill's
-join method) and comparing correction/re-work proxies between arms. Distinct from the
-Discord-tag `privateContext/parity-telemetry.sh` cron, which measures the VM worker, not
-interactive WSL sessions. Needs a few weeks of both arms before it is readable.
+session start: `{ts, session_id, model, arm, layer_version, source}`. Readout:
+`scripts/parity-arm-analyzer.py` — joins arms to transcripts and compares
+correction-rate proxies (Fisher exact + Wilson CIs), with mandatory hygiene baked in:
+dedupe by session_id, drop empty-sid rows, drop degenerate sessions, and **verify the
+model from the transcript, not the arm log** — a mid-session `/model` switch is
+invisible to the SessionStart hook (found in the wild 2026-07-16: a logged
+control-Opus session that actually ran Fable). `--dump-prompts` emits an arm-blind
+prompt list for manual/LLM judging; `--judgments` feeds judged counts back in.
+Distinct from the Discord-tag `privateContext/parity-telemetry.sh` cron, which measures
+the VM worker, not interactive WSL sessions; that cron also carries the dead-man check
+(alerts if arm telemetry goes ≥7 days stale — i.e. the hook broke or the WSL default
+model left Opus and the test silently stopped accruing).
+
+**First readout (2026-07-16, for the record):** 8 usable layer vs 2 usable control
+sessions; corrections/prompt 6/39 vs 0/6, Fisher p=0.58 — no detectable difference,
+test unreadable. Notably both of the clearest treated-arm corrections were
+report-fidelity failures (published a non-live URL into a resume; deliverable missing
+requested pieces), i.e. the layer did not eliminate its target failure mode
+interactively. Caveat: those sessions ran at `effortLevel: high` (the settings pin was
+removed 2026-07-16 — requirement #4 says xhigh is load-bearing, so the pin meant the
+treated arm was running a known-attenuated treatment).
 
 Interactive turn budgets are effectively unbounded, so the ≥45-turn requirement is met
 for free; no budget change is needed for this path.
@@ -208,7 +235,7 @@ then satisfy all four requirements above. Never cherry-pick sentences; inject th
 `PARITY-LAYER-START/END` block verbatim from this file (single source of truth).
 
 1. **Interactive Opus session on WSL** → already covered by `hooks/parity-layer-injection.sh`.
-   Nothing to do; it auto-injects (85/15 holdout). Just confirm the model is Opus.
+   Nothing to do; it auto-injects (50/50 A/B). Just confirm the model is Opus.
 2. **Headless Opus worker** (`claude -p`, like the Discord worker) → the hook skips it.
    Read the marker block yourself and prepend it to the prompt, gated to Opus-only. Reuse
    the Discord bot repo's `src/bot/parityLayer.js` (`getParityLayerPrefix(model)`) as the
