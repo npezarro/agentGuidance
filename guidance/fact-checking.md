@@ -87,9 +87,9 @@ These are NOT liveness signals, and each has burned a real deliverable:
   mean "deployed", not "public page exists" — read the full memory, not just
   the one-line index, and then still curl it).
 
-Origin (2026-07-14): "Synthetic Panel (pezant.ca/panel)" was written into a
+Origin (2026-07-14): "Synthetic Panel (example.com/panel)" was written into a
 resume and portfolio as a public product. `/panel` 404s: it is an
 internal-first API (only `/api/*`, requires an `X-Panel-Key` header). The
-author relied on a `MEMORY.md` "LIVE pezant.ca/panel" index line and a
+author relied on a `MEMORY.md` "LIVE example.com/panel" index line and a
 repo-exists `ls`, neither of which proves public liveness. Use curl per
 `knowledgeBase/patterns/url-liveness-detection.md`.

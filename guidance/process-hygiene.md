@@ -189,12 +189,12 @@ Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tu
 4. **Git state:** No uncommitted changes related to your task
 5. **Context:** `context.md` reflects what's running and what's not
 
-### paste-link skill: host snippet at pezant.ca, return curl one-liner (2026-06-08)
+### paste-link skill: host snippet on the user's public site, return curl one-liner (2026-06-08)
 When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes/backticks/escapes) is being pasted into a remote shell and gets mangled (smart-quotes, lost newlines, "syntax error near unexpected token `newline`", "Permission denied" on >>), invoke the paste-link skill instead of re-trying paste.
 
 Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
 
-How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
+How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at example.com/<slug>. Hand the user a one-liner like `curl -sS https://example.com/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
 
 ### Cron jobs that invoke `claude` must use an absolute binary path (2026-06-29)
 Cron runs with a minimal PATH (`/usr/bin:/bin`) that does NOT include `/usr/local/bin`, where the global `claude` install lives. A cron script calling bare `claude ...` fails silently with `claude: command not found` (exit 127). On the VM this broke the host CLI auth keep-alive for ~10 days: every run failed, the OAuth refresh token expired from disuse, and the CLI started returning 401 — with no alert.
