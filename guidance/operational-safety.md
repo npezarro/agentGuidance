@@ -337,6 +337,12 @@ When the bot recovers persisted jobs on startup:
 
 **Never** automatically re-execute a failed job. The failure may have been caused by the job itself (e.g., it deployed the bot). Automatic re-execution would repeat the failure.
 
+**Any recovery cron that runs concurrently with the primary job path must compare-and-swap on status, and its stale-timer must exceed the primary path's own timeout.** Shopper/foodie/travel-assistant all run a periodic `run-recovery.js` cron that re-executes jobs it believes are stuck. Two invariants keep it from overwriting a good result the main request path already produced (symptom: a job the user saw succeed later flips to `failed` with a recovery-origin error like "Request timed out" or "Response too short"):
+1. **Compare-and-swap on every write.** Both the success and failure `UPDATE`s must carry `AND status = 'pending'`, and notifications must be skipped when the guarded write reports `changes === 0`. Without the guard, a late timeout/short-response from the duplicate recovery call overwrites the main path's completed result.
+2. **Stale threshold must exceed the primary executor's own timeout.** If the main path times out a job at 20 minutes, the recovery cron's stale-pending threshold must be set higher (e.g. 25 minutes) — otherwise recovery grabs a job the main path is still legitimately working on. Keep the two values in sync whenever either changes.
+
+**Why:** hit identically in three separate apps (shopper, foodie, travel-assistant) — same `run-recovery.js` pattern, same missing CAS guard, same too-tight stale threshold, same user-visible symptom (a completed search silently flips to failed minutes later). Any writer that can run concurrently with a primary job path needs this same pair of guards.
+
 ## Postmortem Template
 
 When a feedback loop or restart storm occurs, document it:

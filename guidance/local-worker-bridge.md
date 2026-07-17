@@ -144,3 +144,16 @@ function checkAuth() {
 **Interaction with cron:** The cron (`bridge-auth-refresh.sh`) and self-exit are complementary. The cron handles scheduled recovery; self-exit handles the case where the cron hasn't fired yet (or misses a run). Both are needed.
 
 Source: foodie commit 8a35730, shopper commit f4d935b, travel commit 51950cc (2026-05-27).
+
+### Unbounded per-call batch size causes silent 0-result failures (2026-07-16)
+**Rule:** Never ask one headless `claude -p` bridge call for an unbounded or large batch of results under a fixed timeout. Bound the batch size per call and paginate across multiple calls instead; make the response parser tolerant of truncated output.
+
+**Why:** employ's "Exhaustive" discovery tier asked a single bridge call to find 45-70 roles. The call either over-ran the bridge's 10-minute timeout (SIGTERM'd mid-generation) or hit the model's output-token ceiling, leaving a truncated response with no closing JSON fence. The parser returned `[]` on the malformed JSON, so the run reported "found 0 roles" with no error surfaced. Worse, the downstream augment/expand safety net also refused to run because it requires a non-empty initial set — so the failure compounded to a total of 0 instead of degrading gracefully.
+
+**How to apply:**
+1. Cap every bridge call at a fixed max batch size (employ uses `MAX_ROLES_PER_CALL=25`) regardless of how large the requested total is; accumulate toward the full target across multiple passes instead.
+2. Soften "as many as possible, even if it takes longer" style prompt directives for large-breadth tiers — aim each call at the per-call cap, not the grand total.
+3. Retry once on a 0-result parse before treating it as a real empty result.
+4. Harden the parser to merge all fenced JSON blocks in a response and recover complete objects from truncated/unclosed JSON via a balanced-brace scan, rather than failing the whole batch on one truncation.
+
+Source: employ commits `06e979e` (fix) and `df111d8` (scale window/batch by depth), 2026-07-16.
