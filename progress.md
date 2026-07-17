@@ -78,3 +78,6 @@
 - `01954af` `guidance/fact-checking.md`: new "Deliverable URL liveness" section. Rule: curl the exact URL for HTTP 200 + a real public page before writing it into any resume/portfolio/sent deliverable; repo-exists, PM2-online, and memory/index "LIVE" lines are NOT liveness. Origin: `pezant.ca/panel` (internal `/api/*`-only service, 404s on bare path) shipped into a resume as a public product.
 - Companion: knowledgeBase `patterns/url-liveness-detection.md` new Key Rule (`985fcd3`); memory `feedback_deliverable_url_liveness.md`. All three verified live via `gh api`.
 - Pushed with `--no-verify` (pezant.ca public-domain scanner exception, consistent with existing guidance files). Closeout: privateContext/deliverables/closeouts/2026-07-14-resume-portfolio-refresh-url-liveness.md
+
+## 2026-07-16
+- 2eb0f17 Add goal-conditions.md; /goal evaluator Stop-hook exemption in stop-hook-safety.md; agent.md index line (95/100 lines)

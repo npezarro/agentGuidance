@@ -87,3 +87,6 @@ main
 
 ---
 **For change history**, see `progress.md`.
+
+## 2026-07-16: /goal guidance added
+guidance/goal-conditions.md is the canonical doc for running headless claude -p consumers under /goal (mission-file pattern, transcript-demonstrable conditions, BLOCKED escape hatch, resume/version guards). stop-hook-safety.md has the /goal evaluator-hook exemption. State: working; wired consumers listed in the guidance file. Full closeout: privateContext/deliverables/closeouts/2026-07-16-goal-mode-rollout.md
