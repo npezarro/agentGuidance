@@ -66,7 +66,9 @@ if [ "${1:-}" = "--all-public" ]; then
   echo ""
 
   # Get list of public repos
-  PUBLIC_REPOS=$(gh repo list npezarro --public --json name -q '.[].name' 2>/dev/null || echo "")
+  # NOTE: --limit is required; gh defaults to 30 and silently caps the list, which
+  # left public repos beyond the first 30 (e.g. claude-auto-merger) unprotected.
+  PUBLIC_REPOS=$(gh repo list npezarro --public --limit 1000 --json name -q '.[].name' 2>/dev/null || echo "")
 
   if [ -z "$PUBLIC_REPOS" ]; then
     echo "ERROR: Could not fetch public repo list (gh CLI issue?)"

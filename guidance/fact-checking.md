@@ -69,3 +69,27 @@ If an earlier turn in the same conversation established a researched fact and
 you are about to assert the opposite, that is a red flag, not a correction.
 Re-verify with a search and explicitly reconcile ("earlier I found X; the
 search now shows Y because Z") — never silently flip.
+
+## Deliverable URL liveness
+
+Any URL you write into a deliverable that leaves the ecosystem (resume,
+portfolio, cover letter, LinkedIn post, anything sent or published) is an
+externally-checkable fact. Before writing it, curl the exact URL and confirm
+it serves the intended public page (HTTP 200 plus a real page, not a redirect
+to login and not a bare API). Gate the write on the check; do not ship a hedge
+like "confirm live status" about something you could verify in seconds.
+
+These are NOT liveness signals, and each has burned a real deliverable:
+- a repo exists on disk (`ls ~/repos/<app>` says nothing about a public URL);
+- a PM2 process is `online` (a running service with only `/api/*` routes
+  serves no browsable page);
+- a memory or index line says "LIVE" (memories are point-in-time and often
+  mean "deployed", not "public page exists" — read the full memory, not just
+  the one-line index, and then still curl it).
+
+Origin (2026-07-14): "Synthetic Panel (example.com/panel)" was written into a
+resume and portfolio as a public product. `/panel` 404s: it is an
+internal-first API (only `/api/*`, requires an `X-Panel-Key` header). The
+author relied on a `MEMORY.md` "LIVE example.com/panel" index line and a
+repo-exists `ls`, neither of which proves public liveness. Use curl per
+`knowledgeBase/patterns/url-liveness-detection.md`.

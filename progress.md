@@ -10,6 +10,17 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+2026-07-17 | feat | parity-transcript-archiver.sh: hourly cron copying logged A/B session transcripts to ~/.claude/parity-telemetry/transcripts/ before rotation (2 already lost); analyzer falls back to archive. Cron registry reconciled in the same pass (token-relay pair imported; refresh/probe/peloton marked paused per documented intent).
+2026-07-17 | guidance | `agent.md` v4.1.1 (PR #329, merged): Wispr-dictation interpretation rule in Communication section — ignore stray leading `v` artifact, read dictated input for intent, prefer coherent near-homophone, ask only on genuine ambiguity.
+2026-07-17 | ops | Auto-memory store made a local-only git repo (reversibility); `MEMORY.md` index compacted 140→132 by folding coherent singles into content-rollups (index-style rollup members left intact as intentional on-disk files). Templated secret-scan pre-commit hook removed from that local infra-laden store. Closeout in privateContext.
+2026-07-17 | feat | `7785a1a` fable-ref reference cohort: injection hook logs interactive Fable sessions (telemetry only, never injected); analyzer 3-cohort readout w/ per-arm contamination checks; dead-man keys on A/B arms only.
+2026-07-17 | feat | `4c806b8` parity A/B made readable: hook split 85/15→50/50; LAYER_VERSION parsed from PARITY-LAYER-VERSION marker; new scripts/parity-arm-analyzer.py (hygiene + Fisher/Wilson + arm-blind judging; <15/arm guard). First readout: null at no power (p=0.58); 1 contaminated control excluded.
+2026-07-17 | infra | WSL ~/.claude/settings.json: default model restored to opus[1m]; effortLevel:high pin removed (xhigh then set explicitly) — treated arm now runs the validated layer+xhigh architecture.
+2026-07-15 | ci | `.github/workflows/sensitive-scan.yml` (PR #323): server-side sensitive-identifier scan on push+PR; patterns in SENSITIVE_PATTERNS secret; reports filename only (leak-safe); Discord alert. Paired with claude-auto-merger hard merge gate.
+2026-07-15 | feat | Session-aware cron deferral: hooks/session-heartbeat.sh (PostToolUse, interactive-only) + scripts/interactive-session-active.sh; 4 autonomousDev crons defer while a live session heartbeat is fresh (fixes shared-tree collisions). Wired into user settings.json.
+2026-07-15 | guidance | git-workflow.md "Staging Hygiene in Shared Repos" (PR #321): explicit paths, no `git add -A` / `--no-verify` on shared/public repos.
+2026-07-15 | fix | `b4cf94b` git-pre-push new-branch scan used single-arg `git diff $SHA` (vs WORKING TREE) → false-blocked pushes on concurrent drift; now merge-base(origin/main|master,tip)..tip with empty-tree fallback.
+2026-07-15 | fix | `d4cf06b` install-hooks.sh `--all-public` capped at 30 repos (gh default, no --limit); 5 public repos incl. claude-auto-merger were unprotected. Added `--limit 1000`, re-propagated to all cloned public repos + template.
 2026-07-12 | guidance | testing.md: "Fallback Chains Hide Dead Rungs" rule (PR #318) — test each fallback branch in isolation; ship a canary asserting the winning rung; verify the real code path not a reimplementation. From the fetch-page.sh silent-miss (rung 1 dead, rung 2 masked it).
 2026-07-12 | incident | Quarantined an unpushed concurrent-automation commit (f68e8c5) that added sensitive identifiers (VM SSH username + a Discord-bot module path) to guidance/opus-fable-parity.md in this PUBLIC repo. Local-only, never pushed; held in git stash@{0} pending sanitization. See closeout.
 2026-07-12 | feature | Provenance + source-capture system (PR #314): guidance/provenance.md, scripts/source-registry.sh, agent.md + ESSENTIAL.md wiring. Companion private repo sourceLibrary created. Marks Claude-generated facts vs Nick's writing; captures cited sources with cached material.
@@ -68,3 +79,11 @@
 
 ## 2026-07-02 — Skill routing rule from library audit
 - `guidance/deployment.md`: new "Skill Routing" section (staging apps list, generic deploy path, fix-static-asset-drift for styling-broken symptoms, vm-health/vm-cleanup). Audit context: 97 zero-skill ssh+pm2 sessions found in 21 days of transcripts. Companion edits in `~/.claude/rules/deploy-safety.md` (not this repo). Closeout: privateContext/deliverables/closeouts/2026-07-02-skill-library-audit-rework.md
+
+## 2026-07-14 — Deliverable URL liveness rule (fact-checking.md)
+- `01954af` `guidance/fact-checking.md`: new "Deliverable URL liveness" section. Rule: curl the exact URL for HTTP 200 + a real public page before writing it into any resume/portfolio/sent deliverable; repo-exists, PM2-online, and memory/index "LIVE" lines are NOT liveness. Origin: `example.com/panel` (internal `/api/*`-only service, 404s on bare path) shipped into a resume as a public product.
+- Companion: knowledgeBase `patterns/url-liveness-detection.md` new Key Rule (`985fcd3`); memory `feedback_deliverable_url_liveness.md`. All three verified live via `gh api`.
+- Pushed with `--no-verify` for this note itself, since the removed line still contained the identifier (the hook's documented redaction catch-22, see `secrets-hygiene.md` "Legitimate --no-verify for Security Redactions"). Correction (learning-agent run #963, 2026-07-17): there is no documented "public-domain scanner exception" for the user's real domain — `sensitive-identifiers.md`'s Infrastructure Identifiers table requires it be redacted to `example.com` in this public repo, and the real domain had leaked into this file and `process-hygiene.md`'s paste-link entry; both fixed this run. Closeout: privateContext/deliverables/closeouts/2026-07-14-resume-portfolio-refresh-url-liveness.md
+
+## 2026-07-16
+- 2eb0f17 Add goal-conditions.md; /goal evaluator Stop-hook exemption in stop-hook-safety.md; agent.md index line (95/100 lines)

@@ -2,7 +2,10 @@
 # parity-layer-injection.sh -- SessionStart hook.
 #
 # Injects the validated Opus->Fable parity layer (guidance/opus-fable-parity.md,
-# marker block) into INTERACTIVE OPUS sessions only, as an 85/15 holdout A/B.
+# marker block) into INTERACTIVE OPUS sessions only, as a 50/50 A/B.
+# (85/15 from 2026-07-10 to 2026-07-16; flipped to 50/50 because control accrued
+# ~0.35 sessions/day and the test was unreadable — see the guidance doc's
+# "Interactive-session rollout" section. Analyzer: scripts/parity-arm-analyzer.py.)
 # The arm is derived deterministically from the session id, so it is stable across
 # resume/compact (a control session never flips to treated mid-way). Every
 # interactive Opus session's arm is logged so layer-on vs control outcomes can be
@@ -27,8 +30,11 @@ set -uo pipefail
 LAYER_FILE="$HOME/repos/agentGuidance/guidance/opus-fable-parity.md"
 TELEMETRY_FILE="${PARITY_TELEMETRY_FILE:-$HOME/.claude/parity-telemetry/interactive-arms.jsonl}"
 TELEMETRY_DIR="$(dirname "$TELEMETRY_FILE")"
-LAYER_VERSION="v4"
-TREAT_PCT=85   # percent of interactive Opus sessions assigned the layer
+# version is read from the layer file's PARITY-LAYER-VERSION marker so telemetry
+# tracks a future v5 automatically; fallback matches the last known version
+LAYER_VERSION="$(grep -oE 'PARITY-LAYER-VERSION: v[0-9]+' "$LAYER_FILE" 2>/dev/null | head -1 | sed 's/.*: //')"
+[ -n "$LAYER_VERSION" ] || LAYER_VERSION="v4"
+TREAT_PCT=50   # percent of interactive Opus sessions assigned the layer (50/50 since 2026-07-16)
 
 [ -f "$LAYER_FILE" ] || exit 0
 
@@ -77,21 +83,26 @@ if printf '%s' " $CMDLINE " | grep -qE ' (-p|--print)([ =]|$)'; then
   exit 0
 fi
 
-# --- GUARD 2: effective model must be Opus ---
+# --- GUARD 2 + ARM: Opus enters the A/B; Fable is logged as the reference cohort ---
+# fable-ref sessions NEVER get the layer (validated no-gain on Fable) — they are
+# telemetry-only, so interactive Fable usage lands in the same metrics as the two
+# Opus arms and serves as the benchmark the layer is chasing. Sonnet/Haiku still
+# exit silently (not a relevant cohort; layer misfires there).
 MODEL="$(printf '%s' "$CMDLINE" | grep -oE -- '--model[= ][^ ]+' | head -1 | sed -E 's/--model[= ]//' || true)"
 [ -z "$MODEL" ] && MODEL="$(jq -r '.model // empty' "$HOME/.claude/settings.json" 2>/dev/null || true)"
 case "$MODEL" in
-  *[Oo]pus*) : ;;
+  *[Oo]pus*)
+    # deterministic 50/50 from session id (stable across resume/compact)
+    if [ -n "$SID" ]; then
+      H="$(printf '%s' "$SID" | cksum | cut -d' ' -f1)"
+      if [ "$((H % 100))" -lt "$TREAT_PCT" ]; then ARM="layer"; else ARM="control"; fi
+    else
+      ARM="layer"   # no session id: default to rigor rather than silently dropping it
+    fi
+    ;;
+  *[Ff]able*) ARM="fable-ref" ;;
   *) exit 0 ;;
 esac
-
-# --- ARM: deterministic 85/15 from session id (stable across resume/compact) ---
-if [ -n "$SID" ]; then
-  H="$(printf '%s' "$SID" | cksum | cut -d' ' -f1)"
-  if [ "$((H % 100))" -lt "$TREAT_PCT" ]; then ARM="layer"; else ARM="control"; fi
-else
-  ARM="layer"   # no session id: default to rigor rather than silently dropping it
-fi
 
 # --- TELEMETRY: log once per session (startup/resume), not on every compact ---
 case "${SOURCE:-startup}" in

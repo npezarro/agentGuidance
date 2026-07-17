@@ -1,4 +1,4 @@
-<!-- agent.md v4.1.0 | Last updated: 2026-07-01 -->
+<!-- agent.md v4.1.1 | Last updated: 2026-07-16 -->
 # Global Agent Rules
 
 > **THIS IS A PUBLIC REPOSITORY.** Never commit secrets, credentials, API keys, tokens, webhook URLs, passwords, private IPs, internal hostnames, `.env` contents, or any other sensitive information.
@@ -44,6 +44,7 @@ npx jest             # tests (when present)
 - Progress updates after each step. Flag blockers immediately.
 - **No em dashes.** Use commas, parentheses, colons, or semicolons instead.
 - **Large outputs go to files.** Write lengthy content (analyses, drafts, guides) to a `.md` file in the relevant repo, not just conversation output.
+- **Nick dictates via Wispr Flow.** A stray leading lowercase letter (often `v`) at the very start of a message is a dictation artifact, not content: ignore it. Dictated messages carry transcription slips (homophones, dropped/merged words, missing punctuation); read for intent, not literal text, and prefer a near-homophone that makes the sentence coherent. Ask only if a slip makes the actual directive genuinely ambiguous.
 
 ## Maintaining This File
 **Keep `agent.md` under 100 lines.** Universal behavioral rules with pointers to guidance files only. Project-specific rules belong in the project's CLAUDE.md. See `MANIFEST.md` for the function-to-source mapping.
@@ -65,6 +66,7 @@ Load on-demand based on the current task:
 - `guidance/resource-awareness.md` -- server resource checks
 - `guidance/process-hygiene.md` -- spawned processes, temp files, port conflicts
 - `guidance/operational-safety.md` -- self-deploy loops, restart storms, hook loops
+- `guidance/goal-conditions.md` -- /goal for headless runners: mission-file pattern, condition rules, BLOCKED escape hatch
 - `guidance/secrets-hygiene.md` -- secret rotation, history rewrite, detection patterns
 - `guidance/agent-journal.md` -- async cross-session journal system
 - `guidance/written-voice.md` -- writing in the owner's voice
