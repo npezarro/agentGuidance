@@ -42,6 +42,12 @@ TELEMETRY = os.environ.get(
     os.path.expanduser("~/.claude/parity-telemetry/interactive-arms.jsonl"),
 )
 PROJECTS_GLOB = os.path.expanduser("~/.claude/projects/*/*.jsonl")
+# rotation-proof archive maintained by scripts/parity-transcript-archiver.sh
+# (hourly cron); used when the live transcript has been rotated away
+ARCHIVE_DIR = os.environ.get(
+    "PARITY_ARCHIVE_DIR",
+    os.path.expanduser("~/.claude/parity-telemetry/transcripts"),
+)
 STALE_DAYS = 7
 
 METRIC_VERSION = "corr-regex-v1"  # frozen 2026-07-16; see module docstring
@@ -168,6 +174,13 @@ def main():
         os.path.basename(p)[:-6]: p for p in glob.glob(PROJECTS_GLOB)
         if os.path.basename(p)[:-6] in arms
     }
+    # live transcript preferred (fresher while a session is still open);
+    # archived copy rescues sessions the rotation already deleted
+    for sid in arms:
+        if sid not in transcripts:
+            a = os.path.join(ARCHIVE_DIR, f"{sid}.jsonl")
+            if os.path.exists(a):
+                transcripts[sid] = a
 
     # dead-man: the test silently dies if the hook breaks or the default model
     # leaves Opus; surface that before any stats

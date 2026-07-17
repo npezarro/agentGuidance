@@ -10,6 +10,7 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+2026-07-17 | feat | parity-transcript-archiver.sh: hourly cron copying logged A/B session transcripts to ~/.claude/parity-telemetry/transcripts/ before rotation (2 already lost); analyzer falls back to archive. Cron registry reconciled in the same pass (token-relay pair imported; refresh/probe/peloton marked paused per documented intent).
 2026-07-17 | guidance | `agent.md` v4.1.1 (PR #329, merged): Wispr-dictation interpretation rule in Communication section — ignore stray leading `v` artifact, read dictated input for intent, prefer coherent near-homophone, ask only on genuine ambiguity.
 2026-07-17 | ops | Auto-memory store made a local-only git repo (reversibility); `MEMORY.md` index compacted 140→132 by folding coherent singles into content-rollups (index-style rollup members left intact as intentional on-disk files). Templated secret-scan pre-commit hook removed from that local infra-laden store. Closeout in privateContext.
 2026-07-17 | feat | `7785a1a` fable-ref reference cohort: injection hook logs interactive Fable sessions (telemetry only, never injected); analyzer 3-cohort readout w/ per-arm contamination checks; dead-man keys on A/B arms only.

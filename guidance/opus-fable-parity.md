@@ -176,6 +176,14 @@ must throw away as contaminated (three such sessions were burned 2026-07-16 alon
 When a Fable stint ends, flip the default back to Opus; the dead-man check (below)
 nudges after 7 days if forgotten.
 
+**Transcript archive (since 2026-07-17):** `scripts/parity-transcript-archiver.sh`
+(hourly WSL cron, registered in the privateContext jobs registry) copies every logged
+session's transcript to `~/.claude/parity-telemetry/transcripts/` before Claude Code's
+rotation deletes it (~80%+ of transcripts eventually rotate; two A/B sessions were lost
+before this existed). Re-copies while a session grows, so the archive converges to the
+final transcript. The analyzer prefers the live transcript and falls back to the
+archive. Transcripts are private — the archive dir must never be pushed to any repo.
+
 **Telemetry sink:** `~/.claude/parity-telemetry/interactive-arms.jsonl`, one line per
 session start: `{ts, session_id, model, arm, layer_version, source}`. Readout:
 `scripts/parity-arm-analyzer.py` — joins arms to transcripts and compares
