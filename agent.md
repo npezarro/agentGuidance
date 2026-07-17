@@ -65,6 +65,7 @@ Load on-demand based on the current task:
 - `guidance/resource-awareness.md` -- server resource checks
 - `guidance/process-hygiene.md` -- spawned processes, temp files, port conflicts
 - `guidance/operational-safety.md` -- self-deploy loops, restart storms, hook loops
+- `guidance/goal-conditions.md` -- /goal for headless runners: mission-file pattern, condition rules, BLOCKED escape hatch
 - `guidance/secrets-hygiene.md` -- secret rotation, history rewrite, detection patterns
 - `guidance/agent-journal.md` -- async cross-session journal system
 - `guidance/written-voice.md` -- writing in the owner's voice
