@@ -139,6 +139,24 @@ Also wrap non-critical side effects (e.g., `sendEmail()`) in `try/catch` so they
 
 **Packages commonly missing:** `nodemailer`, packages using native bindings, packages only imported in server action callbacks. Source: shopper standalone build (2026-05-15).
 
+## Next.js Standalone: Adaptive `start.sh` Must Guard the Flat Branch on `node_modules/next`
+
+Several apps (shopper/foodie/travel-assistant/employ family) use a `start.sh` that auto-detects layout so the same script works in both a flat prod deploy (`server.js` at the app root) and a standalone dev/staging build (`.next/standalone/server.js`). If the flat-branch check only tests `[ -f "./server.js" ] && [ -d "./.next/server" ]`, it can pick the flat layout on a tree that has those two paths but **no root `node_modules`** (e.g. a fresh git clone used for staging, or a partial rsync artifact) — PM2 then crash-loops on `Error: Cannot find module 'next'` (`MODULE_NOT_FOUND`, requireStack pointing at the root `server.js`).
+
+**Fix:** require `[ -d "./node_modules/next" ]` as part of the flat-branch condition, so an incomplete tree falls through to `.next/standalone/server.js` (which carries its own traced `node_modules`) instead of crash-looping:
+```bash
+if [ -f "./server.js" ] && [ -d "./.next/server" ] && [ -d "./node_modules/next" ]; then
+  STANDALONE_DIR="."
+elif [ -f "./.next/standalone/server.js" ]; then
+  STANDALONE_DIR="./.next/standalone"
+else
+  echo "Critical: server.js not found in . or ./.next/standalone." >&2
+  exit 1
+fi
+```
+
+Source: employ `f7901a0` (2026-07-17) — this exact crash-loop hit `staging-employ`. **Confirmed still unguarded in shopper's `start.sh` as of 2026-07-17** (identical `[ -f "./server.js" ] && [ -d "./.next/server" ]` check, no `node_modules/next` guard) — a live latent risk for any future shopper staging deploy that clones fresh or does a partial rsync; travel-assistant and foodie were checked and don't use this flat/standalone branch at all (they always resolve `.next/standalone/server.js` directly), so they're not affected. Audit any new app cloned from this scaffold for the same gap before it bites in staging.
+
 ## Next.js Standalone: Relative SQLite Paths Break
 
 When using `output: 'standalone'`, `process.cwd()` inside `.next/standalone/server.js` resolves to the `.next/standalone/` directory, not the project root. Any `DATABASE_URL` using a relative path (e.g. `file:./prisma/dev.db` or `file:./data/production.db`) will open or create the DB inside `.next/standalone/` instead of the intended location.
