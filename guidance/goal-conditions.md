@@ -27,6 +27,11 @@ cannot be completed.
 4. **Skip goals on `--resume`.** An active goal restores with the session; sending `/goal` again replaces it and orphans the original condition. All wired paths guard on this.
 5. **Version-guard and fall back.** `runner_claude_goal` falls back to a plain run when the CLI predates 2.1.139 or the composed condition exceeds the cap. Copy that pattern for new consumers; a goal must never be the reason a cron produces nothing.
 
+## Two traps found in production (2026-07-17 postmortem)
+
+1. **Close stdin in goal mode, always.** Bash herestrings/heredocs above the ~64KB pipe capacity are backed by seekable temp files, not pipes. Even after the runner drains stdin into the mission file, `claude -p` re-reads fd0 from position 0 and CONCATENATES it onto the positional prompt, so the entire mission leaks into the goal condition and blows the 4000-char cap. Small prompts ride pipes and pass, which is exactly why smoke tests missed it: the bug only fires above the size threshold. Every goal invocation must run with `< /dev/null` (all wired consumers now do).
+2. **A rejected goal masquerades as success.** The CLI reports a too-long condition as a normal result: `subtype: success`, `is_error: false`, exit 0, `num_turns: 0`, cost $0, with the error text as the result. Runners that key on exit code log it as DONE, and if the result gets journal-posted, the error text echoes into every other session's injected context. Detect `"Goal condition is limited"` in the result and rerun goal-less (`runner_claude_goal` now does), and treat any goal run with `num_turns: 0` as suspect.
+
 ## Operational notes
 
 - **Cost:** the evaluator (Haiku) is negligible, but goal runs take more turns than single-pass runs. Keep goal-wrapped crons behind `check-usage.sh` gates (they already are, via the runner harness).
