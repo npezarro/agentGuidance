@@ -3,7 +3,10 @@
 
 Joins ~/.claude/parity-telemetry/interactive-arms.jsonl (arm assignments written by
 hooks/parity-layer-injection.sh) to the local session transcripts and compares the
-layer vs control arms on correction-rate proxies, with the hygiene rules that the
+layer vs control arms on correction-rate proxies. Interactive Fable sessions are
+logged by the hook as a third, injection-free "fable-ref" cohort and reported as
+descriptive context (the benchmark the layer chases) — NOT randomized against the
+Opus arms, so never read layer-vs-fable-ref gaps as causal. Hygiene rules that the
 first manual readout (2026-07-16) proved necessary:
 
   - dedupe by session_id (resume writes a second telemetry row)
@@ -74,12 +77,16 @@ def load_arms():
     return arms, order
 
 
-def newest_ts():
+def newest_ts(arms_filter=("layer", "control")):
+    # staleness is judged on the A/B arms only: fable-ref rows keep flowing during a
+    # deliberate Fable week, and that must not mask "the A/B is not accruing"
     ts = None
     with open(TELEMETRY) as f:
         for line in f:
             try:
-                ts = json.loads(line).get("ts") or ts
+                r = json.loads(line)
+                if r.get("arm") in arms_filter:
+                    ts = r.get("ts") or ts
             except json.JSONDecodeError:
                 pass
     return ts
@@ -194,7 +201,8 @@ def main():
         if s["aturns"] == 0:
             excluded.append((sid, arm, "degenerate (0 assistant turns)"))
             continue
-        if not any("opus" in m.lower() for m in s["models"]):
+        expect = "fable" if arm == "fable-ref" else "opus"
+        if not any(expect in m.lower() for m in s["models"]):
             excluded.append((sid, arm, f"CONTAMINATED: ran {','.join(s['models'])}"))
             continue
         if sid in judged:
@@ -229,30 +237,32 @@ def main():
     for sid, arm, why in excluded:
         print(f"  excluded {arm:7s} {sid[:8]}: {why}")
 
-    agg = {"layer": dict(sess=0, sess_corr=0, prompts=0, corr=0, tok=0),
-           "control": dict(sess=0, sess_corr=0, prompts=0, corr=0, tok=0)}
-    print(f"\n{'arm':7s} {'session':8s} {'prompts':>7s} {'corr':>4s} {'turns':>5s} {'out_tok':>8s}  models")
+    cohorts = ("layer", "control", "fable-ref")
+    agg = {c: dict(sess=0, sess_corr=0, prompts=0, corr=0, tok=0) for c in cohorts}
+    print(f"\n{'arm':9s} {'session':8s} {'prompts':>7s} {'corr':>4s} {'turns':>5s} {'out_tok':>8s}  models")
     for sid, arm, s in sorted(rows, key=lambda r: r[1]):
-        a = agg[arm]
+        a = agg.setdefault(arm, dict(sess=0, sess_corr=0, prompts=0, corr=0, tok=0))
         a["sess"] += 1
         a["sess_corr"] += 1 if s["corr"] > 0 else 0
         a["prompts"] += s["prompts"]
         a["corr"] += s["corr"]
         a["tok"] += s["out_tok"]
-        print(f"{arm:7s} {sid[:8]} {s['prompts']:>7d} {s['corr']:>4d} {s['aturns']:>5d} {s['out_tok']:>8d}  {','.join(s['models'])}")
+        print(f"{arm:9s} {sid[:8]} {s['prompts']:>7d} {s['corr']:>4d} {s['aturns']:>5d} {s['out_tok']:>8d}  {','.join(s['models'])}")
 
-    L, C = agg["layer"], agg["control"]
-    print(f"\n{'':22s}{'layer':>16s} {'control':>16s}")
-    print(f"{'sessions':22s}{L['sess']:>16d} {C['sess']:>16d}")
-    for name, k_l, n_l, k_c, n_c in (
-        ("corrections/prompt", L["corr"], L["prompts"], C["corr"], C["prompts"]),
-        ("sessions w/ >=1 corr", L["sess_corr"], L["sess"], C["sess_corr"], C["sess"]),
-    ):
-        wl, wc = wilson(k_l, n_l), wilson(k_c, n_c)
-        p = fisher_two_sided(k_l, n_l - k_l, k_c, n_c - k_c)
-        fl = f"{k_l}/{n_l} ({wl[0]:.0%}-{wl[1]:.0%})"
-        fc = f"{k_c}/{n_c} ({wc[0]:.0%}-{wc[1]:.0%})"
-        print(f"{name:22s}{fl:>16s} {fc:>16s}   Fisher p={p:.3f}")
+    # primary comparison is layer vs control (randomized). fable-ref is descriptive
+    # context only — same operator but NOT randomized against the Opus arms, so any
+    # gap vs fable-ref carries task-mix confounds; do not read it as causal.
+    L, C, F = agg["layer"], agg["control"], agg["fable-ref"]
+    print(f"\n{'':22s}{'layer':>16s} {'control':>16s} {'fable-ref':>16s}")
+    print(f"{'sessions':22s}{L['sess']:>16d} {C['sess']:>16d} {F['sess']:>16d}")
+    for name, key_k, key_n in (("corrections/prompt", "corr", "prompts"),
+                               ("sessions w/ >=1 corr", "sess_corr", "sess")):
+        cells = []
+        for a in (L, C, F):
+            w = wilson(a[key_k], a[key_n])
+            cells.append(f"{a[key_k]}/{a[key_n]} ({w[0]:.0%}-{w[1]:.0%})")
+        p = fisher_two_sided(L[key_k], L[key_n] - L[key_k], C[key_k], C[key_n] - C[key_k])
+        print(f"{name:22s}{cells[0]:>16s} {cells[1]:>16s} {cells[2]:>16s}   Fisher(L vs C) p={p:.3f}")
 
     n_small = min(L["sess"], C["sess"])
     if n_small < 15:

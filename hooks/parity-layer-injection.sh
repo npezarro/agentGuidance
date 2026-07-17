@@ -83,21 +83,26 @@ if printf '%s' " $CMDLINE " | grep -qE ' (-p|--print)([ =]|$)'; then
   exit 0
 fi
 
-# --- GUARD 2: effective model must be Opus ---
+# --- GUARD 2 + ARM: Opus enters the A/B; Fable is logged as the reference cohort ---
+# fable-ref sessions NEVER get the layer (validated no-gain on Fable) — they are
+# telemetry-only, so interactive Fable usage lands in the same metrics as the two
+# Opus arms and serves as the benchmark the layer is chasing. Sonnet/Haiku still
+# exit silently (not a relevant cohort; layer misfires there).
 MODEL="$(printf '%s' "$CMDLINE" | grep -oE -- '--model[= ][^ ]+' | head -1 | sed -E 's/--model[= ]//' || true)"
 [ -z "$MODEL" ] && MODEL="$(jq -r '.model // empty' "$HOME/.claude/settings.json" 2>/dev/null || true)"
 case "$MODEL" in
-  *[Oo]pus*) : ;;
+  *[Oo]pus*)
+    # deterministic 50/50 from session id (stable across resume/compact)
+    if [ -n "$SID" ]; then
+      H="$(printf '%s' "$SID" | cksum | cut -d' ' -f1)"
+      if [ "$((H % 100))" -lt "$TREAT_PCT" ]; then ARM="layer"; else ARM="control"; fi
+    else
+      ARM="layer"   # no session id: default to rigor rather than silently dropping it
+    fi
+    ;;
+  *[Ff]able*) ARM="fable-ref" ;;
   *) exit 0 ;;
 esac
-
-# --- ARM: deterministic 85/15 from session id (stable across resume/compact) ---
-if [ -n "$SID" ]; then
-  H="$(printf '%s' "$SID" | cksum | cut -d' ' -f1)"
-  if [ "$((H % 100))" -lt "$TREAT_PCT" ]; then ARM="layer"; else ARM="control"; fi
-else
-  ARM="layer"   # no session id: default to rigor rather than silently dropping it
-fi
 
 # --- TELEMETRY: log once per session (startup/resume), not on every compact ---
 case "${SOURCE:-startup}" in

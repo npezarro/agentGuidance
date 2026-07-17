@@ -164,6 +164,18 @@ minimizes control exposure but makes the test unreadable for months at ~2 Opus
 sessions/day; 50/50 is the readable configuration. Revisit the split (or end the test)
 once each arm has ≥15-30 usable sessions.
 
+**Reference cohort (since 2026-07-16):** interactive **Fable** sessions are logged too,
+as arm `fable-ref` — telemetry only, never injected (layer is validated no-gain on
+Fable). This puts Fable usage on the same correction metrics as the two Opus arms, so
+Fable-heavy weeks produce benchmark data instead of nothing. fable-ref is descriptive
+context, NOT randomized against the Opus arms — never read a layer-vs-fable-ref gap as
+causal. Sonnet/Haiku still exit unlogged. **Model-switching etiquette while the A/B
+runs:** switch models at session START (`--model` flag, or `/model` as the first
+action) — a mid-session `/model` switch leaves a wrong-model arm row that the analyzer
+must throw away as contaminated (three such sessions were burned 2026-07-16 alone).
+When a Fable stint ends, flip the default back to Opus; the dead-man check (below)
+nudges after 7 days if forgotten.
+
 **Telemetry sink:** `~/.claude/parity-telemetry/interactive-arms.jsonl`, one line per
 session start: `{ts, session_id, model, arm, layer_version, source}`. Readout:
 `scripts/parity-arm-analyzer.py` — joins arms to transcripts and compares
