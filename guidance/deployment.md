@@ -324,3 +324,6 @@ Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-d
 **Prevention:**
 - Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
 - Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
+
+### rsync --chmod=D755,F644 for web-root deploys (mktemp staging perms trap) (2026-07-17)
+See memory infra_rsync_mktemp_perms: rsync -a from a mktemp -d staging dir propagates mode 700 onto the destination dir; Apache 403s everything beneath. Always rsync -a --chmod=D755,F644 when deploying to a web root.
