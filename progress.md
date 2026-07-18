@@ -88,3 +88,4 @@
 
 ## 2026-07-16
 - 2eb0f17 Add goal-conditions.md; /goal evaluator Stop-hook exemption in stop-hook-safety.md; agent.md index line (95/100 lines)
+- 2026-07-17: goal-conditions.md gains "Two traps found in production" (stdin leak, rejection-as-success)
