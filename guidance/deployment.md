@@ -466,3 +466,29 @@ fi
 **Why `reset --hard` over `pull`:** `git pull` with a dirty tree merges or errors. A detached/stale branch silently pulls the wrong history. `reset --hard origin/main` is unambiguous: always lands on exactly what's on the remote main branch.
 
 **Safety:** Abort if the tree is dirty so you don't silently wipe in-progress changes. A dirty tree on a deploy server is a signal something is wrong — investigate, don't bulldoze.
+
+## Cloudflare `CF-IPCountry` Header for Visitor Country Detection (2026-07-18)
+
+When an app is behind Cloudflare (all production apps on this host are), Cloudflare stamps a `CF-IPCountry` header on every origin request with the visitor's ISO 3166-1 alpha-2 country code (e.g. `CA`, `GB`, `DE`). No API call or geo-IP library is needed — the header is free and always present.
+
+**How to read it in a Next.js Server Component or Route Handler:**
+```typescript
+import { headers } from 'next/headers';
+
+const headersList = await headers();
+const rawCountry = headersList.get('CF-IPCountry') ?? '';
+// Validate: Cloudflare sends 'XX' for unknown and 'T1' for Tor exit nodes
+const countryCode = rawCountry.toUpperCase();
+const isReal = /^[A-Z]{2}$/.test(countryCode) && countryCode !== 'XX' && countryCode !== 'T1';
+const detectedCountry = isReal ? countryCode.toLowerCase() : 'us'; // fall back to US default
+```
+
+**Key caveats:**
+- `XX` means Cloudflare couldn't determine the country (unusual traffic, misconfigured IP). Always fall back.
+- `T1` means Tor exit node. Always fall back.
+- A missing/empty header should also fall back — it won't happen in production behind Cloudflare, but it will during local development (`npm run dev`) where the header is absent.
+- **Reading `headers()` makes the Next.js route dynamic.** If the page was previously statically rendered, adding this call opts it out of static pre-rendering. For apps that already use auth or SQLite reads this is harmless (the page is already dynamic).
+
+**When to use:** Geo-aware defaults (e.g., default currency, region picker, shipping-address autocomplete), A/B testing by country, locale-based routing. Use the header value as a default suggestion — always let the user override and persist their choice in `localStorage`.
+
+**Verified 2026-07-18:** shopper's "Shopping from?" combobox defaults to the CF-IPCountry-detected country and overrides with a persisted `localStorage` value. Applies to any app on this Cloudflare-proxied host.
