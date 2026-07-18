@@ -492,3 +492,6 @@ const detectedCountry = isReal ? countryCode.toLowerCase() : 'us'; // fall back 
 **When to use:** Geo-aware defaults (e.g., default currency, region picker, shipping-address autocomplete), A/B testing by country, locale-based routing. Use the header value as a default suggestion — always let the user override and persist their choice in `localStorage`.
 
 **Verified 2026-07-18:** shopper's "Shopping from?" combobox defaults to the CF-IPCountry-detected country and overrides with a persisted `localStorage` value. Applies to any app on this Cloudflare-proxied host.
+
+### rsync --chmod=D755,F644 for web-root deploys (mktemp staging perms trap) (2026-07-17)
+See memory infra_rsync_mktemp_perms: rsync -a from a mktemp -d staging dir propagates mode 700 onto the destination dir; Apache 403s everything beneath. Always rsync -a --chmod=D755,F644 when deploying to a web root.

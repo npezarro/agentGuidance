@@ -187,6 +187,28 @@ When a server kicks off long-running work as a fire-and-forget promise (no queue
 
 **Applies to:** any PM2-managed app that does background work in-process rather than via a real job queue (job-pipeline-style repos, employ, similar single-process Next.js/Express apps). If the app already uses a durable queue (BullMQ, a DB-backed worker table with its own heartbeat), this doesn't apply — the queue's own recovery mechanism covers it.
 
+## Cron Registry Reconciliation (WSL jobs registry)
+
+The WSL crontab is GENERATED from `privateContext/jobs/registry.json`
+(`jobs/generate-crontab.sh --install`). When `--install` refuses because the live
+crontab has entries the registry doesn't know about, that refusal is protecting you —
+never reach for `--install --force`, which silently DELETES every live-but-unregistered
+job (2026-07-17: forcing would have killed the load-bearing WSL→VM token-relay crons).
+
+Procedure:
+1. Diff both directions: `diff <(crontab -l | grep -vE '^\s*(#|$)' | sort) <(./generate-crontab.sh | grep -vE '^\s*(#|$)' | sort)`.
+2. For each drifted job, find the documented intent (memory, guidance, closeouts) before
+   deciding direction. Drift is bidirectional: live-added jobs (new infra) AND
+   deliberately-paused jobs (`#PAUSED-*` comments) both accumulate; the live crontab
+   usually reflects the newest decisions.
+3. Import live-only jobs into the registry as `enabled: true`; mark deliberately-paused
+   registry jobs `enabled: false` with a `note` saying why + where that's documented.
+4. `--install` (it writes a timestamped backup first), then verify the delta:
+   `diff <(grep -vE '^\s*(#|$)' backups/<latest>) <(crontab -l | grep -vE '^\s*(#|$)')`
+   must show exactly the changes you intended — nothing else activated or dropped.
+5. When pausing or adding a job in future, do it in the registry, not the crontab —
+   hand-edits are the source of this drift.
+
 ## Runtime & Environment Gotchas (moved)
 
 Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tunnels, cron cooldown + Node lock files, the four PM2 traps, Next.js mcpServer + SSR timezone, Claude OAuth refresh in autonomous agents, Python HTTP client gotchas, WSL headless rendering, Node 22 HTTP) live in `knowledgeBase/patterns/runtime-gotchas.md`. Read that page when touching those systems.

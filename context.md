@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-07-17 | Parity A/B transcript archiver (`c57711f`) + cron-reconcile guidance. New `scripts/parity-transcript-archiver.sh` (hourly WSL cron :43, registered in the privateContext jobs registry): copies every logged A/B session transcript to `~/.claude/parity-telemetry/transcripts/` before Claude Code rotation deletes it (16 captured on first run; 2 pre-archiver sessions lost forever); re-copies while sessions grow; `parity-arm-analyzer.py` falls back to the archive when the live transcript is gone (tested with a synthetic rotated session). Archive dir is PRIVATE — never push to any repo. Registering the cron surfaced bidirectional registry↔crontab drift; reconciled per documented intent (token-relay pair imported; refresh/probe/peloton disabled with notes) and the safe procedure is now `guidance/process-hygiene.md` "Cron Registry Reconciliation" (key rule: the installer's refusal protects live-but-unregistered jobs — never `--force`). State: working; first cron tick next :43. Full closeout: `privateContext/deliverables/closeouts/2026-07-17-parity-transcript-archiver-cron-reconcile.md`.
+
+## Last Updated (prior)
 2026-07-17 | Wispr-dictation interpretation rule added to `agent.md` Communication section (v4.1.1, PR #329, merged): ignore the stray leading dictation artifact (often `v`), read Nick's dictated input for intent over literal transcription, prefer the coherent near-homophone, ask only on genuine ambiguity — placed in the always-loaded file (not on-demand guidance) so it raises interpretation hit-rate every session. Same session, outside this repo: the auto-memory store (`~/.claude/projects/.../memory/`) was made a **local-only git repo** for reversibility and its always-loaded `MEMORY.md` index compacted 140→132 lines by folding coherent technical singles into topic content-rollups (members kept on disk for recall). Key finding: the older *index-style* rollups' `[[wikilink]]` members are intentional on-disk files, NOT duplicates — verified before touching, nothing deleted. The `~/.git-templates` secret-scan pre-commit hook fails safe to *enforce* on remoteless repos (can't confirm private via gh), so it was removed from that intentionally-infra-laden local store (guard: never add a public remote). Closeout: `privateContext/deliverables/closeouts/2026-07-17-wispr-dictation-and-memory-store-git.md`.
 
 ## Last Updated (prior)
@@ -96,3 +99,6 @@ main
 
 ## 2026-07-16: /goal guidance added
 guidance/goal-conditions.md is the canonical doc for running headless claude -p consumers under /goal (mission-file pattern, transcript-demonstrable conditions, BLOCKED escape hatch, resume/version guards). stop-hook-safety.md has the /goal evaluator-hook exemption. State: working; wired consumers listed in the guidance file. Full closeout: privateContext/deliverables/closeouts/2026-07-16-goal-mode-rollout.md
+
+## 2026-07-17: goal-conditions.md production traps added
+Seekable-stdin condition leak + rejected-goal-as-success documented from live postmortem. Companion KB pattern: knowledgeBase/patterns/headless-run-forensics.md.
