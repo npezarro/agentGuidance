@@ -519,3 +519,13 @@ Before reaching for Cloudflare Access / Zero Trust (which needs first-time onboa
 Same pattern protects `/tm-scripts` and the auto-shorts admin. To gate a secret behind Google-login-restricted-to-one-email, serve it from a path UNDER `/tools` (e.g. a Node route `/tools/<name>` sourcing the value from env) — it's automatically OIDC-gated, single login, no new infra. Carve-outs use `AuthType None; Require all granted` (e.g. `/tools/downloads`, `/tools/health`, `/api/notify`).
 
 **M2M caveat:** headless pollers and shell hooks CANNOT be interactively OAuth-gated (they'd get an HTML login page instead of JSON). Keep those on a rotated bearer token (`Require all granted` at Apache, token-auth in the app) and gate only the human *retrieval* of the token.
+
+## OIDC gate has its own cookie-accumulation trap, separate from NextAuth's (2026-07-18)
+
+The `mod_auth_openidc` gate above (previous section) can hit the same "400 Size of a request header field exceeds server limit" symptom as the NextAuth `path=/` issue documented above under "Cookie accumulation exceeds Apache's header limit" — but from a different root cause, so that section's fix doesn't cover it.
+
+`mod_auth_openidc` sets a `mod_auth_openidc_state_<random>` cookie (~460 bytes, scoped to the gated path) on every login round-trip. Incomplete flows — extra tabs, the back button, expired states — leave the old state cookie behind instead of clearing it, so they accumulate across repeated attempts until the combined `Cookie:` header blows the same `LimitRequestFieldSize` limit. Symptom is identical (400 from Apache, gate itself still healthy — a cookie-less request still gets a clean redirect to the identity provider); a curl without cookies will look fine, which makes this easy to misdiagnose as an unrelated NextAuth issue on a shared domain.
+
+**Fix:** add `OIDCStateMaxNumberOfCookies <n> true` right after the relevant `OIDCCookie` directive in the vhost. This bounds concurrent state cookies to `<n>` and auto-deletes the oldest once the limit is hit. It's a vhost-scope (`RSRC_CONF`) directive, so one instance in the default `:443` vhost protects every `mod_auth_openidc`-gated path served from it, not just the one that triggered the report. `apache2ctl configtest` then reload.
+
+**The fix only stops future accumulation** — a browser already carrying the bloated cookie set must clear cookies for the domain (or use a private window) once to recover immediately; existing state cookies age out on their own otherwise.
