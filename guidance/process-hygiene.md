@@ -213,6 +213,16 @@ Procedure:
 
 Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tunnels, cron cooldown + Node lock files, the four PM2 traps, Next.js mcpServer + SSR timezone, Claude OAuth refresh in autonomous agents, Python HTTP client gotchas, WSL headless rendering, Node 22 HTTP) live in `knowledgeBase/patterns/runtime-gotchas.md`. Read that page when touching those systems.
 
+## Confirm Async Follow-Through, Not Just Dispatch (2026-07-19)
+
+An agent that creates a PR, ticket, or any artifact meant to be picked up later is not done when the artifact exists — it's done when the artifact reaches its intended end state (merged, closed, actioned). "I created X" and "X was consumed" are different claims; only report the one you actually verified.
+
+**Recurring pattern:** autonomousDev creates one feature PR per run, but its own closeout never re-checks whether *prior* runs' PRs actually got merged. fix-checker (a separate cron) has caught this independently at least 5 times (Runs 600, 601, 605, 608) — each time finding 1-4 fully-verified, CI-green PRs sitting stale for 2-6 days because nothing after the creating session confirmed the merge landed. One run alone found four separate repos' PRs stale simultaneously.
+
+**Why this kept recurring across "Learning" notes without getting fixed:** the pattern was logged in `autonomousDev-private/fix-checker/logs/failures.md` three times as a "Learning" section but never promoted to a durable guidance file or a code change — each occurrence was treated as a one-off instead of a signal that the general behavior (fire-and-forget artifact creation) needed a structural fix.
+
+**How to apply:** any runner that creates a PR/ticket/artifact for later pickup should, at the START of its next run (not just when a downstream janitor happens to notice), reconcile its own prior outputs against live state — `gh pr view <n> --json state` for every PR link in its own recent log — before creating new work. If a runner can't easily do that itself, a downstream sweep (like fix-checker) is a valid backstop, but log the sweep's cadence explicitly so staleness has a bounded worst case instead of "whenever the janitor gets to it."
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
