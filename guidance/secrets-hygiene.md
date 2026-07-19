@@ -144,6 +144,12 @@ If the sensitive-scan pre-commit hook blocks a commit for a real reason (a genui
 
 **How to apply:** When the hook blocks a commit, resolve it before ending the turn — genericize the flagged term or drop the offending detail, then recommit. If you truly can't resolve it now, either discard the edit (`git checkout -- <file>`) or stash it with a clear message; never leave a bare uncommitted diff on a shared main checkout.
 
+### Regex Pattern Safety for Secret Scrubbers (2026-07-19)
+
+When writing regex-based scrubbers (pre-commit scanners, log redactors, session indexers), do **not** use `\b` (word-boundary anchors) at the start of token patterns. Secrets frequently arrive glued to literal `\n` escape sequences in JSON tool output (e.g. `..."}\nghp_<token>...`), and `\b` treats the preceding word character (`}` / `\n` etc.) as a word boundary failure — the pattern silently misses the token.
+
+**Rule:** Use bare prefix matches without leading anchors: `gh[posru]_[A-Za-z0-9]{36,}` NOT `\bgh[posru]_...`. Over-redaction (matching a word-char-glued token you didn't expect) is always safer than under-redaction. Cover all token prefix variants — the session-recall scrubber initially covered only `ghp_`/`gho_`; `ghu_` (user-to-server), `ghs_` (installation), `ghr_` (refresh), and `github_pat_` (fine-grained PAT) all leaked until explicitly added. **Add a regression test whenever you add a pattern.** Source: session-recall `scrub.py` PR #1 (2026-07-19).
+
 ## Pre-Commit Checklist (Manual Fallback)
 
 When the automated hook isn't installed, verify before committing to any public repo:
