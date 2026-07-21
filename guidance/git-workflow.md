@@ -110,6 +110,18 @@ Open PRs that sit unmerged cause cascading merge conflicts across all other bran
 ### autonomousDev must self-verify its own PRs actually merged (2026-07-05)
 fix-checker runs 600-601: three separate autonomousDev-created `claude/auto-*` PRs across different repos (valueSortify #148, runeval #267, and one other) sat MERGEABLE + CI SUCCESS for 2-4 days before fix-checker caught and merged them. Each was a genuine, already-verified fix — the PR just never got merged after creation. Root cause: autonomousDev's closeout logs "PR: <link>" but doesn't check `gh pr view <n> --json state` before ending the session, so a merge step that silently didn't fire (or was never attempted) goes unnoticed until the next fix-checker pass. **Fix:** autonomousDev should re-check `gh pr view --json state,mergeable` for the PR it just created as the last step of its own session, and merge it right then if MERGEABLE + CI SUCCESS, instead of relying on fix-checker as a merge backstop.
 
+### `git push` blocked by missing `workflow` OAuth scope when the branch carries a `.github/workflows/*` edit (recurring since 2026-04, fixed 2026-07-21)
+The `gho_` OAuth token used by `git`/`gh` in autonomousDev-style automated sessions lacks the `workflow` scope, so any push where the branch's diff touches `.github/workflows/*.yml` is rejected: `refusing to allow an OAuth App to create or update workflow ... without workflow scope`. This has recurred across at least 5 repos over several months (deal-scout, aisleOffersFilterClaimandTracking, auto-shorts-worker, browser-agent, phone-agent run #337) — prior fixes worked around it per-incident (switch to an SSH remote, or create the branch/PR via the GitHub API instead of `git push`), which is more setup than needed.
+
+**Preferred fix:** the workflow-file edit is usually not yours — it's an unpushed dependabot/CI-config commit already sitting on the local default branch (itself failed to push for the same reason), and your feature branch inherited it by branching off local, not remote. Strip it out by rebasing onto the remote base instead of local:
+```bash
+git fetch origin <default-branch>
+git rebase --onto origin/<default-branch> <default-branch> <your-branch>
+git diff --stat origin/<default-branch>..HEAD   # should show only your files, no .github/
+git push
+```
+**Detect early**, before attempting the push: `git log --oneline origin/<default-branch>..HEAD` on your branch — if a commit there touches `.github/workflows/`, it's not yours to push and the rebase above is needed. If your task genuinely does need to modify a workflow file, this rebase won't help — fall back to SSH push or an API-created PR as before.
+
 ### Merged-PR scope notes are sanctioned follow-up work, not dedup blockers (2026-07-03)
 autonomous-dev run 325: When candidate work looks like a duplicate of a recently MERGED PR, read the merged PR's body before rejecting it. An explicit 'out of scope / flagged as a follow-up' note converts the candidate from forbidden duplicate into sanctioned, pre-vetted follow-up work — and the merged PR often ships infrastructure the follow-up should reuse instead of re-inventing (health-hub PR #66 scope note + safeJsonParse helper -> PR #67 per-event webhook batch isolation). Cite the scope note in the new PR body to make the lineage reviewable.
 
