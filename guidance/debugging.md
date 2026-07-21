@@ -220,3 +220,10 @@ Pino's signature is `logger.error(mergingObject, msg)` — extra args after a st
 Fixing call sites one-by-one does not work: two audit passes in the Discord bot repo still left 135 multi-arg sites, and new ones reappear with every feature. **Fix the class at the logger:** install a `hooks.logMethod` that appends would-be-dropped extras to the message (see `src/bot/loggerHooks.js` + its test in the Discord bot repo). Canonical `(obj, msg)` and printf-style calls pass through untouched. Any repo that adopts pino gets the hook from day one.
 
 Source: 2026-07-16 Discord/cloud review — threadJanitor error-logged a Discord 500 every 5 minutes for hours with the cause invisible (`Failed to process thread "...":`), the same bug class a 2026-07-14 audit had "fixed" per-site.
+
+### claude -p is the full agentic CLI: run free-text calls in an empty cwd and retry on any non-zero exit or empty stdout (2026-07-21)
+`claude -p --dangerously-skip-permissions` is the FULL agentic Claude Code CLI, not a constrained text-completion endpoint. Two operational consequences apply to any pipeline that shells out to it (e.g. job-pipeline's generate.py, and any free-text generation pipeline):
+
+1. CWD HYGIENE. When the subprocess runs with its working directory inside a repo, the spawned sub-agent can explore that repo and inject meta-commentary into its output (observed: a generated free-text brief narrated the relative source path it was invoked from, e.g. "sourcing/brief.py"). FIX: for free-text generation calls, set the subprocess cwd to an empty/neutral directory (e.g. a tempfile.mkdtemp()) so there is no repo to explore. For calls whose output is strictly parsed (e.g. JSON extraction) the risk is lower, but the same cwd hygiene is cheap insurance.
+
+2. RETRY BREADTH. Retry logic for `claude -p` must retry on ANY non-zero exit code AND on empty stdout, not only when stderr matches "rate"/"limit". Nested `claude -p` invocations intermittently exit 1 with an EMPTY stderr (a transient); code that only retries on rate/limit strings hard-fails on the first blip. FIX: retry on any non-zero return or empty output, with exponential backoff, up to N attempts.
