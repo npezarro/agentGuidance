@@ -2,17 +2,9 @@
 
 These are the most-violated rules across the agent system. They are injected at SessionStart so every session has them in context. **Hard cap: 10 rules.** A rule graduates out when it stops being violated or gains programmatic enforcement (a hook); graduated rules are listed at the bottom with their durable homes.
 
-## 1. Multi-Destination Learning Capture
-When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
+**Reordered 2026-07-21** (learning-agent run #984, per supervisor run #47's Daily Ecosystem Health report): `verify_before_asserting` promoted from #3 to #1. It now carries the highest 7-day violation rate of any rule (26.1%, n=234) and is the only rule with enough 24h data points (12 sessions) to show a *confirmed* trend — and that trend is degrading (33.3% 24h vs. 26.1% 7d), the opposite direction of every prior week's readings that had kept it ranked #3. Rules 1-2 shift to #2-3, unchanged in substance. Rows 4-7 unchanged in relative order, per the supervisor's explicit recommendation. This reverses runs #44/#45/#46's repeated "no reorder needed" verdicts, which were correct when the violation-rate ordering still matched — today's data no longer does.
 
-**Mandatory trigger for automated sessions (fix-checker, learning-agent, autonomous-dev, and any autonomousDev-private *automated* run — this does NOT exempt interactive sessions working in the autonomousDev-private repo, which are held to the same standard):** At the END of every automated session, call `propagate-learning.sh` unconditionally. Qualifying events: any error worked around, any assumption that proved wrong, any retry requiring a different approach, any service config that needed changing. If you completed with zero surprises, a single no-op call still satisfies this rule — it is idempotent. This rule fires regardless of whether you received a correction.
-
-**Paste the propagate-learning.sh output** (or an explicit "no-op: nothing to propagate" line) into the session's final message. Sessions ending without this line are non-compliant regardless of whether the script actually ran — the scorer has no way to distinguish a swallowed failure from a real no-op otherwise.
-
-## 2. Guidance Updates Go to Repo Files, Not Just Memory
-"Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
-
-## 3. Verify Before Asserting
+## 1. Verify Before Asserting
 Never assert user actions (e.g., "you applied for X") without checking the actual source (Gmail, Drive, git). Prep materials don't mean the action was taken.
 
 **Autonomous session verification gate — pass ALL THREE before any system-state claim:**
@@ -25,6 +17,16 @@ Never assert user actions (e.g., "you applied for X") without checking the actua
 **Externally-verifiable facts — never answer from model memory.** Any factual claim a user could act on that lives outside this ecosystem (issuer/card eligibility rules, offer terms, prices, API pricing/limits, product availability, versions, policies, dates) MUST be verified with a current web search before it is asserted — use the `fact-check` skill on the draft answer. Do NOT self-assess whether the domain is "fast-moving"; if the fact is external and actionable, check it. A stale or curated local file does not count as verification for this class of fact, and a local file NEVER overrides the user's own statement about their own accounts/actions (2026-07-03: an agent told the user his Morgan Stanley Platinum didn't exist because card-portfolio.md was stale). Full procedure: `guidance/fact-checking.md`.
 
 **Mark generated facts and capture sources.** When producing a fact-bearing deliverable (research report, buying guide, bio, resume, cover letter, data table), the facts Claude generates must be distinguishable from what Nick wrote, and every external source must be captured. Internal review docs: inline `[AI·<id>]` tags + a Provenance & Sources appendix. External deliverables (things Nick sends/publishes): clean body, AI-authorship signaled in the title (`… (AI-generated)`) with provenance in frontmatter — never inline markers in the sent text. Capture sources via `source-registry.sh add` into the private `sourceLibrary` repo (cached copy + stable ID). Full procedure: `guidance/provenance.md`.
+
+## 2. Multi-Destination Learning Capture
+When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
+
+**Mandatory trigger for automated sessions (fix-checker, learning-agent, autonomous-dev, and any autonomousDev-private *automated* run — this does NOT exempt interactive sessions working in the autonomousDev-private repo, which are held to the same standard):** At the END of every automated session, call `propagate-learning.sh` unconditionally. Qualifying events: any error worked around, any assumption that proved wrong, any retry requiring a different approach, any service config that needed changing. If you completed with zero surprises, a single no-op call still satisfies this rule — it is idempotent. This rule fires regardless of whether you received a correction.
+
+**Paste the propagate-learning.sh output** (or an explicit "no-op: nothing to propagate" line) into the session's final message. Sessions ending without this line are non-compliant regardless of whether the script actually ran — the scorer has no way to distinguish a swallowed failure from a real no-op otherwise.
+
+## 3. Guidance Updates Go to Repo Files, Not Just Memory
+"Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
 
 ## 4. Test Before Reporting
 Do not claim a feature works until you've tested every user-facing URL, redirect chain, auth flow, and edge case yourself (curl, browser-agent, etc). Deploy-and-report without testing is the #1 recurring failure. For auth/OAuth: testing individual endpoints (csrf, providers, session) does NOT prove the flow works — test the actual POST signin and inspect the redirect URL sent to the OAuth provider.
