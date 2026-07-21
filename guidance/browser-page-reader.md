@@ -117,5 +117,31 @@ page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with c
 
 **Sub-agent rule:** never delegate auth-gated or SPA retrieval to a sub-agent armed only with WebFetch — hand it the waterfall (and the browser-agent command) or retrieve via browser-agent in the main thread and pass the text down. An auth/paywall wall is *climbable*, not terminal.
 
+## When Playwright MCP Is Not Available (Headless/Autonomous Sessions)
+
+Headless autonomous sessions (autonomousDev-private, fix-checker, learnings-pass crons) often do NOT have the Playwright MCP connected — `ToolSearch` returns no `browser_*` tools. This is expected, not a failure. Use the cached Playwright package directly instead:
+
+**Playwright browsers are cached at** `~/.cache/ms-playwright` (e.g. `chromium-1223/chrome-linux64/chrome`). The `playwright` npm package is installed in `~/repos/freeGames`, `~/repos/page-reader`, and `~/repos/scripts`.
+
+**Import gotcha:** The installed `playwright` is CommonJS. Naively doing `import { chromium } from ".../playwright/index.js"` **fails** with "Named export not found". Use the default import instead:
+
+```js
+import pw from "/home/npezarro/repos/page-reader/node_modules/playwright/index.js";
+const { chromium } = pw;
+
+const browser = await chromium.launch({
+  executablePath: "/home/npezarro/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome",
+  headless: true,
+});
+```
+
+Pass `executablePath` to the cached chrome binary so Playwright doesn't demand its own bundled revision.
+
+**localStorage-gated SPAs** (e.g. valueSortify uses `valuesortify-session` key): `goto` the app URL, call `page.evaluate(() => localStorage.setItem(...))`, then `page.reload()` to render the gated screen. A plain `goto` won't show the gated view.
+
+**Start vite with an explicit port** to avoid race conditions: `npm run dev -- --port <p> --strictPort`. A lone `favicon.ico` 404 in the console is expected on vite dev (no favicon ref in `index.html`), not a regression.
+
+Source: autonomousDev-private CLAUDE.md (run #336, 2026-07-20), pattern verified for valueSortify phase-3 browser test.
+
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
