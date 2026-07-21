@@ -220,3 +220,13 @@ Pino's signature is `logger.error(mergingObject, msg)` — extra args after a st
 Fixing call sites one-by-one does not work: two audit passes in the Discord bot repo still left 135 multi-arg sites, and new ones reappear with every feature. **Fix the class at the logger:** install a `hooks.logMethod` that appends would-be-dropped extras to the message (see `src/bot/loggerHooks.js` + its test in the Discord bot repo). Canonical `(obj, msg)` and printf-style calls pass through untouched. Any repo that adopts pino gets the hook from day one.
 
 Source: 2026-07-16 Discord/cloud review — threadJanitor error-logged a Discord 500 every 5 minutes for hours with the cause invisible (`Failed to process thread "...":`), the same bug class a 2026-07-14 audit had "fixed" per-site.
+
+### 14. External API Calls Need Retry-with-Backoff for Transient Network Errors
+
+Any code that calls an external HTTP API directly (`requests`, raw `fetch`, an SDK's internal session) will eventually hit a transient DNS resolution failure or connection error (`NameResolutionError`, `ECONNRESET`, `ECONNREFUSED`, timeouts) that has nothing to do with the API itself — the network blipped. Without a retry, one blip silently drops that cycle's work: a poll returns 0 results, a job fails, a bridge call 500s, and the failure looks like a code bug when it's actually a network hiccup.
+
+This has independently recurred in at least three unrelated repos, each solving it slightly differently: `trading-agent` (SEC EDGAR `_sec_get()` then generalized to Alpaca market/news collectors — 5x exponential backoff on `ConnectionError`/429), `auto-shorts-worker` (`urllib3.Retry(total=5, connect=3, read=3, ...)` plus a localhost-first probe to sidestep DNS entirely for co-located services — see `knowledgeBase/patterns/runtime-gotchas.md`), and `shopper` (bridge client retries once after 30s on `ECONNREFUSED`/`ECONNRESET`/`EPIPE`/`UND_ERR_CONNECT_TIMEOUT`/"fetch failed"). None of these repos discovered the pattern from the others — each hit it fresh in production.
+
+**When writing a new integration against an external API, add retry-with-backoff from the start** rather than waiting for a silent-failure incident to force it in: catch the transient network exceptions your HTTP client raises, retry 3-5x with exponential backoff (2s base is a reasonable default), and only surface an error after retries are exhausted. Don't assume the network is reliable just because the API contract is stable.
+
+Source: trading-agent commits `7a90a05`/`48987b2` (EDGAR retry) and `b6a857d`/`a316092` (Alpaca market/news retry, 2026-07-21), auto-shorts-worker PRs #39/#40 (2026-05/06), shopper `src/lib/query-executor.ts`.
