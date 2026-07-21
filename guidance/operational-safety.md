@@ -504,3 +504,24 @@ When multiple agent sessions run in the same home directory (common under `--dan
 5. Fix by coordinating targets (point the other session at a different path), not by re-deploying repeatedly to "win" the race. Killing a live interactive session is destructive — ask first, don't just kill it.
 
 Source: two concurrent sessions both deploying to the same static-site `index.html` target on `example.com`, one repeatedly clobbering the other's report-feed redesign with a stale finance-dashboard rebuild (2026-07-17).
+
+## Cron-Triggered Runners Silently Execute Stale Code After a PR Merges (2026-07-21)
+
+A cron job that operates on a local git checkout (reads its own prompt template, sources its own lib functions, scans other repos) has no reason to ever be behind — but nothing fast-forwards that checkout unless something explicitly does. A `git pull`/`fetch`+`merge --ff-only` is not implied by "the PR merged." This is easy to miss because the staging side (worktree-based PR flow, so the main checkout stays untouched for concurrent sessions' hooks) actively *avoids* touching the checkout, and there's no separate step that ever brings it forward.
+
+**Confirmed:** a learning-agent run (#988) found its own generated mission file still exhibited a bug (S149, `{{PLACEHOLDER}}` corruption in `${var//pattern/replacement}` substitutions) whose fix had merged to `origin/main` **40 minutes earlier** (`autonomousDev-private` PR #38). The local checkout the cron job actually executes from was still 1 commit behind — the merge had happened on GitHub, but nothing had ever pulled it down locally. The same gap existed independently in a second pipeline (`agentRuntime/security-scanner`, 3 cron scripts, no shared lib at all).
+
+**Fix pattern:** at the very top of each runner (right after its lock is acquired, before reading any prompt template or repo content), fetch + fast-forward-merge the runner's own repo:
+```bash
+_branch=$(git -C "$REPO_DIR" branch --show-current 2>/dev/null || echo "")
+if [ "$_branch" = "main" ] || [ "$_branch" = "master" ]; then
+  git -C "$REPO_DIR" fetch origin "$_branch" --quiet 2>/dev/null \
+    && git -C "$REPO_DIR" merge --ff-only "origin/$_branch" --quiet 2>/dev/null \
+    || log "WARN: self-update failed for $REPO_DIR — running possibly-stale code"
+fi
+```
+Fail-open (log a warning, never abort the run) — a transient fetch failure shouldn't turn a cron job into a hard outage. `--ff-only` is safe alongside uncommitted local state changes (runner-managed `state.json`/log files) since it only advances the branch pointer when there's no real divergence.
+
+**Applies beyond the runner's own code:** any pipeline that reads a SEPARATE repo's content (a different repo's `CLAUDE.md`, a shared guidance dir) to build a prompt or stage a worktree branch has the same exposure on that repo's checkout too — a stale read either re-proposes already-merged content or forks a new branch from a stale base (a likely contributor to past merge-conflict cleanup in this very pipeline's own PR history).
+
+Source: `autonomousDev-private` PR #39 and `agentRuntime` PR #2 (both 2026-07-21) — see each repo's `lib/runner-lib.sh` (or inline copy) for the `runner_self_update`/equivalent implementation.
