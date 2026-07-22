@@ -542,3 +542,11 @@ The `mod_auth_openidc` gate above (previous section) can hit the same "400 Size 
 **Fix:** add `OIDCStateMaxNumberOfCookies <n> true` right after the relevant `OIDCCookie` directive in the vhost. This bounds concurrent state cookies to `<n>` and auto-deletes the oldest once the limit is hit. It's a vhost-scope (`RSRC_CONF`) directive, so one instance in the default `:443` vhost protects every `mod_auth_openidc`-gated path served from it, not just the one that triggered the report. `apache2ctl configtest` then reload.
 
 **The fix only stops future accumulation** — a browser already carrying the bloated cookie set must clear cookies for the domain (or use a private window) once to recover immediately; existing state cookies age out on their own otherwise.
+
+## OIDCCookiePath must be the common ancestor of ALL gated paths, or new paths loop forever (2026-07-22)
+
+When one vhost gates multiple paths behind the same `mod_auth_openidc` config (the "reuse the Apache OIDC gate" pattern above), the directives are vhost-global, not per-`<Location>` — there is exactly one `OIDCCookiePath` shared by every gated path on that vhost. If it's scoped to whichever path was gated first (e.g. `OIDCCookiePath /first-gated-path`), the session cookie's `Path=` attribute never covers a path added later, so that new path never receives the cookie and loops back to the identity provider forever. This is easy to misdiagnose as a routing or callback bug: each redirect in the flow looks correct in isolation, and the ORIGINAL gated path keeps working fine throughout.
+
+**Fix:** set `OIDCCookiePath /` — the common ancestor of every current and future gated path, plus the shared callback URL. Do not scope it to a subpath, even the one gated first.
+
+**Recovery:** a browser already holding the stale `Path=/<old>` cookie must clear cookies for the domain (or use a private window) once; the old cookie doesn't get invalidated on its own when the config changes.
