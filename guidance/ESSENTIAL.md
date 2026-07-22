@@ -4,6 +4,8 @@ These are the most-violated rules across the agent system. They are injected at 
 
 **Reordered 2026-07-21** (learning-agent run #984, per supervisor run #47's Daily Ecosystem Health report): `verify_before_asserting` promoted from #3 to #1. It now carries the highest 7-day violation rate of any rule (26.1%, n=234) and is the only rule with enough 24h data points (12 sessions) to show a *confirmed* trend — and that trend is degrading (33.3% 24h vs. 26.1% 7d), the opposite direction of every prior week's readings that had kept it ranked #3. Rules 1-2 shift to #2-3, unchanged in substance. Rows 4-7 unchanged in relative order, per the supervisor's explicit recommendation. This reverses runs #44/#45/#46's repeated "no reorder needed" verdicts, which were correct when the violation-rate ordering still matched — today's data no longer does.
 
+**Reordered again 2026-07-22** (learning-agent run #995, per supervisor run #48's Daily Ecosystem Health report): `gather_context_before_debugging` promoted from #5 to #2 — it had the sharpest 24h trend in today's data (26.7% 24h vs. 12.2% 7d, "degrading sharply") and, along with `verify_before_asserting`, was one of only two rules with a *confirmed* trend (not insufficient-data). Both rules trace to the same collapsed cohort: 6 `interactive`/`autonomousDev-private`/`fix-checker` sessions scored 0-20% today and accounted for every violation in the 24h window across 6 different rules (9 of 15 sessions overall scored 100%). `multi_destination_learning` (#2→#3) and `guidance_to_repo_files` (#3→#4) both shift down one slot each — still elevated on the 7-day view but genuinely improving day-over-day (13.2%→13.3% over the last two days, down from a 23-31% band), so demoted rather than removed. `test_before_reporting` shifts #4→#5, unchanged in substance. Rows 6-8 unchanged in relative order. The supervisor separately flagged Rule 8 (`prove_alarm_wrong`, added 2026-07-21) for a graduation *review*, not graduation itself — zero violations logged since it was added, but too recent (1 day) to tell working-as-intended from simply untested; needs 5+ alarm-adjacent sessions before revisiting.
+
 ## 1. Verify Before Asserting
 Never assert user actions (e.g., "you applied for X") without checking the actual source (Gmail, Drive, git). Prep materials don't mean the action was taken.
 
@@ -18,26 +20,26 @@ Never assert user actions (e.g., "you applied for X") without checking the actua
 
 **Mark generated facts and capture sources.** When producing a fact-bearing deliverable (research report, buying guide, bio, resume, cover letter, data table), the facts Claude generates must be distinguishable from what Nick wrote, and every external source must be captured. Internal review docs: inline `[AI·<id>]` tags + a Provenance & Sources appendix. External deliverables (things Nick sends/publishes): clean body, AI-authorship signaled in the title (`… (AI-generated)`) with provenance in frontmatter — never inline markers in the sent text. Capture sources via `source-registry.sh add` into the private `sourceLibrary` repo (cached copy + stable ID). Full procedure: `guidance/provenance.md`.
 
-## 2. Multi-Destination Learning Capture
+## 2. Gather Context Before Diving In
+Before starting any task in a documented domain, read your own context: relevant memory files, the repo's CLAUDE.md, guidance files for the domain, and wiki pages. The answer is often already documented. Skipping this step is the #1 cause of multi-hour debugging loops that end with applying a fix that was already in memory. For creation tasks (docs, features, integrations), it prevents violations of existing rules (formatting, auth patterns, deploy procedures) that the agent would have seen if it checked first. This applies doubly when the domain has known complexity (auth, deployment, cross-repo flows).
+
+**Mandatory pre-reads for known-complex domains:**
+- **OAuth/auth on subpath apps**: Read `guidance/auth-basepath.md` BEFORE writing any auth code. It documents the centralized auth-proxy pattern, the step-by-step new-app checklist, and a list of approaches that DO NOT work. Multiple sessions have wasted hours trying approaches already documented as broken.
+
+## 3. Multi-Destination Learning Capture
 When you learn something new or receive a correction, save it to ALL relevant destinations in one action — not just memory. Use `~/repos/agentGuidance/scripts/propagate-learning.sh` to handle routing. Destinations: (1) memory, (2) repo CLAUDE.md, (3) agentGuidance or privateContext, (4) knowledgeBase if cross-cutting (3+ repos).
 
 **Mandatory trigger for automated sessions (fix-checker, learning-agent, autonomous-dev, and any autonomousDev-private *automated* run — this does NOT exempt interactive sessions working in the autonomousDev-private repo, which are held to the same standard):** At the END of every automated session, call `propagate-learning.sh` unconditionally. Qualifying events: any error worked around, any assumption that proved wrong, any retry requiring a different approach, any service config that needed changing. If you completed with zero surprises, a single no-op call still satisfies this rule — it is idempotent. This rule fires regardless of whether you received a correction.
 
 **Paste the propagate-learning.sh output** (or an explicit "no-op: nothing to propagate" line) into the session's final message. Sessions ending without this line are non-compliant regardless of whether the script actually ran — the scorer has no way to distinguish a swallowed failure from a real no-op otherwise.
 
-## 3. Guidance Updates Go to Repo Files, Not Just Memory
+## 4. Guidance Updates Go to Repo Files, Not Just Memory
 "Update guidance" means edit files in agentGuidance/, privateContext/, or repo CLAUDE.md. Memory is supplemental. Memory-only saves are invisible to autonomous agents, Discord bots, and other sessions.
 
-## 4. Test Before Reporting
+## 5. Test Before Reporting
 Do not claim a feature works until you've tested every user-facing URL, redirect chain, auth flow, and edge case yourself (curl, browser-agent, etc). Deploy-and-report without testing is the #1 recurring failure. For auth/OAuth: testing individual endpoints (csrf, providers, session) does NOT prove the flow works — test the actual POST signin and inspect the redirect URL sent to the OAuth provider.
 
 **Never claim a tool is unresponsive without confirmed failure.** If a tool call times out or errors, show the actual error. If the user says a tool IS working (e.g., "the extension is active"), immediately retry — do not insist it's broken. Never say "already handled" unless you can point to the actual output that fulfills the request.
-
-## 5. Gather Context Before Diving In
-Before starting any task in a documented domain, read your own context: relevant memory files, the repo's CLAUDE.md, guidance files for the domain, and wiki pages. The answer is often already documented. Skipping this step is the #1 cause of multi-hour debugging loops that end with applying a fix that was already in memory. For creation tasks (docs, features, integrations), it prevents violations of existing rules (formatting, auth patterns, deploy procedures) that the agent would have seen if it checked first. This applies doubly when the domain has known complexity (auth, deployment, cross-repo flows).
-
-**Mandatory pre-reads for known-complex domains:**
-- **OAuth/auth on subpath apps**: Read `guidance/auth-basepath.md` BEFORE writing any auth code. It documents the centralized auth-proxy pattern, the step-by-step new-app checklist, and a list of approaches that DO NOT work. Multiple sessions have wasted hours trying approaches already documented as broken.
 
 ## 6. Mistake Postmortem
 After a mistake: (1) check if a rule already exists in guidance, (2) if yes, patch the gap in the rule, (3) if no, add a new rule, (4) commit and push immediately. Don't just fix the symptom.

@@ -89,6 +89,20 @@ Never commit raw AI chat exports to any repository. If reference material from a
 
 This pattern caused a real incident: Gemini exports with medical/psychiatric chat titles were committed to a public repo and had to be emergency-removed (2026-04-05).
 
+## Redaction/Scrub Functions Must Cover URL-Userinfo Credentials
+
+Secret-scrubbing functions (shell-history redaction, log sanitizers, chat-log scrubbers) commonly cover env-style assignments (`TOKEN=...`), password flags (`-p`/`--password`), and `Authorization: Bearer` headers, but routinely MISS credentials embedded in a URL's userinfo segment: `scheme://user:secret@host`. Git PAT clone URLs (`https://user:ghp_xxx@github.com/...`), psql/mongodb/redis connection strings, and curl basic-auth URLs all carry the secret there and slip through unredacted.
+
+When auditing or writing any redaction/scrub function, add a userinfo pattern that redacts only the password segment of a `user:secret@` authority:
+
+```js
+.replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+):[^/\s@]+@/gi, '$1:[REDACTED]@')
+```
+
+This leaves ordinary URLs (`host:port/path`, `user@host`, scp targets) byte-identical, avoiding over-redaction.
+
+**Why:** Found in `activity-tracker`'s shell-history collector (PR #82, 2026-07-22) — its redaction covered every common secret shape except this one, so any `git clone https://user:TOKEN@github.com/...` typed at a shell landed unredacted in the SQLite events DB and the daily Claude memory summary. Any repo with a scrub/sanitize/redact function that touches shell history, logs, or chat exports should be audited for this gap, not just activity-tracker.
+
 ## Automated Security Hooks (Pre-Commit + Pre-Push)
 
 All public repos MUST have both pre-commit and pre-push hooks installed. These scan for sensitive identifiers before code reaches the remote.
