@@ -269,6 +269,40 @@ Benefits: `start.sh` also loads `.env` before the process starts, ensuring env v
 
 Repos using this pattern: `claude-auto-merger`, `shopper`.
 
+## start.sh Self-Healing Checks (Next.js Apps)
+
+For Next.js apps served with `start.sh`, add self-healing checks before starting the server. This prevents crash loops after staging-artifact corruption, fresh git clones, or deploy-path changes. In use across `shopper`, `foodie`, and `travel-assistant`:
+
+```bash
+#!/bin/bash
+set -e
+cd "$(dirname "$0")"
+source .env 2>/dev/null || true
+
+# 1. node_modules missing → install before attempting build
+if [ ! -d "node_modules" ]; then
+  npm install --production || { echo "npm install failed"; exit 1; }
+fi
+
+# 2. Build output missing (server.js or static assets) → rebuild
+if [ ! -f ".next/standalone/server.js" ] || [ ! -d ".next/standalone/.next/static" ]; then
+  npm run build || { echo "build failed"; exit 1; }
+fi
+
+# 3. Build was made for a different path → rebuild
+APPDIR=$(node -e "console.log(require('./.next/required-server-files.json').appDir || '')" 2>/dev/null || echo "")
+if [ -n "$APPDIR" ] && [ "$APPDIR" != "$(pwd)" ]; then
+  npm run build || { echo "build failed"; exit 1; }
+fi
+
+exec node .next/standalone/server.js
+```
+
+**Key rules:**
+- All build failures must `exit 1` so PM2 records a clean error rather than restarting into a broken loop.
+- Do not simplify these checks — each catches a distinct failure mode.
+- `start-stg.sh` (staging wrapper) should use `cd "$(dirname "$0")" && exec ./start.sh` rather than `exec bash start.sh`. The `cd` sets CWD to the script's own directory before handing off, which is more reliable than path-expansion when the CWD differs from the script location. Source: foodie PR #19 (2026-05-31).
+
 ## VM SSH Access
 
 The GCP VM username is **not** the same as the local username. Before SSH-ing or writing paths that reference the home directory, check `privateContext/sensitive-identifiers.md` for the correct username — hardcoding the wrong one is a recurring source of deploy failures. Always use `$HOME` or `~` in scripts rather than hardcoded paths like `/home/<user>/`.
