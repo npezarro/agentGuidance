@@ -52,3 +52,19 @@ Convert markdown to HTML, then upload via Google Drive API with `contentMimeType
 3. **Batch independent formatting calls** in parallel.
 
 **Do NOT use `createGoogleDoc`/`updateGoogleDoc` for long-form docs with tables.** These tools only accept plain text; tables cannot be created through them.
+
+## Google Sheets — Bulk Update Safety
+
+**Always re-read the target range immediately before any bulk write.** Do not rely on row indices captured earlier in the session.
+
+External processes (other Claude instances, the user, automated cron jobs) may insert or shift rows between your read and your write. If you write with stale indices, you silently stomp the wrong rows with no error.
+
+**Procedure:**
+1. Call `getGoogleSheetContent` on the target range.
+2. Verify column A (or the identifier column) matches your expected data for each row.
+3. If the range has shifted, recalculate row indices before writing.
+4. Then call `updateGoogleSheet` with the corrected range.
+
+**Why:** On 2026-06-01, a new job row was inserted at row 57 between two writes in the same session. The second write stomped the new row's URL and silently shifted every subsequent row's URL to the wrong company. Detected only by spot-checking the result.
+
+This applies equally to Google Calendar bulk edits, Notion bulk mutations, and any multi-row write against shared state in a long session.
