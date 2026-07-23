@@ -80,6 +80,26 @@ npm runs `postbuild` automatically after `build`. This pattern is used in financ
 
 **Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
 
+## Next.js 16 Standalone: Missing App-Router Server Files
+
+Next.js 16's `output: 'standalone'` build omits `.next/server/app/` and related app-router files from the standalone output. Any route using `use client` components throws `InvariantError: client reference manifest does not exist` at runtime. The process appears healthy at the PM2 and `/api/health` level — only page renders fail, which makes it easy to miss in deploy verification.
+
+**Fix:** Add explicit surgical copies to the build command after `next build`:
+
+```bash
+next build \
+  && cp -r .next/static .next/standalone/.next/ \
+  && cp -r public .next/standalone/ \
+  && (cp -r .next/server/app .next/standalone/.next/server/ 2>/dev/null || true) \
+  && (cp -r .next/server/pages .next/standalone/.next/server/pages/ 2>/dev/null || true) \
+  && (cp .next/server/middleware-manifest.json .next/standalone/.next/server/ 2>/dev/null || true) \
+  && test -f .next/standalone/server.js
+```
+
+This is distinct from the `static/` symlink fix above — both are needed. The `static/` and `public/` copies fix missing CSS/JS assets; the `server/app/` copies fix the missing route manifests.
+
+**Affected apps:** Any Next.js 16 app using App Router + `output: 'standalone'`. Source: runeval commit `9d45164` (2026-06-08).
+
 ## GitHub Pages Static Export (No-Server Alternative)
 
 For apps that don't require SSR, auth, or server-side API routes, `output: 'export'` produces a static site that can be hosted on GitHub Pages for free — no VM, no PM2, no Apache config needed.
