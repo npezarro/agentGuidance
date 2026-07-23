@@ -213,6 +213,19 @@ An agent that creates a PR, ticket, or any artifact meant to be picked up later 
 
 **How to apply:** any runner that creates a PR/ticket/artifact for later pickup should, at the START of its next run (not just when a downstream janitor happens to notice), reconcile its own prior outputs against live state — `gh pr view <n> --json state` for every PR link in its own recent log — before creating new work. If a runner can't easily do that itself, a downstream sweep (like fix-checker) is a valid backstop, but log the sweep's cadence explicitly so staleness has a bounded worst case instead of "whenever the janitor gets to it."
 
+## Gemini CLI (`gemini -p`) Does Not Support Multimodal Input
+
+`gemini -p @filepath` passes files as **text**, not as multimodal Parts. For binary files (mp4, jpg, png, pdf), the CLI reads the bytes as a string — Gemini receives nothing useful and responds with "I cannot view image/video files."
+
+This applies even with `--skip-trust` and `GOOGLE_GENAI_USE_GCA=true`. The limitation is in how the CLI constructs its API request, not in the GCA credentials.
+
+**For VLM (vision/video) tasks:**
+- **Free option:** Use `claude -p --model haiku` — it natively reads images via the built-in Read tool, at $0 cost on host auth. ~20-30s per image batch.
+- **Paid option:** Use the Gemini Files API directly (Node SDK or REST) with `GEMINI_API_KEY` from AI Studio. Cheap (~$0.0015/min on Flash) but no longer free.
+- **Text-only Gemini work:** `gemini -p` is fine and free.
+
+Source: audio-description-creator build (2026-06-05) — original architecture routed visual-understanding through `gemini -p`; silently failed because CLI does not pass binary attachments as multimodal Parts. Memory: `learning_gemini_cli_no_multimodal.md`.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
