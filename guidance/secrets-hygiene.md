@@ -89,6 +89,20 @@ Never commit raw AI chat exports to any repository. If reference material from a
 
 This pattern caused a real incident: Gemini exports with medical/psychiatric chat titles were committed to a public repo and had to be emergency-removed (2026-04-05).
 
+## Redaction/Scrub Functions Must Cover URL-Userinfo Credentials
+
+Secret-scrubbing functions (shell-history redaction, log sanitizers, chat-log scrubbers) commonly cover env-style assignments (`TOKEN=...`), password flags (`-p`/`--password`), and `Authorization: Bearer` headers, but routinely MISS credentials embedded in a URL's userinfo segment: `scheme://user:secret@host`. Git PAT clone URLs (`https://user:ghp_xxx@github.com/...`), psql/mongodb/redis connection strings, and curl basic-auth URLs all carry the secret there and slip through unredacted.
+
+When auditing or writing any redaction/scrub function, add a userinfo pattern that redacts only the password segment of a `user:secret@` authority:
+
+```js
+.replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+):[^/\s@]+@/gi, '$1:[REDACTED]@')
+```
+
+This leaves ordinary URLs (`host:port/path`, `user@host`, scp targets) byte-identical, avoiding over-redaction.
+
+**Why:** Found in `activity-tracker`'s shell-history collector (PR #82, 2026-07-22) — its redaction covered every common secret shape except this one, so any `git clone https://user:TOKEN@github.com/...` typed at a shell landed unredacted in the SQLite events DB and the daily Claude memory summary. Any repo with a scrub/sanitize/redact function that touches shell history, logs, or chat exports should be audited for this gap, not just activity-tracker.
+
 ## Automated Security Hooks (Pre-Commit + Pre-Push)
 
 All public repos MUST have both pre-commit and pre-push hooks installed. These scan for sensitive identifiers before code reaches the remote.
@@ -135,6 +149,20 @@ The hooks scan the full `git diff`, including removed lines. When you're *removi
 3. The commit message explicitly states the bypass reason (e.g., "Security remediation: --no-verify used because pre-commit hook flags the removal lines")
 
 This pattern was validated across 7+ repos during the 2026-05 infrastructure redaction sweep (claude-tray-notifier, claudeNet, groceryGenius, manchu-translator, valueSortify, youtubeSpeedSetAndRemember, claude-bakeoff, agentGuidance).
+
+### Don't Abandon a Hook-Blocked Commit Uncommitted
+
+If the sensitive-scan pre-commit hook blocks a commit for a real reason (a genuine identifier that needs genericizing, not the removal-line catch-22 above), fix the wording and recommit in the same session. Don't leave the edit sitting uncommitted in the working tree for a future session to find.
+
+**Why:** A guidance edit (a valid pino-logger pattern addition) sat as a stray uncommitted diff on the shared `~/repos/agentGuidance` main checkout for at least a day — a prior session hit the hook block (the draft named an internal private repo), abandoned it uncommitted instead of genericizing the wording, and moved on. It was only recovered because a later session's stray-diff sweep happened to catch it (learning-agent run #943). On a repo multiple concurrent sessions read from (SessionStart hooks execute from the working copy), an uncommitted diff is invisible to everyone but the session that made it, and a stale one can be mistaken for another session's in-progress work.
+
+**How to apply:** When the hook blocks a commit, resolve it before ending the turn — genericize the flagged term or drop the offending detail, then recommit. If you truly can't resolve it now, either discard the edit (`git checkout -- <file>`) or stash it with a clear message; never leave a bare uncommitted diff on a shared main checkout.
+
+### Regex Pattern Safety for Secret Scrubbers (2026-07-19)
+
+When writing regex-based scrubbers (pre-commit scanners, log redactors, session indexers), do **not** use `\b` (word-boundary anchors) at the start of token patterns. Secrets frequently arrive glued to literal `\n` escape sequences in JSON tool output (e.g. `..."}\nghp_<token>...`), and `\b` treats the preceding word character (`}` / `\n` etc.) as a word boundary failure — the pattern silently misses the token.
+
+**Rule:** Use bare prefix matches without leading anchors: `gh[posru]_[A-Za-z0-9]{36,}` NOT `\bgh[posru]_...`. Over-redaction (matching a word-char-glued token you didn't expect) is always safer than under-redaction. Cover all token prefix variants — the session-recall scrubber initially covered only `ghp_`/`gho_`; `ghu_` (user-to-server), `ghs_` (installation), `ghr_` (refresh), and `github_pat_` (fine-grained PAT) all leaked until explicitly added. **Add a regression test whenever you add a pattern.** Source: session-recall `scrub.py` PR #1 (2026-07-19).
 
 ## Pre-Commit Checklist (Manual Fallback)
 

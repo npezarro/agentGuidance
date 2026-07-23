@@ -52,3 +52,5 @@ Convert markdown to HTML, then upload via Google Drive API with `contentMimeType
 3. **Batch independent formatting calls** in parallel.
 
 **Do NOT use `createGoogleDoc`/`updateGoogleDoc` for long-form docs with tables.** These tools only accept plain text; tables cannot be created through them.
+
+**Google Docs tabs cannot be created via the API (verified 2026-07-20).** The Tabs feature visible in the Docs UI is not exposed through the Google Docs or Drive API (issuetracker.google.com issue #375867285). When you need per-topic navigation inside a doc, use dated HEADING_1 sections (newest-first) instead — the built-in outline pane lists them like tabs and the approach works with `append-to-doc.js`. Do not block on tab creation; fall back to sections immediately.

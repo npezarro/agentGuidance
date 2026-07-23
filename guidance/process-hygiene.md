@@ -177,6 +177,16 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Fire-and-Forget Async Jobs Need a Startup Reaper
+
+When a server kicks off long-running work as a fire-and-forget promise (no queue, no worker process — just `doWork().then(...)` while the HTTP response returns immediately) and records progress in a DB row (`status='pending'`), a PM2 restart (deploy, crash, OOM) kills the in-memory promise but leaves the DB row stuck in `pending` forever. Nothing ever transitions it to `completed`/`failed`, so a client polling for status waits indefinitely and no completion email/Discord notification ever fires.
+
+**Real case (employ, commit `e11e58c`, 2026-07-14):** every AI action (role discovery, material generation) ran as an in-process fire-and-forget promise. A restart mid-job stranded a `materials` row in `pending` with no recovery path.
+
+**Fix pattern:** on process startup (first DB open), run a reaper that marks any `pending` row older than your job's expected max duration (with margin — e.g. 2x the typical timeout) as `failed` with a retry-able message. Gate strictly on age so the reaper never touches a job the *current* process just started. This is a startup check, not a cron — it only needs to run once per process boot.
+
+**Applies to:** any PM2-managed app that does background work in-process rather than via a real job queue (job-pipeline-style repos, employ, similar single-process Next.js/Express apps). If the app already uses a durable queue (BullMQ, a DB-backed worker table with its own heartbeat), this doesn't apply — the queue's own recovery mechanism covers it.
+
 ## Cron Registry Reconciliation (WSL jobs registry)
 
 The WSL crontab is GENERATED from `privateContext/jobs/registry.json`

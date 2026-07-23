@@ -80,6 +80,23 @@ npm runs `postbuild` automatically after `build`. This pattern is used in financ
 
 **Note:** netflix-social was previously on this list but switched to `output: 'export'` (GitHub Pages static export) in May 2026. Do not copy the standalone symlink pattern from netflix-social — it no longer uses it.
 
+## Next.js 16: Also Copy `.next/server` to Standalone
+
+**Next.js 16 bug:** Standalone builds omit `.next/server/` (app-router server files). Copying only `.next/static` and `public/` is not enough — omitting `.next/server` causes `InvariantError: client reference manifest does not exist` on any route with `use client` components or app-router pages.
+
+**Fix:** In your build script, copy both `.next/static` **and** `.next/server` into the standalone output:
+
+```bash
+STANDALONE=.next/standalone
+cp -r .next/static  $STANDALONE/.next/static
+cp -r .next/server  $STANDALONE/.next/server
+cp -r public        $STANDALONE/public
+```
+
+**Detection:** The error manifests at runtime, not at build time — the app starts fine (`pm2` shows `online`, `/api/health` returns 200) but any app-router page with client components throws `InvariantError: client reference manifest for route "/X" does not exist`.
+
+Source: runEvaluator commit `6f78038` (2026-06-01), run #647.
+
 ## GitHub Pages Static Export (No-Server Alternative)
 
 For apps that don't require SSR, auth, or server-side API routes, `output: 'export'` produces a static site that can be hosted on GitHub Pages for free — no VM, no PM2, no Apache config needed.
@@ -121,6 +138,24 @@ const nextConfig: NextConfig = {
 Also wrap non-critical side effects (e.g., `sendEmail()`) in `try/catch` so they can't fail the main operation.
 
 **Packages commonly missing:** `nodemailer`, packages using native bindings, packages only imported in server action callbacks. Source: shopper standalone build (2026-05-15).
+
+## Next.js Standalone: Adaptive `start.sh` Must Guard the Flat Branch on `node_modules/next`
+
+Several apps (shopper/foodie/travel-assistant/employ family) use a `start.sh` that auto-detects layout so the same script works in both a flat prod deploy (`server.js` at the app root) and a standalone dev/staging build (`.next/standalone/server.js`). If the flat-branch check only tests `[ -f "./server.js" ] && [ -d "./.next/server" ]`, it can pick the flat layout on a tree that has those two paths but **no root `node_modules`** (e.g. a fresh git clone used for staging, or a partial rsync artifact) — PM2 then crash-loops on `Error: Cannot find module 'next'` (`MODULE_NOT_FOUND`, requireStack pointing at the root `server.js`).
+
+**Fix:** require `[ -d "./node_modules/next" ]` as part of the flat-branch condition, so an incomplete tree falls through to `.next/standalone/server.js` (which carries its own traced `node_modules`) instead of crash-looping:
+```bash
+if [ -f "./server.js" ] && [ -d "./.next/server" ] && [ -d "./node_modules/next" ]; then
+  STANDALONE_DIR="."
+elif [ -f "./.next/standalone/server.js" ]; then
+  STANDALONE_DIR="./.next/standalone"
+else
+  echo "Critical: server.js not found in . or ./.next/standalone." >&2
+  exit 1
+fi
+```
+
+Source: employ `f7901a0` (2026-07-17) — this exact crash-loop hit `staging-employ`. **Confirmed still unguarded in shopper's `start.sh` as of 2026-07-17** (identical `[ -f "./server.js" ] && [ -d "./.next/server" ]` check, no `node_modules/next` guard) — a live latent risk for any future shopper staging deploy that clones fresh or does a partial rsync; travel-assistant and foodie were checked and don't use this flat/standalone branch at all (they always resolve `.next/standalone/server.js` directly), so they're not affected. Audit any new app cloned from this scaffold for the same gap before it bites in staging.
 
 ## Next.js Standalone: Relative SQLite Paths Break
 
@@ -226,6 +261,21 @@ fi
 
 **Env knobs:** `DEPLOY_LOCK_WAIT=0` to fail fast, `DEPLOY_LOCK_BYPASS=1` as a break-glass escape hatch (coordinate before using).
 
+## Stop PM2 Before Next.js Standalone Builds
+
+`next build` deletes `.next/standalone/server.js` before recreating it. If PM2 is running and the process restarts (for any reason) during this window, PM2 crash-loops on `MODULE_NOT_FOUND` until the build finishes. With `max_restarts: 10` or higher, this can burn through all restart attempts before the build completes, leaving the process errored.
+
+**Fix:** Always stop PM2 before building a standalone Next.js app:
+```bash
+pm2 stop <process>; npm run build && pm2 restart <process> --update-env
+```
+
+Use `;` (not `&&`) after `pm2 stop` so the build proceeds even if the process was already stopped or doesn't exist yet (first deploy).
+
+**Why:** runeval observed 27+ PM2 restart attempts during a single build window (2026-06-03). The build completed successfully but PM2 had already entered "errored" state.
+
+This is a simpler, narrower complement to the `flock` serialization above — it's about a single deploy's own build-vs-serve race, not concurrent deploys stepping on each other. Apply both where relevant.
+
 ## Concurrent rsyncs Silently Drop Subdirectories
 
 **Never run parallel rsyncs from the same dev host to multiple production directories.** Concurrent rsync operations (e.g., deploying shopper, foodie, and travel in the same shell session with `&`) can silently drop subdirectories in the destination.
@@ -283,17 +333,35 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 {
   name: 'my-service',
   script: 'server.js',
-  kill_timeout: 3000,    // ms to wait for graceful shutdown before SIGKILL (default: 1600)
-  listen_timeout: 3000,  // ms to wait for app to bind its port before marking crashed (default: 3000)
-  max_memory_restart: '1G',
+  kill_timeout: 10000,    // ms to wait for graceful shutdown before SIGKILL (default: 1600)
+  listen_timeout: 10000,  // ms to wait for app to bind its port before marking crashed (default: 3000)
 }
 ```
 
-**`kill_timeout`:** PM2 sends SIGTERM, then force-kills with SIGKILL after `kill_timeout` ms. Default 1600ms is too short for Next.js apps closing DB connections or finishing in-flight requests. Use 3000ms minimum. **Finance-tracker crash loop (2026-05-15):** default kill_timeout caused partial shutdown, leaving DB connections open, causing the next start to hit connection limit immediately.
+**`kill_timeout`:** PM2 sends SIGTERM, then force-kills with SIGKILL after `kill_timeout` ms. Default 1600ms is too short for Next.js apps closing DB connections or finishing in-flight requests. Use **10000ms (10s)** for Next.js standalone apps — experience shows 3000ms can still cause partial shutdown under load, leaving DB connections open and causing the next start to hit connection limit immediately. **Finance-tracker crash loop (2026-05-15):** default kill_timeout caused this. **runeval crash loop (2026-06-02, commit `0ac95bc`):** even 3000ms was insufficient; raised to 10000ms to fully resolve.
 
-**`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
+**`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, use 10000ms to match `kill_timeout` and give heavy initializers (Prisma, migrations, PRAGMA setup) enough runway.
+
+**`max_memory_restart`:** Remove this from production PM2 configs for Next.js apps. It can trigger unexpected restarts during traffic spikes and is harder to tune than a VM-level OOM guard. Set a Node.js heap cap via `node_args: '--max-old-space-size=1024'` instead and let the OS OOM killer be the last resort.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## Prisma + SQLite: WAL Mode Must Be Applied via PRAGMA, Not URL
+
+When using Prisma with SQLite, WAL mode (`journal_mode=WAL`) cannot be set as a query parameter in the `DATABASE_URL`. Prisma's engine does not support it as a URL param and will silently ignore or error on it.
+
+**Correct approach:** Apply WAL mode via `$queryRawUnsafe` after connecting:
+
+```ts
+await prisma.$queryRawUnsafe(`PRAGMA journal_mode=WAL;`);
+await prisma.$queryRawUnsafe(`PRAGMA busy_timeout=30000;`);
+```
+
+If `journal_mode=WAL` appears in `DATABASE_URL` (e.g., from an old deploy.sh), **strip it before passing to Prisma** — do not let it through as a connection parameter.
+
+**URL params that ARE supported:** `connection_limit=1`, `pool_timeout=10`, `busy_timeout=30000`. These prevent "database is locked" errors under concurrent Prisma access.
+
+**Pattern used in:** runeval `lib/prisma.ts` (commit `0ac95bc`, 2026-06-02) — strips `journal_mode` from URL with `url.searchParams.delete("journal_mode")` before constructing the Prisma datasource URL, then applies WAL via PRAGMA at connection time.
 
 ## SQLite/DB path must never resolve inside the build tree (silent data loss)
 
@@ -307,6 +375,13 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **Deploy-model divergence (don't mix them up):**
 - Some VM app dirs are NON-GIT, artifact-only (`.next`+`node_modules`+`package.json`) — deploy via /staging artifact promotion (rsync `.next`), sync loose scripts via scp.
 - Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
+
+**Promoting a LOCAL BUILD to an in-place-rebuild prod dir (foodie, travel-assistant):** the `start.sh` reads `.next/required-server-files.json` and compares `appDir` to the prod dir. A WSL-built `.next` records the local dev path (`/home/npezarro/repos/<app>`), which mismatches the prod path, setting `NEEDS_BUILD=1`. Critical step order:
+1. `pm2 stop <app>` FIRST — a running `pm2 restart` hits the mismatch on every restart and loops rebuild attempts indefinitely (pm2 re-triggers start.sh each crash).
+2. Kill any in-flight rebuild: `pkill -9 -f "next build"` (killing the build can drop the SSH session — reconnect and continue).
+3. rsync the clean local `.next/` to both prod `.next/` paths.
+4. Patch `appDir` in `.next/required-server-files.json` AND `.next/standalone/.next/required-server-files.json` to the prod path.
+5. `pm2 restart <app>` and verify no rebuild fires: `ps -eo pid,cmd | grep "next build"` should be empty.
 
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
 
@@ -325,8 +400,104 @@ Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-d
 - Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
 - Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
 
+## Apache 60s Proxy Timeout — 202 Async Split Pattern
+
+Apache's default `ProxyTimeout` is 60 seconds. Any Next.js API route that calls a slow backend (LLM, external API, heavy compute) and blocks until completion will hit this limit and return a 502 to the browser.
+
+**Pattern:** Split the long-running request into two parts:
+1. **POST → 202 Accepted:** Kick off the work in a detached background task (fire-and-forget promise, PM2 cron, etc.). Return `{ status: "accepted" }` immediately.
+2. **GET → status + result:** The client polls this endpoint until the result appears (e.g., a new `generatedAt` timestamp or `generating: false`).
+
+```typescript
+// In the API route
+const inFlight = new Set<string>();  // module-scoped dedup
+
+export async function POST(req: NextRequest) {
+  if (inFlight.has(userId)) return NextResponse.json({ status: "already_running" }, { status: 202 });
+  inFlight.add(userId);
+  // Fire and forget — don't await
+  doSlowWork(userId).finally(() => inFlight.delete(userId));
+  return NextResponse.json({ status: "accepted" }, { status: 202 });
+}
+
+export async function GET(req: NextRequest) {
+  const result = await db.getResult(userId);
+  return NextResponse.json({ ...result, generating: inFlight.has(userId) });
+}
+```
+
+**Client polling (React):**
+```typescript
+// Poll GET every 4s for up to 4 minutes after triggering POST
+useEffect(() => {
+  if (!generating) return;
+  const id = setInterval(async () => {
+    const data = await fetchPlan();
+    if (data.generatedAt > lastGenerated) { clearInterval(id); refresh(); }
+  }, 4000);
+  const timeout = setTimeout(() => clearInterval(id), 240_000);
+  return () => { clearInterval(id); clearTimeout(timeout); };
+}, [generating]);
+```
+
+**Where this matters:** Any Apache-proxied route doing LLM calls (Claude Opus ~30-60s), batch processing, or external API calls >30s. First observed in runeval's training plan generation (commit `21d69a5`, 2026-06-03).
+
+**Alternative for internal cron endpoints:** Curl directly to `http://127.0.0.1:<port>/api/...` (bypasses Apache entirely). Used by PM2 cron processes that don't need timeout workarounds.
+
+## Deploy Scripts Must Hard-Lock to origin/main
+
+**Problem:** Autonomous fix-checker bots (Gemini, Claude learning-agent) create PR branches and can leave the VM's working copy checked out on a bot branch. A naive `git pull origin $(git branch --show-current)` in a deploy script will then silently ship an unreviewed bot branch to production.
+
+**Observed (runeval, 2026-06-03):** `deploy.sh` was pulling the current branch. A Gemini fix-checker left the VM checked out on `gemini/fix-runeval-0603-2053`. The next `./deploy.sh` shipped that in-progress branch to prod, reverting the Plan nav link and losing `TrainingPlan` rows (the bot's schema migration hadn't merged yet).
+
+**Fix pattern** for any deploy script on a repo with autonomous bot activity:
+```bash
+git fetch origin main
+git checkout main
+git reset --hard origin/main
+# Abort if working tree is dirty rather than silently wiping it
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Working tree dirty — aborting to avoid losing changes."
+    git status -sb
+    exit 1
+fi
+```
+
+**Why `reset --hard` over `pull`:** `git pull` with a dirty tree merges or errors. A detached/stale branch silently pulls the wrong history. `reset --hard origin/main` is unambiguous: always lands on exactly what's on the remote main branch.
+
+**Safety:** Abort if the tree is dirty so you don't silently wipe in-progress changes. A dirty tree on a deploy server is a signal something is wrong — investigate, don't bulldoze.
+
+## Cloudflare `CF-IPCountry` Header for Visitor Country Detection (2026-07-18)
+
+When an app is behind Cloudflare (all production apps on this host are), Cloudflare stamps a `CF-IPCountry` header on every origin request with the visitor's ISO 3166-1 alpha-2 country code (e.g. `CA`, `GB`, `DE`). No API call or geo-IP library is needed — the header is free and always present.
+
+**How to read it in a Next.js Server Component or Route Handler:**
+```typescript
+import { headers } from 'next/headers';
+
+const headersList = await headers();
+const rawCountry = headersList.get('CF-IPCountry') ?? '';
+// Validate: Cloudflare sends 'XX' for unknown and 'T1' for Tor exit nodes
+const countryCode = rawCountry.toUpperCase();
+const isReal = /^[A-Z]{2}$/.test(countryCode) && countryCode !== 'XX' && countryCode !== 'T1';
+const detectedCountry = isReal ? countryCode.toLowerCase() : 'us'; // fall back to US default
+```
+
+**Key caveats:**
+- `XX` means Cloudflare couldn't determine the country (unusual traffic, misconfigured IP). Always fall back.
+- `T1` means Tor exit node. Always fall back.
+- A missing/empty header should also fall back — it won't happen in production behind Cloudflare, but it will during local development (`npm run dev`) where the header is absent.
+- **Reading `headers()` makes the Next.js route dynamic.** If the page was previously statically rendered, adding this call opts it out of static pre-rendering. For apps that already use auth or SQLite reads this is harmless (the page is already dynamic).
+
+**When to use:** Geo-aware defaults (e.g., default currency, region picker, shipping-address autocomplete), A/B testing by country, locale-based routing. Use the header value as a default suggestion — always let the user override and persist their choice in `localStorage`.
+
+**Verified 2026-07-18:** shopper's "Shopping from?" combobox defaults to the CF-IPCountry-detected country and overrides with a persisted `localStorage` value. Applies to any app on this Cloudflare-proxied host.
+
 ### rsync --chmod=D755,F644 for web-root deploys (mktemp staging perms trap) (2026-07-17)
 See memory infra_rsync_mktemp_perms: rsync -a from a mktemp -d staging dir propagates mode 700 onto the destination dir; Apache 403s everything beneath. Always rsync -a --chmod=D755,F644 when deploying to a web root.
 
 ### Pin Prisma binaryTargets to the deploy runtime's OpenSSL; never ship a build from a different-OpenSSL host to the VM (2026-07-19)
 A Next.js standalone + Prisma app on the production VM (Node links OpenSSL 1.1.1w = debian-openssl-1.1.x) went totally DB-dark on 2026-07-18/19: every DB route/cron returned HTTP 500 with an EMPTY body, homepage still 200'd (static shell) so uptime checks missed it. Cause: prisma/schema.prisma had no binaryTargets, so prisma generate emitted only the build host's engine. A build produced on the WSL dev clone (OpenSSL 3.0.13 = debian-openssl-3.0.x) was shipped out-of-band to the VM, bundling only libquery_engine-debian-openssl-3.0.x into .next/standalone/node_modules/.prisma/client. VM runtime needs 1.1.x -> PrismaClientInitializationError: could not locate the Query Engine. Diagnosis tell-tales: the error's 'searched locations' list names the build-host dev path (/home/npezarro/repos/...); the live-dir reflog head is 'pull: Fast-forward' not deploy.sh's 'reset --hard origin/main' (out-of-band build, same delivery anti-pattern as the static-asset 'styling broke' outage but it breaks the DB layer instead of CSS). Fix (both): (1) pin binaryTargets = [native, debian-openssl-1.1.x, debian-openssl-3.0.x] in schema.prisma so any build host bundles the VM's engine; (2) redeploy via the app's ./deploy.sh, which runs prisma generate ON the VM (native = 1.1.x) and rebuilds standalone with both engines. Verify: a DB-touching endpoint returns 200 and ls .next/standalone/node_modules/.prisma/client shows the 1.1.x engine.
+
+### Apache force-lowercase redirect breaks any SPA with mixed-case asset hashes (2026-06-23)
+The production Apache vhost has a global rewrite rule that 301-redirects any URL containing uppercase letters to its lowercase form (`RewriteMap lc int:tolower` + `RewriteRule ^(.*)$ ${lc:$1} [R=301,L]`). **Symptom:** A newly deployed SPA returns 200 for the page HTML but silently breaks every JS/CSS asset that has a mixed-case content hash in its filename (e.g. Vite emits `index-BqcsSXEO.js`). Each asset 301s to its lowercased form, which 404s — the app never boots. Next.js `/_next/static/` hashes are lowercase, so Next.js apps on this host are not affected; Vite-based SPAs are. **Fix:** Add a `RewriteCond %{REQUEST_URI} !^/<your-subpath>` before the global lowercase rule for each new Vite SPA you deploy. **Cloudflare caches the stale 301** at ~4h (max-age 14400); the CDN token lacks Cache-Purge scope, so either wait 4h or force new asset names by rebuilding with a cache-buster. Diagnosed 2026-06-23; documented in `knowledgeBase/infra/vm-deployment-playbook.md`.

@@ -145,5 +145,27 @@ function checkAuth() {
 
 Source: foodie commit 8a35730, shopper commit f4d935b, travel commit 51950cc (2026-05-27).
 
+### Unbounded per-call batch size causes silent 0-result failures (2026-07-16)
+**Rule:** Never ask one headless `claude -p` bridge call for an unbounded or large batch of results under a fixed timeout. Bound the batch size per call and paginate across multiple calls instead; make the response parser tolerant of truncated output.
+
+**Why:** employ's "Exhaustive" discovery tier asked a single bridge call to find 45-70 roles. The call either over-ran the bridge's 10-minute timeout (SIGTERM'd mid-generation) or hit the model's output-token ceiling, leaving a truncated response with no closing JSON fence. The parser returned `[]` on the malformed JSON, so the run reported "found 0 roles" with no error surfaced. Worse, the downstream augment/expand safety net also refused to run because it requires a non-empty initial set — so the failure compounded to a total of 0 instead of degrading gracefully.
+
+**How to apply:**
+1. Cap every bridge call at a fixed max batch size (employ uses `MAX_ROLES_PER_CALL=25`) regardless of how large the requested total is; accumulate toward the full target across multiple passes instead.
+2. Soften "as many as possible, even if it takes longer" style prompt directives for large-breadth tiers — aim each call at the per-call cap, not the grand total.
+3. Retry once on a 0-result parse before treating it as a real empty result.
+4. Harden the parser to merge all fenced JSON blocks in a response and recover complete objects from truncated/unclosed JSON via a balanced-brace scan, rather than failing the whole batch on one truncation.
+
+Source: employ commits `06e979e` (fix) and `df111d8` (scale window/batch by depth), 2026-07-16.
+
 ### Enforce subprocess timeouts with SIGTERM to SIGKILL; keep bridge budget under client timeout (2026-07-17)
 Node.js child_process spawn({ timeout }) only sends ONE SIGTERM when the timeout elapses. Long-running CLIs like 'claude -p' (and their child processes / streaming API sockets) can ignore SIGTERM, so the process hangs and the promise never settles — leaving the server holding the request open until the CLIENT aborts. Enforce timeouts yourself: an explicit setTimeout that escalates SIGTERM -> SIGKILL after a grace period, a 'settled' guard flag so close/error settle once, and a distinct 'timeout' rejection (map to HTTP 504). Also keep a bridge's TOTAL work budget strictly under its client's timeout (e.g. 18min bridge < 20min client < 25min recovery threshold), and for multi-pass work (first pass + refinement) split that budget against a single deadline so the bridge returns a real, diagnosable error BEFORE the client gives up with an opaque 'Request timed out (20min)'. Surface the internal reason (exit code / spawn error, sanitized) on the catch-all 500 so downstream [RECOVERY FAILED] alerts are debuggable. Applies to all pezant *-bridge servers (shopper/foodie/travel/employ) which share this bridge-server.js shape. Root cause: shopper Job #96 recovery loop, 2026-07-17.
+
+### A VM-side `claude -p` caller should prefer the local worker over the VM host's own OAuth chain (2026-07-17)
+If a VM-hosted component shells out to `claude -p`, it inherits the fragility of whichever OAuth chain it calls. The **VM host's own** `claude` CLI chain has died silently and repeatedly (~10 days in 2026-06, ~5 days in 2026-07-10→15) — a documented single point of failure, not a one-off. A **local-worker** SSH path (reverse tunnel from the VM back to a healthy dev-machine `claude` CLI) has an independent, separately-maintained auth chain and has stayed healthy through both VM-host outages.
+
+**Rule:** prefer the local-worker path first, and fall back to the VM host CLI only if the tunnel is unreachable — don't invert that order by default just because the VM host CLI is "closer."
+
+**How:** `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p <local-worker-port> <user>@localhost claude -p --output-format text --max-turns 1` with the prompt piped on stdin; wrap it with a try/fallback to the VM host CLI so the caller degrades gracefully rather than hard-failing when the tunnel itself is down.
+
+**Why it matters:** a component built this way turns a dependency that dies for days at a time into a non-event — it keeps working through the exact outage window that breaks every VM-host-only caller. When a component keeps failing on a shared dependency it doesn't need exclusively, decoupling from that dependency is the durable fix, not another retry/alert layer on top of it.

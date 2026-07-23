@@ -221,7 +221,17 @@ Fixing call sites one-by-one does not work: two audit passes in the Discord bot 
 
 Source: 2026-07-16 Discord/cloud review — threadJanitor error-logged a Discord 500 every 5 minutes for hours with the cause invisible (`Failed to process thread "...":`), the same bug class a 2026-07-14 audit had "fixed" per-site.
 
-### claude -p is the full agentic CLI: run free-text calls in an empty cwd and retry on any non-zero exit or empty stdout (2026-07-21)
+### 14. External API Calls Need Retry-with-Backoff for Transient Network Errors
+
+Any code that calls an external HTTP API directly (`requests`, raw `fetch`, an SDK's internal session) will eventually hit a transient DNS resolution failure or connection error (`NameResolutionError`, `ECONNRESET`, `ECONNREFUSED`, timeouts) that has nothing to do with the API itself — the network blipped. Without a retry, one blip silently drops that cycle's work: a poll returns 0 results, a job fails, a bridge call 500s, and the failure looks like a code bug when it's actually a network hiccup.
+
+This has independently recurred in at least three unrelated repos, each solving it slightly differently: `trading-agent` (SEC EDGAR `_sec_get()` then generalized to Alpaca market/news collectors — 5x exponential backoff on `ConnectionError`/429), `auto-shorts-worker` (`urllib3.Retry(total=5, connect=3, read=3, ...)` plus a localhost-first probe to sidestep DNS entirely for co-located services — see `knowledgeBase/patterns/runtime-gotchas.md`), and `shopper` (bridge client retries once after 30s on `ECONNREFUSED`/`ECONNRESET`/`EPIPE`/`UND_ERR_CONNECT_TIMEOUT`/"fetch failed"). None of these repos discovered the pattern from the others — each hit it fresh in production.
+
+**When writing a new integration against an external API, add retry-with-backoff from the start** rather than waiting for a silent-failure incident to force it in: catch the transient network exceptions your HTTP client raises, retry 3-5x with exponential backoff (2s base is a reasonable default), and only surface an error after retries are exhausted. Don't assume the network is reliable just because the API contract is stable.
+
+Source: trading-agent commits `7a90a05`/`48987b2` (EDGAR retry) and `b6a857d`/`a316092` (Alpaca market/news retry, 2026-07-21), auto-shorts-worker PRs #39/#40 (2026-05/06), shopper `src/lib/query-executor.ts`.
+
+### 15. claude -p is the full agentic CLI: run free-text calls in an empty cwd and retry on any non-zero exit or empty stdout (2026-07-21)
 `claude -p --dangerously-skip-permissions` is the FULL agentic Claude Code CLI, not a constrained text-completion endpoint. Two operational consequences apply to any pipeline that shells out to it (e.g. job-pipeline's generate.py, and any free-text generation pipeline):
 
 1. CWD HYGIENE. When the subprocess runs with its working directory inside a repo, the spawned sub-agent can explore that repo and inject meta-commentary into its output (observed: a generated free-text brief narrated the relative source path it was invoked from, e.g. "sourcing/brief.py"). FIX: for free-text generation calls, set the subprocess cwd to an empty/neutral directory (e.g. a tempfile.mkdtemp()) so there is no repo to explore. For calls whose output is strictly parsed (e.g. JSON extraction) the risk is lower, but the same cwd hygiene is cheap insurance.
