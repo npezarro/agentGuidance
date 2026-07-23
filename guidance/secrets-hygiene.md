@@ -237,6 +237,7 @@ This is the right tool when `npm audit` or security scans flag personal emails i
 2. Run every script that changed. Syntax checks (`bash -n`) catch parse errors but not broken runtime behavior.
 3. Check that gitignored files (`.env`, caches, state files) survived — `git reset --hard` and `git filter-repo` both wipe untracked/ignored files. Re-deploy them.
 4. Verify on every machine the repo is cloned to (local + VM). A hard reset on the VM to match the rewritten remote will wipe gitignored `.env` files there too.
+5. **Verify all expected tracked files are still present on main.** History rewrites that drop merge commits can silently remove tracked files. After force-pushing, run `git ls-files` or compare against the pre-rewrite file list to confirm nothing was lost. Real incident (2026-06-03): rakuten-auto-add.user.js was missing from main after a PR #1 merge commit was lost in a history rewrite — the script's `@updateURL` pointed at main and silently 404'd until restored in a follow-up commit.
 
 **Scope replacements narrowly.** Replace the full string (e.g., the complete webhook URL) rather than substrings that appear in innocent contexts (e.g., a username that's also part of standard paths).
 
