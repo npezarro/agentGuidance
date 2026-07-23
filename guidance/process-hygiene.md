@@ -213,6 +213,28 @@ An agent that creates a PR, ticket, or any artifact meant to be picked up later 
 
 **How to apply:** any runner that creates a PR/ticket/artifact for later pickup should, at the START of its next run (not just when a downstream janitor happens to notice), reconcile its own prior outputs against live state — `gh pr view <n> --json state` for every PR link in its own recent log — before creating new work. If a runner can't easily do that itself, a downstream sweep (like fix-checker) is a valid backstop, but log the sweep's cadence explicitly so staleness has a bounded worst case instead of "whenever the janitor gets to it."
 
+## Prisma / LibSQL: Validate Sensor Data Before Writing
+
+LibSQL (SQLite-backed Prisma with `@libsql/client`) crashes on `Infinity`, `NaN`, and `Invalid Date` values — SQLite's type system rejects non-finite numbers and stores dates as strings, so a write with a NaN timestamp or Infinity in a numeric column throws at the Prisma layer (not at a validation boundary).
+
+This surfaces in webhook processors and IoT/fitness data pipelines where external APIs (Garmin, Strava, etc.) occasionally emit non-finite values or zero-epoch dates.
+
+**Guard pattern (apply before every Prisma write of external numeric/date fields):**
+
+```typescript
+// Numeric fields: reject non-finite values
+const speed = rawSpeed;
+if (!Number.isFinite(speed) || speed < 0) return; // skip or use undefined
+
+// Date fields: reject Invalid Date
+const startTime = new Date(rawTimestamp);
+const safeStart = Number.isNaN(startTime.getTime()) ? new Date() : startTime;
+```
+
+**When to apply:** Any service using Prisma + LibSQL that ingests external sensor, webhook, or API data with numeric or date fields. Do not assume the upstream API will only send finite values — fitness/IoT hardware commonly emits `0`, `Infinity`, or epoch-0 placeholders for missing data.
+
+**Source:** health-hub commit `87ae94e` (2026-06-09) — Garmin webhook OOM + crash fix.
+
 ## Cleanup Checklist (Before Session End)
 
 1. **Processes:** Stop any dev servers, watch commands, or background tasks you started
