@@ -78,6 +78,7 @@ Each app needs:
 - **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
+- **NEXTAUTH_SECRET vs AUTH_SECRET compat bridge**: NextAuth v5 (Auth.js) canonically reads `AUTH_SECRET`, but some ecosystem parts (older helpers, edge runtimes, third-party libs) still look for `NEXTAUTH_SECRET`. When `AUTH_SECRET` is set but `NEXTAUTH_SECRET` is absent, add a compat shim at the top of `src/lib/auth.ts`: `if (process.env.AUTH_SECRET && !process.env.NEXTAUTH_SECRET) { process.env.NEXTAUTH_SECRET = process.env.AUTH_SECRET; }`. Without this, apps can crash at startup with a missing-secret error even though `AUTH_SECRET` is correctly configured. Source: foodie commit `52d0543` (2026-05-31, staging crash loop).
 
 ### Apps using the proxy
 

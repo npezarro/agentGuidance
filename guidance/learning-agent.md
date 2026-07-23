@@ -114,6 +114,26 @@ The learning agent needs a focused prompt that:
 4. **Scope:** Observes and suggests on everything — auto-dev, fix-checker, all repo CLAUDE.md files, agentGuidance itself.
 5. **Correction detection:** Scans for user corrections in Discord #cli-interactions and git history that aren't reflected in any rule set. Highest priority capture target.
 
+## Stale PR Cleanup (S176 Pattern)
+
+The agent creates a branch + PR for each run. Over time, PRs accumulate as open when the auto-merger is absent or the branch content was already merged to main via another path. At the start of each run, check for orphaned PRs:
+
+```bash
+# PRs whose content is already on main — close them
+for repo in agentGuidance knowledgeBase auto-shorts-worker trading-agent travel-assistant; do
+  gh pr list --repo "npezarro/$repo" --state open --head "claude/*" --json number,headRefName \
+    | jq -r '.[] | "\(.number) \(.headRefName)"' | while read -r num branch; do
+      # If the branch has no commits ahead of main, content is already merged
+      behind=$(git -C ~/repos/$repo rev-list --count origin/main...origin/$branch 2>/dev/null || echo 0)
+      if [ "$behind" = "0" ]; then
+        gh pr close "$num" --repo "npezarro/$repo" --comment "Content already on main — closing stale PR."
+      fi
+    done
+done
+```
+
+When a run produces no new learnings, still check for stale PRs from prior runs and close them.
+
 ## Implementation
 
 - **Location:** `~/repos/autonomousDev/learnings-pass/`
