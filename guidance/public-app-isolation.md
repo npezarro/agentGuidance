@@ -237,3 +237,21 @@ Fix (four layers, travel commit `36e347a`):
 **Shared latent bug:** `shopper`, `foodie`, and `employ` bridge-server.js all use the same `if (code !== 0 && !output)` guard and store empty-as-completed. Apply the same four-layer fix when touching them.
 
 Recover an already-empty row: re-run the query through the fixed bridge (`curl localhost:PORT/query -H "X-Bridge-Secret: …"`), strip any model preamble before the first `# ` H1, then `UPDATE <app>.db SET response=?, status='completed' WHERE id=?`.
+
+## Injecting optional context into a bridge query: check length caps and heuristics first (2026-07-22)
+
+When adding an optional context block (saved user profile, effort directive, region hint) that `route.ts` concatenates into the single `query` field sent to the bridge, check the **target app's bridge-server.js constraints first**, because not all bridges are equal:
+
+| App | `MAX_QUERY_LENGTH` | Broad-query heuristic | Safe injection approach |
+|---|---|---|---|
+| shopper | 1000 chars | `isBroadQuery()` (word-count) | Strip-before-checks, re-append-after |
+| foodie | 2000 chars | none | Prepend directly (follows existing `[Filters]` pattern) |
+| travel | 2000+ chars | none | Prepend directly (established `[Traveler profile]` pattern) |
+
+**When the block might overflow the cap or skew a heuristic (shopper-style):** inject using a recognizable trailing marker in `route.ts` (e.g. `\n\n[Shopper profile]\n...`), then in bridge-server.js **strip that tail out of `query` before the length check and `isBroadQuery()`, then re-append it to `query` after query-type detection** — so the model still receives the context but the checks see only the raw user query.
+
+This coupling means **the app and the Docker bridge must be deployed together**: rebuild the bridge container first (`sudo docker compose down && sudo docker compose up -d --build`; backward-compatible — the strip is a no-op when the marker is absent), then deploy the app via the `staging` skill. Recovery paths (`run-recovery.js`) rebuild from the raw stored `queries.query` without the profile, which is acceptable for recovered jobs.
+
+**When the block is small relative to the cap (foodie/travel-style):** a simple prepend is safe; no bridge change needed (app-only deploy).
+
+Source: saved shopping/food profile features, 2026-07-22.
