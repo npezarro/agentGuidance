@@ -295,6 +295,28 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
 
+## Next.js Build OOM on 4GB-RAM VM
+
+On the GCP VM (4GB RAM), `next build` can exhaust the Node.js heap and crash silently, producing no build output and no error message. Always set `NODE_OPTIONS` for the build step:
+
+```bash
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
+```
+
+This applies to any `npm run build` call on the VM for Next.js apps (runeval, shopper, foodie, travel-assistant, finance-tracker). The runtime heap cap is separate — set via `node_args: '--max-old-space-size=1024'` in `ecosystem.config.cjs` so the running server doesn't eat swap.
+
+**Why separate caps:** Build-time peak usage (asset compilation, type checking, tree shaking) is much higher than runtime usage. 2048MB for builds, 1024MB for runtime is the tested stable configuration.
+
+## `pm2 restart --update-env`
+
+After changing env vars in `.env` (e.g., during a deploy that patches `AUTH_URL` or `APP_URL`), always restart with:
+
+```bash
+pm2 restart <service> --update-env
+```
+
+Without `--update-env`, the running process keeps the old env from when PM2 started it. A bare `pm2 restart` reuses the cached env; `--update-env` re-reads the current process env and `.env` (if the start script sources it). Without this, updated vars like `AUTH_URL` or `APP_URL` are silently ignored until a full `pm2 delete && pm2 start` cycle. Source: runeval auth debugging (commit `4074a33`, 2026-06-01).
+
 ## SQLite/DB path must never resolve inside the build tree (silent data loss)
 
 **Incident 2026-06-17 (shopper/foodie/travel/runeval):** Next.js standalone apps run with `cwd = .next/standalone/`. A DB layer that falls back to a RELATIVE path (`process.env.DB_PATH || path.join(process.cwd(), "app.db")`, or Prisma `DATABASE_URL="file:./data/x.db"`) silently creates the live DB INSIDE `.next/` whenever the launch doesn't export an absolute path. `npm run build` does `rm -rf .next`, so every deploy ERASES the DB and all rows written since the last build — silent, intermittent, undetected.
