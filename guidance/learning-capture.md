@@ -131,6 +131,20 @@ it healthy:
   superseded/stale, or (c) duplicates. Redundant-with-guidance memories add zero
   recall value because the rule is already in context every session; archive them
   under `memory/archived/` (reversible) rather than leaving orphaned index lines.
+- **The self-heal only sees `- [name](link) — hook` lines.** A freeform bullet
+  (`- **Title** — text`) or a raw unindented paragraph doesn't match that pattern,
+  so it's invisible to `compact-memory-index.sh` and can grow unbounded even
+  though "the write path is capped at the source" above. Confirmed 2026-07-24
+  (learnings-pass run #1011): a single such entry in autonomousDev-private's
+  `MEMORY.md`, appended to by ~40 separate sessions each documenting the same
+  recurring bug instead of consolidating into one topic file, reached 626,808
+  bytes / 1029 lines before anyone noticed — the WARNING had been firing every
+  session for weeks but named neither the culprit line nor its size. If you ever
+  need to write a narrative memory entry longer than one line, write it straight
+  to its own topic file with a proper index pointer; never append prose directly
+  under a `## Section` heading in `MEMORY.md` itself. The hook's WARNING now
+  reports the longest line's number, char count, and a 150-char preview to make
+  this diagnosable without manual grepping.
 
 ### Common Mistakes to Avoid
 
