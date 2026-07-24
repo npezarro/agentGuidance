@@ -266,3 +266,12 @@ When code enforces a cap on an unbounded wait (a per-thread/per-resource lock he
 
 ### Centralize query-param parsing; a hand-rolled parseInt without a NaN fallback reaches the DB layer (2026-07-17)
 When an API route and its SSR page component both parse the same user-controlled query param (e.g. `?page=`), they will eventually drift. Real case: a route's shared `paginate()` helper had `parseInt(x) || 1` (NaN-safe), but an SSR page hand-rolled `Math.max(1, parseInt(String(x||'1')))` without the `|| 1` fallback. `parseInt('abc')` is `NaN`, `Math.max(1, NaN)` is `NaN`, and `skip = (NaN - 1) * perPage` reached Prisma's `findMany({ skip })` as `NaN`, 500ing on any non-numeric `?page=` value (including whitespace). Fix: extract ONE shared parsing helper and import it everywhere the param is consumed — API routes and SSR pages alike — so the sanitization can't diverge. Self-review trigger: any user-controlled value flowing into a DB query's `skip`/`take`/`where`/limit argument — confirm it's guarded against `NaN`/non-finite before it reaches the query, not just at one of the call sites.
+
+### Re-encoding a payload without updating its declared Content-Type corrupts downstream consumers (2026-07-24)
+At every code path that re-encodes a payload to a new format (`buffer = await reEncode(buffer)`), update the accompanying `mimeType`/`Content-Type` variable in the SAME scope in lockstep — never just the buffer.
+
+Real case (manchu-translator PR #21, 2026-07-24): `enhanceImage()` always re-encodes to PNG, but the enhance branch updated the buffer while leaving `mimeType` at the original upload type (e.g. `image/jpeg`). A sibling branch (resize) had the same re-encode and DID update `mimeType = 'image/png'` — divergent handling of the same invariant across sibling branches is the tell. A local worker derived the temp-file extension from the label (`.jpg`), wrote PNG bytes to it, and Claude's Read tool interpreted the file by extension, corrupting the OCR pass.
+
+**Self-review trigger:** any branch that assigns `buffer = await someReEncode(buffer)` without a paired `mimeType = 'new/type'` in the same scope, or any sibling branches where one updates the media type and another doesn't.
+
+**Defense-in-depth (consumer side):** sniff magic bytes (`89 50 4E 47` = PNG, `FF D8 FF` = JPEG, `52 49 46 46…57 45 42 50` = WebP) rather than trusting a caller-supplied Content-Type or file extension. Applies to any image/file pipeline that re-encodes then forwards a declared type.
