@@ -121,7 +121,19 @@ PY
     fi
     if [ "$after" -gt "$HARD_LIMIT" ]; then
       n=$(grep -c '^- \[' "$INDEX" 2>/dev/null || echo '?')
-      echo "WARNING: ${INDEX} is still ${after} bytes (> ${HARD_LIMIT} hard limit) across ${n} entries after hook compaction. Prune or consolidate stale/superseded/duplicated memories to fit — hook truncation alone is not enough."
+      # 2026-07-24 (learnings-pass run #1011): the regex above only rewrites
+      # "- [name](link) — hook" lines. A freeform bullet (`- **Title** — text`)
+      # or a raw unindented paragraph doesn't match, so it's invisible to this
+      # compactor and can grow unbounded — one such entry alone once grew this
+      # file to 626KB across ~40 appends before anyone noticed. `n` below only
+      # counts recognized link-format entries, so it will undercount when a
+      # freeform entry is the actual culprit. Point at the longest line so the
+      # next reader isn't stuck grepping for the offender by hand.
+      culprit=$(awk '{ if (length > m) { m = length; ln = NR; text = $0 } } END { print ln "\t" text }' "$INDEX")
+      culprit_line="${culprit%%$'\t'*}"
+      culprit_text="${culprit#*$'\t'}"
+      echo "WARNING: ${INDEX} is still ${after} bytes (> ${HARD_LIMIT} hard limit) across ${n} link-format entries after hook compaction. Prune or consolidate stale/superseded/duplicated memories to fit — hook truncation alone is not enough (it can't see freeform bullets/paragraphs, only '- [name](link) — hook' lines)."
+      echo "  Longest line is #${culprit_line} (${#culprit_text} chars): ${culprit_text:0:150}..."
     fi
   )
 }
