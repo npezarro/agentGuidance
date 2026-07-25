@@ -246,7 +246,9 @@ When adding an optional context block (saved user profile, effort directive, reg
 |---|---|---|---|
 | shopper | 1000 chars | `isBroadQuery()` (word-count) | Strip-before-checks, re-append-after |
 | foodie | 2000 chars | none | Prepend directly (follows existing `[Filters]` pattern) |
-| travel | 2000+ chars | none | Prepend directly (established `[Traveler profile]` pattern) |
+| travel | 20000 chars | none | Prepend directly (established `[Traveler profile]` pattern) |
+
+**Why travel's cap is so high:** the app prepends the traveler profile, research dimensions, AND a live seats.aero award-availability block to the user's raw query (≤2000 chars). The assembled query can be much larger than the raw question. When you inject substantial data from an external API call (not just a small user profile), size the cap against the assembled payload, not the raw user input.
 
 **When the block might overflow the cap or skew a heuristic (shopper-style):** inject using a recognizable trailing marker in `route.ts` (e.g. `\n\n[Shopper profile]\n...`), then in bridge-server.js **strip that tail out of `query` before the length check and `isBroadQuery()`, then re-append it to `query` after query-type detection** — so the model still receives the context but the checks see only the raw user query.
 
