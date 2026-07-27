@@ -223,3 +223,17 @@ Shopper compliance status (updated 2026-05-15):
 4. ~~**Per-IP rate limiting:**~~ DONE -- 3 req/min per IP with auto-cleanup
 5. ~~**Output sanitization:**~~ DONE -- regex strip for credential patterns
 6. ~~**Query logging:**~~ DONE -- structured JSON logs (ts, ip, queryLen, ms, status, redacted flag)
+
+## Empty CLI output must fail closed (shared bridge bug — 2026-07-18)
+
+`claude -p` can run tool calls for minutes then exit **code 0 with empty stdout** (max turns / empty final turn). The common bridge guard `if (code !== 0 && !output)` only errors on nonzero exit, so exit-0-empty returns HTTP 200 with `response: ""`. The Next.js app stores that as `status='completed'`, and the UI renders only when the response is truthy → a **silent empty page** (title + green "completed" badge, no body). Repro: the travel app's `/search/<id>` result page.
+
+Fix (four layers, travel commit `36e347a`):
+1. **bridge-server.js**: empty output is a retryable 502 regardless of exit code; log an `empty_output` event with `code` + `stderr`.
+2. **query-executor**: throw on empty/whitespace bridge response so the job is marked failed.
+3. **/api/query .then()**: never store a blank `completed` report; empty → route through the shared `.catch`.
+4. **JobDetail + SharedJobView**: show a "finished without a report" message for completed-but-empty rows.
+
+**Shared latent bug:** `shopper`, `foodie`, and `employ` bridge-server.js all use the same `if (code !== 0 && !output)` guard and store empty-as-completed. Apply the same four-layer fix when touching them.
+
+Recover an already-empty row: re-run the query through the fixed bridge (`curl localhost:PORT/query -H "X-Bridge-Secret: …"`), strip any model preamble before the first `# ` H1, then `UPDATE <app>.db SET response=?, status='completed' WHERE id=?`.

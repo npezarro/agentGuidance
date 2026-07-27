@@ -93,6 +93,20 @@ When PM2 restarts a process, the old Node instance may not release its port befo
 
 **Diagnosis:** `pm2 show <process>` with rapidly increasing restart count + `EADDRINUSE` in logs = this pattern. Source: shopper and pm-interview-practice (2026-05-15).
 
+### PM2 Lifecycle Traps (2026-07-16 Discord/cloud review)
+
+Four PM2 behaviors that each caused a real silent failure; check all four when a PM2 service misbehaves around restarts or monitoring:
+
+1. **Ecosystem config fields only register at process CREATION.** `pm2 restart` (even with the config file as argument) does not apply changed fields like `kill_timeout`, `treekill`, `shutdown_with_message`, log paths. To apply them: `pm2 delete <app> && pm2 start ecosystem.config.js --only <app> && pm2 save`. Verify what PM2 actually has registered with `pm2 jlist` (`pm2_env` keys), not what the ecosystem file says.
+
+2. **`kill_signal` is not a PM2 option.** PM2 sends SIGINT on stop/restart/delete (global `PM2_KILL_SIGNAL` daemon env is the only override). A `kill_signal: 'SIGTERM'` key in ecosystem.config is silently ignored — design your shutdown handler around SIGINT or use `shutdown_with_message`.
+
+3. **`shutdown_with_message: true` replaces the signal entirely.** PM2 sends the IPC string message `'shutdown'` and NO signal, then SIGKILLs after `kill_timeout`. If the app doesn't have a `process.on('message', m => m === 'shutdown' && ...)` listener, EVERY restart is a full `kill_timeout` hang ending in SIGKILL — with zero log evidence, because no signal handler ever fires. Ship the ecosystem flag and the listener in the same commit; verify with `time pm2 restart <app>` (graceful = ~1-2s, hang = exactly kill_timeout). This exact half-shipped state ran in claude-bot 2026-07-14→16.
+
+4. **One zombie process entry poisons monitoring for the whole fleet.** A process stuck `online` with `pid: null` (process died outside PM2's view) makes PM2's pidusage batch call throw `TypeError: One of the pids provided is invalid` (~2 lines every few seconds in `~/.pm2/pm2.log`), which zeroes `monit.memory`/`cpu` for ALL apps — and silently disables every `max_memory_restart`. Diagnosis: `pm2 jlist` and look for `status: online` with no live pid. Fix: stop/delete the zombie, `pm2 save`. Ran undetected for 44 days (epic-claimer, repo deleted from under a still-registered app).
+
+Also: after customizing `out_file`/`error_file`, the default `~/.pm2/logs/<app>-*.log` files stop updating but stay on disk — months later they read as plausible "current" logs and mislead debugging. Delete them when you move log paths, and check mtimes before trusting any log's content.
+
 ## Long Text Transfer
 
 Never give the user long commands, URLs, or multi-line text to copy-paste manually. Termius and other SSH clients mangle long pastes (newline parsing, line wrapping).
@@ -284,9 +298,41 @@ Claude Code's `WebFetch` tool sends requests through Anthropic's server-side edg
 
 Source: shopper Docker container system-prompt fallback bug (2026-06-03) — `WebFetch http://host.docker.internal:3092/fetch?url=...` silently failed for weeks because the page-reader proxy was only reachable via the container's local network namespace, not Anthropic's edge.
 
+## Cron Registry Reconciliation (WSL jobs registry)
+
+The WSL crontab is GENERATED from `privateContext/jobs/registry.json`
+(`jobs/generate-crontab.sh --install`). When `--install` refuses because the live
+crontab has entries the registry doesn't know about, that refusal is protecting you —
+never reach for `--install --force`, which silently DELETES every live-but-unregistered
+job (2026-07-17: forcing would have killed the load-bearing WSL→VM token-relay crons).
+
+Procedure:
+1. Diff both directions: `diff <(crontab -l | grep -vE '^\s*(#|$)' | sort) <(./generate-crontab.sh | grep -vE '^\s*(#|$)' | sort)`.
+2. For each drifted job, find the documented intent (memory, guidance, closeouts) before
+   deciding direction. Drift is bidirectional: live-added jobs (new infra) AND
+   deliberately-paused jobs (`#PAUSED-*` comments) both accumulate; the live crontab
+   usually reflects the newest decisions.
+3. Import live-only jobs into the registry as `enabled: true`; mark deliberately-paused
+   registry jobs `enabled: false` with a `note` saying why + where that's documented.
+4. `--install` (it writes a timestamped backup first), then verify the delta:
+   `diff <(grep -vE '^\s*(#|$)' backups/<latest>) <(crontab -l | grep -vE '^\s*(#|$)')`
+   must show exactly the changes you intended — nothing else activated or dropped.
+5. When pausing or adding a job in future, do it in the registry, not the crontab —
+   hand-edits are the source of this drift.
+
 ## Runtime & Environment Gotchas (moved)
 
 Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tunnels, cron cooldown + Node lock files, the four PM2 traps, Next.js mcpServer + SSR timezone, Claude OAuth refresh in autonomous agents, Python HTTP client gotchas, WSL headless rendering, Node 22 HTTP) live in `knowledgeBase/patterns/runtime-gotchas.md`. Read that page when touching those systems.
+
+## Confirm Async Follow-Through, Not Just Dispatch (2026-07-19)
+
+An agent that creates a PR, ticket, or any artifact meant to be picked up later is not done when the artifact exists — it's done when the artifact reaches its intended end state (merged, closed, actioned). "I created X" and "X was consumed" are different claims; only report the one you actually verified.
+
+**Recurring pattern:** autonomousDev creates one feature PR per run, but its own closeout never re-checks whether *prior* runs' PRs actually got merged. fix-checker (a separate cron) has caught this independently at least 5 times (Runs 600, 601, 605, 608) — each time finding 1-4 fully-verified, CI-green PRs sitting stale for 2-6 days because nothing after the creating session confirmed the merge landed. One run alone found four separate repos' PRs stale simultaneously.
+
+**Why this kept recurring across "Learning" notes without getting fixed:** the pattern was logged in `autonomousDev-private/fix-checker/logs/failures.md` three times as a "Learning" section but never promoted to a durable guidance file or a code change — each occurrence was treated as a one-off instead of a signal that the general behavior (fire-and-forget artifact creation) needed a structural fix.
+
+**How to apply:** any runner that creates a PR/ticket/artifact for later pickup should, at the START of its next run (not just when a downstream janitor happens to notice), reconcile its own prior outputs against live state — `gh pr view <n> --json state` for every PR link in its own recent log — before creating new work. If a runner can't easily do that itself, a downstream sweep (like fix-checker) is a valid backstop, but log the sweep's cadence explicitly so staleness has a bounded worst case instead of "whenever the janitor gets to it."
 
 ## Cleanup Checklist (Before Session End)
 
@@ -296,12 +342,12 @@ Incident-derived patterns (Docker bind mounts / exec --user, SCP over reverse tu
 4. **Git state:** No uncommitted changes related to your task
 5. **Context:** `context.md` reflects what's running and what's not
 
-### paste-link skill: host snippet at pezant.ca, return curl one-liner (2026-06-08)
+### paste-link skill: host snippet on the user's public site, return curl one-liner (2026-06-08)
 When a snippet (heredoc, echo>>file, multi-line bash, anything with mixed quotes/backticks/escapes) is being pasted into a remote shell and gets mangled (smart-quotes, lost newlines, "syntax error near unexpected token `newline`", "Permission denied" on >>), invoke the paste-link skill instead of re-trying paste.
 
 Why: terminal paste corruption is structural, not user error. Multiple sessions have burned cycles re-typing or working around broken pastes. The fix is to host the artifact and curl it.
 
-How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at pezant.ca/<slug>. Hand the user a one-liner like `curl -sS https://pezant.ca/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
+How to apply: `~/.claude/skills/paste-link/host-snippet.sh <slug>` (content via stdin or --file), returns a public URL at example.com/<slug>. Hand the user a one-liner like `curl -sS https://example.com/<slug> >> ~/.ssh/authorized_keys && echo OK`. Skill auto-refuses content matching private-key / api_key / password / client_secret patterns. Full doc: ~/.claude/skills/paste-link/SKILL.md.
 
 ### Cron jobs that invoke `claude` must use an absolute binary path (2026-06-29)
 Cron runs with a minimal PATH (`/usr/bin:/bin`) that does NOT include `/usr/local/bin`, where the global `claude` install lives. A cron script calling bare `claude ...` fails silently with `claude: command not found` (exit 127). On the VM this broke the host CLI auth keep-alive for ~10 days: every run failed, the OAuth refresh token expired from disuse, and the CLI started returning 401 — with no alert.
@@ -313,3 +359,8 @@ How to apply:
 - The OAuth `refresh_token` grant is rate-limited account-wide: 3+ refreshes in a few minutes trips a sustained 429 throttle (observed lasting ~2h) that blocks BOTH hosts. Never loop-retry a refresh — space attempts hours apart and let cron self-heal. A fresh `claude auth login` (authorization_code grant) is a separate bucket if you must recover sooner.
 - Always pair an auth keep-alive with a probe that pages on failure (`claude-auth-probe.sh`), so a silent keep-alive failure surfaces in hours, not days.
 - Refresh tokens ROTATE and are single-use: two hosts cannot share one credentials chain (whoever refreshes first breaks the other). Give each host its own `claude auth login` device session. Full write-up: `~/repos/scripts/VM-CLAUDE-AUTH.md`.
+
+### Parallel Bash calls race on persisted shell cwd — always cd with an absolute path explicitly (2026-07-26)
+When two Bash tool calls are issued in the same message (parallel), the working directory is a single persisted shell state shared across them. If call A does `cd /repo-x && npm run build` and call B (in the same parallel batch) just runs `npm run build` assuming an earlier command's cwd still holds, the two calls can race and B executes in whatever directory A leaves the shell in — producing a false-positive 'build passed' read against the WRONG repo (observed in fix-checker run 612: a check intended for runeval returned promptlibrary's Next.js route table, silently, with no error). Caught only because the printed route names didn't match the target repo.
+
+How to apply: in every Bash tool call that will run alongside others in a parallel batch, put an explicit `cd <absolute-path> &&` at the start of the command — never depend on a prior tool call's cd persisting when there are concurrent siblings issued this turn. Applies to any agent (fix-checker, autonomousDev, learning-agent, ad hoc sessions) doing multi-repo build/test sweeps in parallel.

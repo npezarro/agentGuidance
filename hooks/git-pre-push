@@ -49,14 +49,31 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
 
   # Determine range to scan
   if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
-    # New branch — scan all commits
-    RANGE="$LOCAL_SHA"
+    # New branch: scan ONLY the commits it introduces, relative to the remote
+    # mainline. The old `git diff $LOCAL_SHA` (single arg) diffed the commit
+    # against the WORKING TREE, so unrelated uncommitted drift from a concurrent
+    # agent falsely blocked the push (2026-07-15).
+    BASE=""
+    for d in main master; do
+      if git rev-parse --verify -q "refs/remotes/origin/$d" >/dev/null 2>&1; then
+        BASE=$(git merge-base "origin/$d" "$LOCAL_SHA" 2>/dev/null || true)
+        if [ -n "$BASE" ]; then break; fi
+      fi
+    done
+    if [ -n "$BASE" ]; then
+      RANGE="$BASE..$LOCAL_SHA"
+    else
+      # Unknown mainline: diff the pushed tip against the empty tree (all of the
+      # commit's content, but still never the working tree).
+      RANGE="$(git hash-object -t tree /dev/null) $LOCAL_SHA"
+    fi
   else
     RANGE="$REMOTE_SHA..$LOCAL_SHA"
   fi
 
-  # Scan only added/modified lines (not deletions) for sensitive patterns
-  SCAN_OUTPUT=$(git diff "$RANGE" 2>/dev/null | grep '^+' | grep -v '^+++' | "$SCAN_SCRIPT" 2>&1 || true)
+  # Scan only added/modified lines (not deletions) for sensitive patterns.
+  # $RANGE is intentionally unquoted so the two-arg empty-tree form works.
+  SCAN_OUTPUT=$(git diff $RANGE 2>/dev/null | grep '^+' | grep -v '^+++' | "$SCAN_SCRIPT" 2>&1 || true)
 
   if echo "$SCAN_OUTPUT" | grep -q "BLOCKED"; then
     echo ""

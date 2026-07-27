@@ -296,6 +296,43 @@ timeout 2700 claude -p "$PROMPT" > "$LOG" || EXIT_CODE=$?
 
 **Rule:** In any `set -e` script, a command whose failure you intend to handle must have its exit captured via `|| VAR=$?` (or run inside an `if`). Never write a bare command followed by `$?`, and never read `$?` after `|| true`. Audit: `grep -n 'EXIT_CODE=\$?\|_EXIT=\$?' <script>` — each hit must be on the same line as the command it measures.
 
+## `set -e` Kills Functions Ending in a Guarded `&&`
+
+**The scenario:** a helper function's last command is `[ condition ] && action`:
+
+```bash
+set -euo pipefail
+vlog() {
+  [ -n "$VERBOSE" ] && log "$*"   # returns 1 when VERBOSE is unset
+}
+vlog "checking..."                 # set -e exits the WHOLE script here
+```
+
+Inline, `[ cond ] && action` is safe under `set -e` (the failing test is on the left of `&&`). But as the **last command of a function**, the function's return status becomes 1, the function call itself is now a failing simple command, and `set -e` kills the script at the first call site. The failure is completely silent — no error output, exit before any later logging.
+
+**Real incident (found 2026-07-16):** the autonomous-health monitor (WSL, 15-min cron) died at its first `vlog` call on every single run for its entire deployed life. Its log showed only `START:` lines — it never completed a check, never posted an alert, and nothing noticed, because the thing that died WAS the alerting layer. Its own cron scheduling was verifiably fine: **a heartbeat at the start of a run proves scheduling, not completion. Freshness checks must key on an end-of-run marker.**
+
+**Fix:** `if [ -n "$VERBOSE" ]; then log "$*"; fi` (an `if` whose condition is false returns 0), or end the function with `|| true` / an explicit `return 0`.
+
+**Rule:** in `set -e` scripts, never end a function body with a bare `[ cond ] && cmd`.
+
+## Cron Output Redirects Into Root-Owned Dirs Die Silently
+
+**The scenario:** a non-root crontab line redirects into `/var/log/`:
+
+```
+*/5 * * * * $HOME/bin/watchdog.sh >> /var/log/watchdog.log 2>&1
+```
+
+The shell opens the redirect target BEFORE running the command. If the dir is not writable by the cron user and the file doesn't exist, the open fails and **the command never runs at all** — every occurrence, forever, with no trace beyond an unread cron mail. The trap is asymmetric: if the log file already exists (created earlier when perms allowed, or pre-touched by root), appending works — so some `/var/log` crons keep working while their siblings are dead, which defeats "the other one works, so the pattern is fine" reasoning.
+
+**Real incident (found 2026-07-16):** `/var/log` on the VM is root-owned 755; 9 of 11 user cron entries redirecting there were dead — both PM2 watchdogs, the uptime monitor, the error aggregator, the restart alerter, the guidance sync, the daily bot restart, db-guardian (never ran once), and the Discord bot state backup (last artifact 4 months old). The 2 survivors had pre-existing log files. One dead cron had been individually "fixed" on 2026-06-02 by pre-creating its log file — the instance was patched, the class was not.
+
+**Rules:**
+- Non-root cron output goes to a user-owned dir (`~/logs/cron/` on the VM); never redirect cron output into `/var/log` as a non-root user.
+- When you find one broken cron redirect, audit the whole crontab for the class: `crontab -l | grep '/var/log'`.
+- Every watchdog/monitor needs periodic end-to-end verification: does its log show a run **completing** (not just starting) within the last interval, and can it still deliver its alert? A monitoring stack in which every layer dies silently (this incident: VM watchdog crons dead + WSL health monitor dead + PM2 pidusage monitoring poisoned, simultaneously) is the default failure mode, not the exception.
+
 ## Hook Loop Prevention
 
 Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook failure triggers a retry or a new Claude session, you get an infinite loop.

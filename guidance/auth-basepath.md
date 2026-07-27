@@ -231,15 +231,66 @@ When multiple NextAuth apps share a domain (e.g., `example.com`), they MUST have
 cookies: {
   sessionToken: {
     name: "__Secure-<appname>.session-token",
-    options: { httpOnly: true, sameSite: "lax", path: "/", secure: true },
+    // path is the app's basePath, NOT "/" — see "Cookie accumulation" below.
+    // Valid because the name uses __Secure- (only __Host- would force path "/").
+    options: { httpOnly: true, sameSite: "lax", path: "/<basePath>", secure: true },
   },
 },
 session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal apps
 ```
 
-**Current cookie names:** finance, health-hub, student, runeval, shopper, travel.
+**Add to the new-app checklist:** assign a unique cookie name AND scope its `path`
+to the app's basePath (both prevent cross-app problems on the shared domain).
 
-**Add to the new-app checklist:** When adding a new app, assign a unique cookie name following this pattern.
+## Cookie accumulation exceeds Apache's header limit (2026-07-18)
+
+The flip side of many single-domain NextAuth apps: each sets its session cookie with
+`path: "/"`, so the browser sends ALL of them in one `Cookie:` header on every
+request to the domain. Once ~8-10 apps exist, the combined header exceeds Apache's
+default `LimitRequestFieldSize` (8190 bytes) and the origin returns:
+
+```
+400 Bad Request — Size of a request header field exceeds server limit.
+```
+
+(This is Apache's own error page, served through the CDN — the CDN passed the large
+header, the origin rejected it. Symptom appears right after a user signs into the
+Nth app.)
+
+**The non-obvious fix — set it on the DEFAULT vhost for the port, not the matched one.**
+For name-based SSL vhosts, Apache reads the request headers under the DEFAULT server
+for that `ip:port` (the first/`_default_` vhost, selected before the Host header is
+parsed). So `LimitRequestFieldSize` on the app's own matched vhost — or globally in
+`apache2.conf` — has NO effect on this limit. It must go inside the `<VirtualHost *:443>`
+that `apache2ctl -S` reports as the "default server" for `:443`:
+
+```apache
+<VirtualHost *:443>
+    LimitRequestFieldSize 65536
+    ...
+</VirtualHost>
+```
+
+Then `apache2ctl configtest` and restart. Verify by reproducing directly against the
+origin (bypass the CDN): `curl --resolve <host>:443:127.0.0.1 https://<host>/... -H "Cookie: junk=<~10KB of a's>"` should return the app's normal code, not 400.
+
+**Next ceiling after Apache:** Node's default `--max-http-header-size` is ~16 KB, so a
+Next.js standalone server returns `431` above that (well above real cookie sizes for
+now).
+
+**Structural fix (DONE 2026-07-18):** each app's session cookie is now scoped to its
+basePath (`path: "/<app>"`) so the browser only sends it to that app's subtree — they
+stop accumulating. Rolled out to collab, employ, shopper, foodie, travel, finance,
+health-hub, runeval (verified: page render + OAuth POST redirect_uri intact per app;
+the OAuth callback does NOT read the session cookie — the auth-proxy uses only the
+`__auth_target` cookie — so subpath scoping is safe). New apps should ship scoped from
+day one (see the config above). Deploy gotchas learned during the rollout:
+- Apps whose `basePath` comes from an env var (finance, runeval) must be built with
+  `BASE_PATH` / `NEXT_PUBLIC_BASE_PATH` set, or every route 404s.
+- Some apps keep runtime data INSIDE `.next/standalone/` (runeval: `standalone/data`,
+  `standalone/prisma/data`) — exclude those dirs from an `rsync --delete` or it breaks.
+- Health checks: some apps' `/api/health` is auth-gated (401 by design, e.g. health-hub,
+  runeval) — use page-render 200/307/308 as the liveness signal, not health==200.
 
 ## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11)
 
