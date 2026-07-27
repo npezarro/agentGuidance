@@ -332,6 +332,25 @@ Signing SHA-1 (Play Console renders the cert inside a frame the content script c
 Treat client creation as a manual Cloud Console step, driven on the project-owner's browser
 profile (not an alt account that lacks project access).
 
+## Web "spread" sign-in: one login covers all apps sharing the auth-proxy (2026-07-27)
+
+The mobile mint pattern above (`POST /api/auth/mobile`) has a web counterpart: `POST
+/api/auth/spread`, added to `auth-proxy/server.js` so a landing page that aggregates
+several subpath apps into one feed doesn't force a separate login per app. It decodes
+whichever `__Secure-<app>.session-token` cookie is already present (the app the user just
+signed into natively), copies the identity claims (`name`, `email`, `picture`, `sub`), and
+mints the cookies for the OTHER apps that don't have one yet — Path-scoped to each app's
+basePath, same `MOBILE_SECRET_<APP>` per-app secrets as the mint endpoint. It never clobbers
+an existing cookie and never touches the OAuth callback, so it's safe to call fail-open on
+every page load.
+
+**Caveat — spread/mint only fixes the SESSION, not per-app provisioning:** a spread or
+minted cookie makes the app see a valid `email`/`name`, but each app resolves its own
+`userId` by `SELECT id FROM users WHERE email=?` and only inserts that row during a REAL
+OAuth sign-in. So an app the user has never natively logged into still returns
+`userId=undefined` from its API routes until the first real login there — spread widens
+session validity, it does not lazy-provision user rows.
+
 ## Rules for Future Work
 
 1. **Never set AUTH_URL to include the app basePath** without also setting an explicit `basePath` in the NextAuth config. The `||` assignment in `setEnvDefaults` will silently corrupt basePath otherwise.

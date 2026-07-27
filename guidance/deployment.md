@@ -385,6 +385,16 @@ If `journal_mode=WAL` appears in `DATABASE_URL` (e.g., from an old deploy.sh), *
 
 Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
 
+## VM branch drift: a service running ahead of origin/main
+
+A VM app directory can end up on a local `gemini/fix-*` or `claude/auto-*` branch that carries commits NOT on `origin/main` — because a fix was scp'd/patched directly onto the VM, or a branch was deployed for review and never reconciled. `deploy.sh`'s standard `git pull --ff-only origin/main` (or a bare `git checkout main`) then **silently reverts the VM to main and deletes the unmerged work** — no error, no warning, since a fast-forward pull always "succeeds."
+
+**Two confirmed instances:** `pezantTools` (2026-07-17, ~10 commits ahead on `gemini/fix-pezant-tools-0530-0507`: graceful shutdown, GCS cache opt, tray-token callback) and `auth-proxy` (2026-07-27, unpushed `gemini/fix-auth-proxy-0614-1656`: `/api/auth/mobile` mint + `/api/auth/spread` web-session-spread endpoints, plus an uncommitted `/collab` allowlist entry). Both cases would have broken live auth/mobile sign-in had a naive deploy run.
+
+**Detect before deploying:** `git -C <app-dir> log origin/main..HEAD --oneline` on the VM — any output means the checkout is ahead and a fast-forward pull is unsafe. Also check for uncommitted local mods (`git status --short`) that a `git pull` would refuse to overwrite but a `git reset --hard` would silently destroy.
+
+**Fix:** do NOT `git pull`/`checkout main` on a drifted app. Either (a) push the local branch and reconcile it into `origin/main` first, then repoint the VM at main, or (b) deploy incremental changes by hand-patching the deployed file (scp a new version, diff-review it against the live one) until the branch is reconciled. Leave a `DEPLOY-NOTES.md` in the app's private deploy-notes location (see `privateContext/auth-proxy/DEPLOY-NOTES.md` for the auth-proxy example) documenting the drift and the reconciliation debt so the next session doesn't rediscover it the hard way.
+
 ## VM SSH: don't trip fail2ban with reconnect bursts
 
 **Incident 2026-06-30 (a PM2 service deploy):** A burst of short SSH connections to the production VM, plus one deploy SSH killed mid-run and immediately retried, tripped the VM's fail2ban jail on port 22. Result: a ~10-minute DROP ban on the source IP. Roughly 5 rapid or aborted connections are enough.
