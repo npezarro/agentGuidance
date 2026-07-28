@@ -169,3 +169,18 @@ If a VM-hosted component shells out to `claude -p`, it inherits the fragility of
 **How:** `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p <local-worker-port> <user>@localhost claude -p --output-format text --max-turns 1` with the prompt piped on stdin; wrap it with a try/fallback to the VM host CLI so the caller degrades gracefully rather than hard-failing when the tunnel itself is down.
 
 **Why it matters:** a component built this way turns a dependency that dies for days at a time into a non-event — it keeps working through the exact outage window that breaks every VM-host-only caller. When a component keeps failing on a shared dependency it doesn't need exclusively, decoupling from that dependency is the durable fix, not another retry/alert layer on top of it.
+
+### Bridge system prompts are baked into the Docker image — must rebuild to deploy changes (2026-07-25)
+
+`docker/CLAUDE.md` (the Claude CLI system prompt) is copied into the image at build time via `COPY CLAUDE.md /home/node/system-prompt.md`. The bridge-server reads this baked-in file, not any `.claude/` directory on the host. **Editing the markdown file on the host has no effect until the image is rebuilt.**
+
+**Safe rebuild (preserves the `claude-auth` named volume and its authenticated session):**
+```bash
+sudo docker compose up -d --build <app>-bridge
+```
+
+**Do NOT use `docker compose down -v`** — the `-v` flag destroys named volumes including `claude-auth`, deleting the bridge's authenticated Claude session and forcing a re-login. The `up --build` form recreates the container while leaving named volumes intact.
+
+**Verify the new prompt is live:** `docker exec <app>-bridge grep '<search term>' /home/node/system-prompt.md`, then poll `GET http://127.0.0.1:<PORT>/health` until `"auth"` flips from `"pending"` to `"ok"` — a fresh container starts pending for ~15s while the first auth probe runs.
+
+Applies to all pezant public-app bridges (shopper/foodie/travel/employ) that share this Dockerfile pattern.
