@@ -293,3 +293,12 @@ The Discord bot repo's `errorMonitor.js` classified a manual-approvals channel's
 Keyset/cursor pagination on a NON-UNIQUE sort key (e.g. a `createdAt` timestamp) MUST include a unique tiebreaker column (the PK) in BOTH the `ORDER BY` and the cursor comparison, or rows that tie on the sort key are silently DROPPED at a page boundary. Failure mode: `ORDER BY createdAt DESC` with a strict cursor filter `createdAt < lastCreatedAt` and `nextCursor = lastCreatedAt`. If more rows than the page size share the boundary value S, page 1 shows the page-size subset, `nextCursor = S`, and page 2 (`createdAt < S`) excludes EVERY row at S — the tied rows that never appeared on page 1 are lost forever. Especially sneaky when the column stores whole SECONDS (e.g. SQLite/drizzle `mode:"timestamp"`), making ties common. Real instance: a private social-tooling app's feed endpoint, found via a bug report of reviews silently missing from the feed.
 
 **Fix (keyset):** `ORDER BY sortKey DESC, id DESC` and filter with the tuple predicate `(sortKey < S) OR (sortKey = S AND id < cursorId)`; encode both into the cursor (e.g. `"<S>|<id>"`). `id` is unique so `(sortKey, id)` is a strict total order — no drops, no dupes. Add a discriminating test: N+1 rows sharing one sort-key value at page size N; assert page1 UNION page2 covers all N+1 unique ids.
+
+### Secret-redaction functions miss credentials embedded in URL userinfo (2026-07-22)
+Secret-scrubbing functions (shell-history redaction, log sanitizers, chat-log scrubbers) commonly cover env-style assignments (`TOKEN=...`), password flags (`-p`/`--password`), and `Authorization: Bearer` headers, but **miss credentials embedded in a URL's userinfo component**: `scheme://user:secret@host`. Git PAT clone URLs (`https://user:ghp_xxx@github.com/...`), database connection strings (`psql://user:pass@host/db`), and curl basic-auth URLs all carry the secret in the userinfo position and slip through standard scrub patterns.
+
+**Fix:** when writing or auditing any redaction/scrub function, add a userinfo pattern that redacts only the password segment of a `user:secret@` authority:
+```js
+.replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+):[^/\s@]+@/gi, '$1:[REDACTED]@')
+```
+This leaves ordinary URLs (`host:port/path`, `user@host`, scp targets) byte-identical, avoiding over-redaction. Verified in an internal pipeline scrubber (2026-07-22). Sibling scrub functions to audit: session-recall (scrub module), browser-agent (sanitizer), chat-log-export skill.
