@@ -184,6 +184,37 @@ if "NODE_CHANNEL_FD" in env:
 kwargs["env"] = env
 ```
 
+### CWD Hygiene and Retry Breadth for Subprocess `claude -p` Calls (2026-07-22)
+
+Two additional hygiene rules for pipelines that shell out to `claude -p` for free-text generation:
+
+**CWD hygiene.** When a `claude -p` subprocess runs with its working directory inside a code repo, the spawned sub-agent can explore that repo and inject meta-commentary into its output (e.g., a generated brief that narrates the relative source path it was invoked from). For free-text generation calls whose output is the primary return value, set the subprocess `cwd` to an empty/neutral directory:
+
+```python
+# Python — use a temp dir so the sub-agent sees no repo context to narrate
+import tempfile
+with tempfile.TemporaryDirectory() as tmp_cwd:
+    result = subprocess.run([CLAUDE_BIN, "-p", "--dangerously-skip-permissions", prompt],
+                            cwd=tmp_cwd, capture_output=True, text=True)
+```
+
+For calls whose output is strictly parsed (e.g. structured JSON extraction), the risk is lower but the cwd hygiene is cheap insurance.
+
+**Retry breadth.** Retry logic for `claude -p` must retry on **ANY non-zero exit code AND on empty stdout**, not only when stderr matches "rate"/"limit". Nested `claude -p` invocations intermittently exit 1 with an entirely empty stderr (a transient fault). Code that only retries on rate-limit strings hard-fails on the first transient blip:
+
+```python
+for attempt in range(MAX_RETRIES):
+    result = subprocess.run([CLAUDE_BIN, "-p", "--dangerously-skip-permissions", prompt],
+                            cwd=tmp_cwd, capture_output=True, text=True)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout  # valid response
+    # retry on any non-zero exit OR empty stdout, not just rate-limit strings
+    time.sleep(BASE_DELAY * (2 ** attempt))
+raise RuntimeError(f"claude -p failed after {MAX_RETRIES} attempts")
+```
+
+**Real incident (job-pipeline `generate.py`, 2026-07-22):** generated brief narrated the repo source path it was invoked from (cwd was the repo root). Fix: set cwd to `tempfile.mkdtemp()` for free-text generation calls.
+
 ### OAuth Refresh Rate-Limiting (the real cause of the 2026-05-28 synthetic 401s)
 
 **The scenario:** `~/repos/scripts/refresh-claude-token.sh` runs every 3h via cron and calls `https://platform.claude.com/v1/oauth/token` with a `refresh_token` grant. The endpoint is **rate-limited**, and under load can return `rate_limit_error: Rate limited. Please try again later.` for multiple consecutive cron cycles.
