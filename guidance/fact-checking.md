@@ -99,3 +99,28 @@ repo-exists `ls`, neither of which proves public liveness. Use curl per
 A URL returning HTTP 200 with a plausible title proves the page is *live*, not that its content is *current*. Job/listing aggregator sites in particular keep expired postings reachable indefinitely — a 4-year-old listing can 200 with a real title next to genuinely fresh ones. Do not conflate the two checks, and never derive a "posted/updated" date from your own discovery timestamp when the source doesn't supply one — that manufactures false freshness for content of unknown age.
 
 **How to apply:** when a pipeline needs to judge whether a piece of external content is current (job postings, product listings, news items), treat "unknown post date" as a distinct, neutral state rather than defaulting to "new" — surface it as such (e.g. an "age unknown" label) and exclude it from freshness-gated views rather than assuming recency. Prefer a real published-date field from the source (schema.org `datePosted`/`dateModified` JSON-LD, an ATS API field) over inference. Applies to any pipeline that aggregates externally-sourced, potentially-stale content: job boards, deal/coupon feeds, marketplace listings.
+
+## "Known / reputable brand" is a factual claim — verify provenance
+
+Calling a brand "known", "established", "reputable", or "trusted" is an
+externally-checkable claim, not flavor. Do not assert it from Amazon star
+counts or review volume — that is the exact fake-review signal a skeptic gate
+is supposed to catch, laundered into credibility. Before applying any such
+label, run one search (`who makes <brand>` / `<brand> company history`) and
+classify:
+- **Established** — an independent company with verifiable history and
+  distribution beyond a single marketplace (e.g. Norpro, founded 1973).
+- **Amazon-native / marketplace label** — an invented seller brand (often an
+  all-caps or nonsense word) sold mainly on Amazon/Walmart with no independent
+  history (e.g. IMEEA is an Amazon-native label; FLAFSTER is a 3-person family
+  side-hustle). Never call these "known brands"; they can still be fine budget
+  picks, but justify that on specific evidence, not borrowed reputation.
+
+Never contradict your own skeptic gate: flagging "no-name" products as a trap
+while presenting same-tier Amazon-native brands as "known brands" in the same
+guide is the failure this rule exists to prevent.
+
+Origin (2026-07-28): a shopper skewers guide listed IMEEA and FLAFSTER as
+"known brands" next to the genuinely-established Norpro. Fixed in all three
+buying-guide instruction sets (buying-assistant/CLAUDE.md, claude-skills
+buying-guide/SKILL.md, shopper/docker/CLAUDE.md) with a Brand provenance gate.
