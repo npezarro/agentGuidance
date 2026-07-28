@@ -253,6 +253,12 @@ git filter-repo --mailmap /tmp/mailmap --force
 
 This is the right tool when `npm audit` or security scans flag personal emails in commit metadata. It does not touch file content, so collateral damage risk is minimal compared to `--replace-text`.
 
+### GitHub Blocks Pushes When the COMMITTER Email is Your Real Email (2026-07-22)
+
+GitHub's "Block command line pushes that expose my email" privacy setting rejects a push (`push declined due to email privacy restrictions`) if **any commit's committer email** is your real address — not just the author email. This bites during rebases: `git -c user.email="you@gmail.com" rebase ...` stamps that gmail as the **committer** on every replayed commit even when the original authors are untouched, silently making the branch unpushable until you notice.
+
+**Fix:** re-stamp the committer to your GitHub noreply address before pushing — `git -c user.name="<username>" -c user.email="<username>@users.noreply.github.com" rebase -f <upstream>` (the `-f` forces re-commit even when already on the base). For plain commits on personal repos with this privacy setting enabled, always commit with `-c user.email="<username>@users.noreply.github.com"` rather than the real address.
+
 ### Collateral Damage from Content Rewrites
 
 `git filter-repo` replaces strings across **all commits including the current working tree**. This causes collateral damage when the replacement is too broad:

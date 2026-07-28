@@ -184,3 +184,11 @@ sudo docker compose up -d --build <app>-bridge
 **Verify the new prompt is live:** `docker exec <app>-bridge grep '<search term>' /home/node/system-prompt.md`, then poll `GET http://127.0.0.1:<PORT>/health` until `"auth"` flips from `"pending"` to `"ok"` — a fresh container starts pending for ~15s while the first auth probe runs.
 
 Applies to all pezant public-app bridges (shopper/foodie/travel/employ) that share this Dockerfile pattern.
+
+### Appending context to a bridge query must respect that app's length cap and query-type heuristics (2026-07-22)
+When a Next.js app's route handler concatenates optional context (a saved profile, an effort directive) into the single `query` string it forwards to the bridge, check the target bridge-server.js constraints FIRST, not after — different apps enforce different limits:
+- **shopper**: `MAX_QUERY_LENGTH=1000` AND an `isBroadQuery()` word-count heuristic. A large appended block can overflow the length check (bridge 400s, rejecting the whole request) and inflate the word count so short category queries stop being detected as "broad". Fix: the route appends the block behind a recognizable trailing marker (`\n\n[Shopper profile]\n...`); the bridge strips that tail out of `query` before the length check + `isBroadQuery`, then re-appends it after query-type detection so the model still receives it. This couples the app and bridge — they must deploy together (the strip is a no-op when the marker is absent, so rebuild the bridge first).
+- **foodie**: `MAX_QUERY_LENGTH=2000`, no broad-query heuristic, already prepends a sizable `[Filters]` block — a prepended profile follows the existing pattern, no bridge change needed.
+- **travel**: no restrictive length cap or broad heuristic, so a simple prepend works.
+
+**How to apply:** before wiring a new optional-context block into any bridge query, read that app's `docker/bridge-server.js` for a length cap and any query-classification heuristic keying off word count or content. Prepending/appending is only safe when `(max_len - typical_query_len)` comfortably exceeds the block size AND nothing downstream keys off the raw query text; otherwise strip-before-checks + re-append-after in the bridge, and treat the app+bridge as a coupled deploy unit for that change.

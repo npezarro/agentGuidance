@@ -122,6 +122,11 @@ git push
 ```
 **Detect early**, before attempting the push: `git log --oneline origin/<default-branch>..HEAD` on your branch — if a commit there touches `.github/workflows/`, it's not yours to push and the rebase above is needed. If your task genuinely does need to modify a workflow file, this rebase won't help — fall back to SSH push or an API-created PR as before.
 
+### Sibling repos edited in lockstep don't necessarily share a default branch name (2026-07-24)
+When a set of repos are maintained in lockstep (same feature shipped to each, near-identical commit messages), it's tempting to script cross-repo git ops assuming one default branch name for all of them. That assumption silently breaks the moment one sibling differs — e.g. `for repo in a b c; do git -C "$repo" push origin master; done` fails on any repo whose default branch is actually `main`, with `error: src refspec master does not match any`, and depending on shell error handling the loop may just skip that repo rather than halt.
+
+**How to apply:** when scripting git operations across multiple repos, resolve each repo's branch per-repo (`git -C "$repo" branch --show-current` or `git -C "$repo" remote show origin | sed -n '/HEAD branch/s/.*: //p'`) instead of hardcoding a branch name shared across the set. Also don't pipe `git push` through `tail`/`head`/`grep` for "cleaner" output — that masks the command's own exit code (see `guidance/operational-safety.md` pipefail patterns); check `git push`'s exit status directly.
+
 ### Merged-PR scope notes are sanctioned follow-up work, not dedup blockers (2026-07-03)
 autonomous-dev run 325: When candidate work looks like a duplicate of a recently MERGED PR, read the merged PR's body before rejecting it. An explicit 'out of scope / flagged as a follow-up' note converts the candidate from forbidden duplicate into sanctioned, pre-vetted follow-up work — and the merged PR often ships infrastructure the follow-up should reuse instead of re-inventing (health-hub PR #66 scope note + safeJsonParse helper -> PR #67 per-event webhook batch isolation). Cite the scope note in the new PR body to make the lineage reviewable.
 
