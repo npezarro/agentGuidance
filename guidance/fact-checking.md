@@ -93,3 +93,28 @@ internal-first API (only `/api/*`, requires an `X-Panel-Key` header). The
 author relied on a `MEMORY.md` "LIVE example.com/panel" index line and a
 repo-exists `ls`, neither of which proves public liveness. Use curl per
 `knowledgeBase/patterns/url-liveness-detection.md`.
+
+## "Known / reputable brand" is a factual claim — verify provenance
+
+Calling a brand "known", "established", "reputable", or "trusted" is an
+externally-checkable claim, not flavor. Do not assert it from Amazon star
+counts or review volume — that is the exact fake-review signal a skeptic gate
+is supposed to catch, laundered into credibility. Before applying any such
+label, run one search (`who makes <brand>` / `<brand> company history`) and
+classify:
+- **Established** — an independent company with verifiable history and
+  distribution beyond a single marketplace (e.g. Norpro, founded 1973).
+- **Amazon-native / marketplace label** — an invented seller brand (often an
+  all-caps or nonsense word) sold mainly on Amazon/Walmart with no independent
+  history (e.g. IMEEA is an Amazon-native label; FLAFSTER is a 3-person family
+  side-hustle). Never call these "known brands"; they can still be fine budget
+  picks, but justify that on specific evidence, not borrowed reputation.
+
+Never contradict your own skeptic gate: flagging "no-name" products as a trap
+while presenting same-tier Amazon-native brands as "known brands" in the same
+guide is the failure this rule exists to prevent.
+
+Origin (2026-07-28): a shopper skewers guide listed IMEEA and FLAFSTER as
+"known brands" next to the genuinely-established Norpro. Fixed in all three
+buying-guide instruction sets (buying-assistant/CLAUDE.md, claude-skills
+buying-guide/SKILL.md, shopper/docker/CLAUDE.md) with a Brand provenance gate.
