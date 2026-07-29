@@ -10,6 +10,15 @@ load-bearing (baseline Opus at xhigh still lost everything). Objective ground tr
 (suites, exit codes, live contract checks) backed every scored claim. Evidence:
 `privateContext/deliverables/audits/2026-07-06-fable-opus-capability-gap.md` §8.
 
+> **Re-baseline note (2026-07-29):** the operating substrate moved from Opus 4.8 to
+> **Opus 5** (`claude-opus-5`), which Anthropic positions as near-Fable-5. The layer
+> still injects on Opus 5 (the `/opus/i` gate matches), and the interactive A/B was
+> **re-based onto Opus 5** rather than retired, so "does this layer still help when the
+> base model is already near-Fable?" is now the live question. The validation figures
+> above were measured on Opus 4.8 and stand as the 4.8-era result; the Opus 5 readout
+> restarts from zero usable sessions (`parity-arm-analyzer.py` excludes pre-cutover 4.8
+> sessions via `OPUS_SUBSTRATE`). Layer text unchanged (still v4).
+
 ## What the gap actually is
 
 Opus 4.8's baseline losses came almost entirely from ONE dimension: **claims not
