@@ -134,10 +134,28 @@ Non-zero means that checkout holds commits that may exist nowhere else. `git res
 
 When you find divergence:
 
-1. **Back it up before touching anything.** `git branch -f <name>-backup HEAD`, then `git bundle create /tmp/x.bundle <name>-backup` and copy the bundle off the machine. A branch on a single host is not a backup.
-2. **Try to push the branch** — but expect `push declined due to email privacy restrictions` if the commits carry a private author email. That rejection follows the *commits*, not the pusher, so pushing from elsewhere does not help. Fixing it means rewriting author emails, which is a deliberate decision about someone else's history, not a cleanup step.
-3. **Cherry-pick the fix you actually need** onto that checkout's own HEAD instead of reconciling everything: `git fetch origin main && git cherry-pick <sha>`. Conflicts are usually just files that did not exist on the older HEAD (`git add` the incoming version, `--continue`). Verify by running that repo's tests *on that host*.
-4. **Leave a warning in the checkout's own `context.md`** and commit it there. Docs committed upstream are invisible to a checkout that is 65 commits behind — the warning has to live where the next session will actually read it.
+1. **Back it up before touching anything.** `git branch -f <name>-backup HEAD`, then `git bundle create /tmp/x.bundle <name>-backup` and copy the bundle off the machine. A branch on a single host is not a backup. This costs nothing and makes every later step risk-free.
+
+2. **Establish whether those commits actually contain unique content. Do NOT trust the commit subjects.**
+
+   ```bash
+   git diff --stat origin/main..<backup-branch>     # net direction of the delta
+   comm -13 <(git ls-tree -r --name-only origin/main | sort) \
+            <(git ls-tree -r --name-only <backup-branch> | sort)   # files ONLY on that side
+   git diff origin/main..<backup-branch> -- src/ | grep -E "^\+[^+]"  # its unique source lines
+   ```
+
+   Then verify each feature the subjects claim, **in the upstream tree**: `git grep -n "<feature>" origin/main -- src/`.
+
+   A branch can be "7 commits ahead" and still be strictly poorer — early work that upstream later reimplemented properly, often via PRs that were squashed or re-authored so the shas never match. (2026-07-29, VM `~/job-scraper`: subjects promised atomic writes, cron scheduling, log rotation and Discord alerts. The diff was **+185 / −5,602 with ZERO files unique to the VM**, its 74 unique source lines were superseded versions of refactored functions, and every claimed feature was verifiably present upstream and better — `src/pipeline.js:94 renameSync(tmpPath, LAST_RUN_PATH)` was the atomic write. The VM was *missing* three adapters, four modules, ~20 test files, CI and Dependabot. Reset was correct; the initial conservative "cherry-pick, never reset" read was wrong.)
+
+3. **Then choose, on evidence:**
+   - *Superseded fork* (no unique content): `git reset --hard origin/<branch>`. Safe when runtime state is gitignored — check what the code actually writes (`output/`, `*.log`, caches) and confirm any tracked data file is read-only config, not state.
+   - *Genuinely unique content*: port it onto a branch off `origin/main`, commit under a valid author identity, push, and only then reset the remote checkout. Do not leave it stranded.
+   - *Need one fix now, reconcile later*: cherry-pick onto that checkout's HEAD (`git fetch origin main && git cherry-pick <sha>`). Conflicts are usually files that did not exist on the older HEAD — `git add` the incoming version and `--continue`. This is an interim measure, not an outcome.
+
+   Verify by running that repo's tests **on that host** afterwards. A jump in test count (16 → 283 in the case above) is a good signal you recovered real work.
+4. **Record the outcome in the checkout's own `context.md`** (a warning if unresolved, a RESOLVED note if reconciled) and commit it there. Docs committed upstream are invisible to a checkout that is 65 commits behind — the warning has to live where the next session will actually read it.
 5. **Surface the divergence as an open item.** Reconciling it is the owner's call.
 
 Restore from a bundle with:
