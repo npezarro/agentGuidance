@@ -52,6 +52,26 @@ If you intentionally skip deploying (e.g., batching changes), note it in context
 
 Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 
+## Publishing Artifacts: Verify the Bytes, Not the Status Code
+
+For anything that publishes a downloadable artifact (installers, auto-update manifests, release binaries), a 200/206 proves only that *something* is at the URL. A CDN will happily serve a stale cached object of the right size, so the status check passes while the client's integrity check rejects the download: CI green, user broken.
+
+A publish step ending in `echo "Uploaded v$VERSION"` has asserted success, not measured it. Verify, in order:
+
+1. Fetch the manifest **cache-busted**; assert the published version equals the built one.
+2. For **every** artifact URL the manifest advertises (not one representative), `curl -sL` with a range request and assert a *final* 200/206. **Follow redirects** — a 301 to a path that 404s looks like success until you follow it.
+3. Download the primary artifact and assert its checksum matches the manifest. This is the same check the client performs, and the only one that catches a poisoned cache.
+
+Publish order matters: **binaries first, manifest last** (the manifest advertises the version, so landing it first lets a client 404 mid-upload), and write the manifest to a temp name then `mv` it. Add retention — nothing pruning releases let one directory reach 2.1GB on a disk at 81%.
+
+Three traps that cost three months of silently-broken releases (2026-07-29, claude-tray-notifier):
+
+- **Never discard the stderr of a command that can abort the script.** `ssh-keyscan ... 2>/dev/null` under `bash -e` killed a step instantly with zero output and no packet reaching the server. Tell: a step failing *far too fast* with an empty log is an aborted `set -e` script, not the failure it appears to be.
+- **A CDN-fronted hostname is not an SSH target.** Keep the origin address and the public hostname as separate config values; a CDN migration otherwise breaks deploys with no obvious connection to the change.
+- **`secrets` is unavailable in a step-level `if:`** — using it there makes GitHub reject the entire workflow file, presenting as a run with zero jobs, no logs, and the file path shown where the workflow name should be. Guard inside the script instead (`env:` may reference secrets). Detector: `grep -nE '^\s*if:.*secrets\.' .github/workflows/*.yml`.
+
+Full case study: knowledgeBase `patterns/release-publish-verification.md`.
+
 ## Automated Deploy Enforcement (Hooks)
 
 Two hooks mechanically enforce post-deploy verification, even if the agent skips the manual checklist above:
