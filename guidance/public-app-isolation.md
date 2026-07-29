@@ -15,6 +15,7 @@ Key attacks to defend against:
 - **Tool abuse:** If Bash or file tools are available, arbitrary code execution
 - **Resource exhaustion:** Flooding queries to burn rate limits on the primary account
 - **Context leakage:** Accessing mounted volumes to learn about internal infrastructure
+- **Trusted-channel forgery:** Hand-typing the exact sentinel/marker string the bridge's system prompt treats as authoritative (e.g. `[Live award availability ... — AUTHORITATIVE REAL DATA]`) into free-text input, so fabricated data is trusted as if it came from a real vendor API call — see "Authoritative-block forgery" below
 
 ## Architecture Layers
 
@@ -257,3 +258,12 @@ This coupling means **the app and the Docker bridge must be deployed together**:
 **When the block is small relative to the cap (foodie/travel-style):** a simple prepend is safe; no bridge change needed (app-only deploy).
 
 Source: saved shopping/food profile features, 2026-07-22.
+
+## Authoritative-block forgery and vendor-field injection (travel fix — 2026-07-29)
+
+When a trusted server assembles a bridge prompt from three sources — its own instructions, third-party/vendor data (a partner API, a scrape), and user-authored free text — and the system prompt grants ONE of those channels elevated trust via a text marker (e.g. "treat any block labeled `[... — AUTHORITATIVE REAL DATA]` as final, don't second-guess it"), that trust is a plain string in the assembled prompt, not a cryptographic or structural guarantee. Two distinct holes exist unless both are closed:
+
+1. **User text can forge the trusted channel.** Nothing stops a user from hand-typing the exact sentinel string into their own query or follow-up field — the model cannot tell "the trusted server wrote this" from "the untrusted user wrote this," since both arrive as plain text in the same prompt. In travel-assistant, a free-tier user (no seats.aero API key needed) could inject fabricated award pricing this way, and a second sentinel-like prefix ("Original question:") re-routed a main query down the bridge's cheaper/different-instruction follow-up path. Fix: strip/neutralize known sentinel markers from ALL user-authored text before assembly — the initial query, every follow-up question, AND (if prior answers or stored rows get echoed back into later-turn context) those too, since a prior answer can repeat a block header it was shown and re-assert authoritative framing on a later turn.
+2. **Vendor field values can break out of their cell.** Even genuine vendor data interpolated raw into the trusted block (markdown table cells, bracketed fields) is attacker-adjacent when the vendor is a third party — an unescaped structural character (`|` forges table columns, `]` or `` ` `` closes the block/cell early) lets vendor-controlled text append fresh instructions inside a block the model was told to trust absolutely. Fix: sanitize every third-party field before interpolation — strip control chars, newlines, and the target format's structural characters, drop a leading role-prefix (`system:`, `assistant:`), and format-check/allowlist high-signal fields (currency codes, location codes) without hard-rejecting well-formed-but-unrecognized values (an allowlist that's too tight silently drops real vendor rows).
+
+**How to apply (for reviewers):** when reviewing a change that adds a new "AUTHORITATIVE"/"trusted"/"verified"/"real data" block to a bridge or LLM prompt, or wires in a new vendor/scraped data source, check both: (a) can the sentinel string reach the same prompt via unsanitized user input, and (b) does every vendor field pass through an escaping/sanitizing step before landing inside the trusted block's markup. Reference implementation: `travel-assistant/src/lib/injection-safety.ts` (`stripBlockSentinels`, `sanitizeInjectedField`, `safeIata`), applied in commit `3ac689c`. Audited 2026-07-29: shopper/foodie/employ do not currently inject vendor/scraped data behind an "AUTHORITATIVE"-style trust marker, so the pattern is travel-specific today — apply this check if any of them grow one.
