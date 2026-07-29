@@ -151,7 +151,7 @@ When you find divergence:
 
 3. **Then choose, on evidence:**
    - *Superseded fork* (no unique content): `git reset --hard origin/<branch>`. Safe when runtime state is gitignored — check what the code actually writes (`output/`, `*.log`, caches) and confirm any tracked data file is read-only config, not state.
-   - *Genuinely unique content*: port it onto a branch off `origin/main`, commit under a valid author identity, push, and only then reset the remote checkout. Do not leave it stranded.
+   - *Genuinely unique content*: port it onto a branch off `origin/main`, commit under a valid author identity, push, and only then reset the remote checkout. Do not leave it stranded. If the push is rejected with `push declined due to email privacy restrictions`, GitHub is checking the **committer** email of every replayed commit, not just the author — that rejection follows the commits, not the pusher, so pushing from elsewhere doesn't help (see "GitHub's Email-Privacy Push Block Checks the Committer, Not Just the Author" below).
    - *Need one fix now, reconcile later*: cherry-pick onto that checkout's HEAD (`git fetch origin main && git cherry-pick <sha>`). Conflicts are usually files that did not exist on the older HEAD — `git add` the incoming version and `--continue`. This is an interim measure, not an outcome.
 
    Verify by running that repo's tests **on that host** afterwards. A jump in test count (16 → 283 in the case above) is a good signal you recovered real work.
