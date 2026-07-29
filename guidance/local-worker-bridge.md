@@ -185,6 +185,26 @@ sudo docker compose up -d --build <app>-bridge
 
 Applies to all pezant public-app bridges (shopper/foodie/travel/employ) that share this Dockerfile pattern.
 
+### A named volume silently shadows a `COPY` into the same path — baked files never land (2026-07-29)
+
+A Dockerfile line like `COPY CLAUDE.md /home/node/.claude/CLAUDE.md` looks like it bakes the system prompt into the image, but if `docker-compose.yml` also mounts a **named volume** at `/home/node/.claude` (e.g. `claude-auth`, used to persist the CLI's OAuth session across restarts), the volume mount wins at container start and shadows whatever the image put there. The `COPY` still succeeds and shows clean in the build log — the file just never becomes visible inside the running container, because the volume's own contents (whatever existed the first time the volume was created) sit on top of it.
+
+**Why it's dangerous:** nothing errors. The bridge boots, `/health` reports auth ok, requests succeed — because the app usually also reads a second, unshadowed copy of the same file directly (e.g. `system-prompt.md` outside `.claude/`) and prepends it to the query explicitly. Only the `claude` CLI's own auto-loaded `.claude/CLAUDE.md` is stale, so the failure is invisible until someone diffs the two copies or a stale instruction visibly misbehaves. It can persist across every rebuild since the volume was first created, because rebuilding the image never touches an existing named volume's contents.
+
+**Detection:** don't trust the build log. Compare the two paths inside the running container:
+```bash
+docker exec <container> diff /home/node/system-prompt.md /home/node/.claude/CLAUDE.md
+# or, if there's no unshadowed copy to diff against:
+docker exec <container> stat -c '%s %Y' /home/node/.claude/CLAUDE.md   # size/mtime older than the image's source file = stale
+```
+
+**Fix:** never `COPY` directly into a path that `docker-compose.yml` also mounts a persistent volume over. Bake to an unshadowed path instead (`COPY CLAUDE.md /home/node/system-prompt.md`) and refresh the live path from it at container boot, in `entrypoint.sh`, after the volume is mounted — this keeps credentials in the volume persistent while keeping the prompt itself always current:
+```sh
+cp /home/node/system-prompt.md /home/node/.claude/CLAUDE.md
+```
+
+**Where it's live:** travel-assistant hit this (commit `8ebea9e`, 2026-07-29) and fixed it exactly this way. shopper, foodie, and employ share the identical Dockerfile/docker-compose shape (`COPY CLAUDE.md /home/node/.claude/CLAUDE.md` baked path + a `claude-auth` named volume mounted at `/home/node/.claude`, with no refresh step in `entrypoint.sh`) — same latent bug, unfixed as of this writing. Any app using the shared bridge pattern should get the same entrypoint refresh before its next prompt change is assumed to have deployed.
+
 ### Appending context to a bridge query must respect that app's length cap and query-type heuristics (2026-07-22)
 When a Next.js app's route handler concatenates optional context (a saved profile, an effort directive) into the single `query` string it forwards to the bridge, check the target bridge-server.js constraints FIRST, not after — different apps enforce different limits:
 - **shopper**: `MAX_QUERY_LENGTH=1000` AND an `isBroadQuery()` word-count heuristic. A large appended block can overflow the length check (bridge 400s, rejecting the whole request) and inflate the word count so short category queries stop being detected as "broad". Fix: the route appends the block behind a recognizable trailing marker (`\n\n[Shopper profile]\n...`); the bridge strips that tail out of `query` before the length check + `isBroadQuery`, then re-appends it after query-type detection so the model still receives it. This couples the app and bridge — they must deploy together (the strip is a no-op when the marker is absent, so rebuild the bridge first).
