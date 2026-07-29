@@ -10,6 +10,7 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+2026-07-29 | infra | Parity substrate re-based Opus 4.8 → Opus 5 (`claude-opus-5`): `bestof-claude.sh` MODEL bumped; `parity-arm-analyzer.py` gained `OPUS_SUBSTRATE` (default opus-5), pooling only current-substrate sessions and excluding pre-cutover 4.8 as a prior cohort; re-baseline note added to `opus-fable-parity.md` (layer text unchanged, still v4). `4c99d23`.
 2026-07-17 | guidance | process-hygiene.md "Cron Registry Reconciliation": never `--install --force` (deletes live-but-unregistered jobs); two-way diff → verify intent from memory → import/disable → verify backup delta. From the token-relay near-miss.
 2026-07-17 | feat | parity-transcript-archiver.sh: hourly cron copying logged A/B session transcripts to ~/.claude/parity-telemetry/transcripts/ before rotation (2 already lost); analyzer falls back to archive. Cron registry reconciled in the same pass (token-relay pair imported; refresh/probe/peloton marked paused per documented intent).
 2026-07-17 | guidance | `agent.md` v4.1.1 (PR #329, merged): Wispr-dictation interpretation rule in Communication section — ignore stray leading `v` artifact, read dictated input for intent, prefer coherent near-homophone, ask only on genuine ambiguity.
