@@ -34,11 +34,17 @@ When committing to any repo, **ALWAYS push to the GitHub remote branch as well**
 
 **Common gap:** When working across multiple repos in one session (e.g., agentGuidance + llm-tasks + voice-data), it's easy to push some and forget others. After finishing a multi-repo task, verify all repos are clean: `git status` in each one.
 
-## Staging Hygiene in Shared Repos (concurrent agents)
+## Staging Hygiene (ANY repo with in-flight work)
 
-Repos like agentGuidance, privateContext, and knowledgeBase are worked by many agents at once (interactive sessions, hourly learning-agent, doc-sync, autonomousDev). Two rules prevent one agent's commit from corrupting another's work or leaking secrets:
+Repos like agentGuidance, privateContext, and knowledgeBase are worked by many agents at once (interactive sessions, hourly learning-agent, doc-sync, autonomousDev). **This is not a "shared repo" rule — it applies to ANY repo.** Any checkout can hold uncommitted work from a previous session, and a blanket add silently ships it under your commit message.
 
-- **Stage explicit paths, never `git add -A` / `git add .`** in a shared repo. A blanket add sweeps whatever another agent left uncommitted in the working tree into *your* commit. This actually happened 2026-07-12: a concurrent session's `git add -A` bundled an unrelated agent's `testing.md` with its own change (and staged a secret — see below). Name the files you touched: `git add guidance/foo.md scripts/bar.sh`.
+> 2026-07-29: `git add -A` in `job-scraper` — not on the "shared" list — swept a half-finished LinkedIn adapter, a scrape script, and a settings change into a link-checker commit. Caught on the `git show --stat` review before pushing; commit reset and re-made with explicit paths. The rule below already existed; only its scoping made it look inapplicable.
+
+The check is cheap and unconditional: **run `git status` BEFORE staging.** If the tree holds anything you didn't touch, name your paths explicitly.
+
+Two rules prevent one agent's commit from corrupting another's work or leaking secrets:
+
+- **Stage explicit paths, never `git add -A` / `git add .`** in any repo. A blanket add sweeps whatever another agent left uncommitted in the working tree into *your* commit. This actually happened 2026-07-12: a concurrent session's `git add -A` bundled an unrelated agent's `testing.md` with its own change (and staged a secret — see below). Name the files you touched: `git add guidance/foo.md scripts/bar.sh`.
 - **Never `--no-verify` on a public repo.** The pre-commit sensitive-identifier scanner is the last line of defense before a VM username / internal path / token reaches a public GitHub repo. Bypassing it is how leaks ship. If the scanner blocks you, sanitize using `privateContext/sensitive-identifiers.md`; don't override. (The scanner correctly blocked the 2026-07-12 leak — the proper fix went out sanitized via a PR; the `--no-verify` local commit was orphaned.)
 - **Before committing, `git status` and confirm ONLY your files are staged.** If you see files you didn't touch, unstage them (`git restore --staged <path>`) — they belong to another agent.
 
@@ -112,3 +118,29 @@ fix-checker runs 600-601: three separate autonomousDev-created `claude/auto-*` P
 
 ### Merged-PR scope notes are sanctioned follow-up work, not dedup blockers (2026-07-03)
 autonomous-dev run 325: When candidate work looks like a duplicate of a recently MERGED PR, read the merged PR's body before rejecting it. An explicit 'out of scope / flagged as a follow-up' note converts the candidate from forbidden duplicate into sanctioned, pre-vetted follow-up work — and the merged PR often ships infrastructure the follow-up should reuse instead of re-inventing (health-hub PR #66 scope note + safeJsonParse helper -> PR #67 per-event webhook batch isolation). Cite the scope note in the new PR body to make the lineage reviewable.
+
+## Remote Checkouts May Hold Commits That Exist Nowhere Else
+
+Before `git pull`/`git reset` in a checkout you do not own (the VM, a container, another machine), check whether it is **ahead** of origin:
+
+```bash
+git fetch origin <branch>
+git rev-list --count origin/<branch>..HEAD   # non-zero => LOCAL-ONLY commits live here
+```
+
+Non-zero means that checkout holds commits that may exist nowhere else. `git reset --hard origin/<branch>` destroys them permanently. A conflicting `git pull` is a *signal* to investigate, not a nuisance to force past.
+
+**2026-07-29, VM `~/job-scraper`:** 7 ahead / 65 behind. The 7 commits (atomic writes, cron scheduling, log rotation, Discord alerting) were absent from both the local clone and GitHub. A pull conflicted on `data/companies.json` and `package.json`; the reflexive `reset --hard` would have erased all of it.
+
+When you find divergence:
+
+1. **Back it up before touching anything.** `git branch -f <name>-backup HEAD`, then `git bundle create /tmp/x.bundle <name>-backup` and copy the bundle off the machine. A branch on a single host is not a backup.
+2. **Try to push the branch** — but expect `push declined due to email privacy restrictions` if the commits carry a private author email. That rejection follows the *commits*, not the pusher, so pushing from elsewhere does not help. Fixing it means rewriting author emails, which is a deliberate decision about someone else's history, not a cleanup step.
+3. **Cherry-pick the fix you actually need** onto that checkout's own HEAD instead of reconciling everything: `git fetch origin main && git cherry-pick <sha>`. Conflicts are usually just files that did not exist on the older HEAD (`git add` the incoming version, `--continue`). Verify by running that repo's tests *on that host*.
+4. **Leave a warning in the checkout's own `context.md`** and commit it there. Docs committed upstream are invisible to a checkout that is 65 commits behind — the warning has to live where the next session will actually read it.
+5. **Surface the divergence as an open item.** Reconciling it is the owner's call.
+
+Restore from a bundle with:
+```bash
+git fetch /path/to/x.bundle <name>-backup:<name>-backup
+```
