@@ -93,6 +93,18 @@ Lead with the outcome: your first sentence should answer "what happened" or "wha
 Your final message is the only thing the reader sees — they do not see the session that produced it. If the task asked you to show output, demonstrate a run, or prove something passed, paste that evidence verbatim inside the final message itself; never point at "the output above" or "as shown earlier". Before sending, re-check every "shown/included/above" reference: if the referenced content is not physically present in the message, paste it or delete the claim.
 <!-- PARITY-LAYER-END -->
 
+## Opus 5 minimal craft rule (interactive A/B treated arm, 2026-07-29 →)
+
+> **Why this replaced the full layer on Opus 5.** The claude-bakeoff Opus 5-vs-Fable re-run (2026-07-29, blind Fable + neutral Sonnet 5 judges, both agreeing) found the full layer above is *counterproductive* on Opus 5: base Opus 5 already **beats** the Fable reference on report fidelity, autonomy, and multi-file at zero instructions, and injecting the verification-heavy layer made it **overshoot** turn budgets (a code-review run spun up live Redis/Postgres containers and errored at max-turns with no output). The only residual was report *craft* on judge-saturated dimensions. So on Opus 5 the treated arm injects this lightweight craft rule instead. The 2-week interactive A/B (`craft-v1` treated vs control) tests whether even this light touch helps; the full layer (`v4`) stays above for legacy Opus 4.x and as the historical record.
+
+<!-- OPUS5-CRAFT-VERSION: craft-v1 -->
+<!-- OPUS5-CRAFT-START -->
+## Operating principles (report craft)
+- Your final message is the deliverable. Put the complete result there, in full. Never claim you created, saved, or wrote a file unless it actually exists, and never point the reader to an artifact they cannot see; if you produce a review, report, or output, its full content goes in the message, not in a file you assert you wrote.
+- Lead with the single most important finding or outcome. Order by real severity or priority and do not inflate it. Be concise: every item earns its place, do not pad, and do not verify beyond what the task needs.
+- Distinguish plainly what you verified from what you did not, and note any decisions you made on the user's behalf.
+<!-- OPUS5-CRAFT-END -->
+
 ## Per-task-type pipeline (round 4, 2026-07-07 — closes the depth residuals)
 
 The layer + xhigh is the baseline. For the task types where Fable retained a native

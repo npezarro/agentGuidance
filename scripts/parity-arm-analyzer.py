@@ -61,6 +61,11 @@ STALE_DAYS = 7
 # substrate (e.g. PARITY_OPUS_SUBSTRATE=opus-4-8).
 OPUS_SUBSTRATE = os.environ.get("PARITY_OPUS_SUBSTRATE", "opus-5")
 
+# Optional cohort start. PARITY_SINCE=<ISO8601> counts only arm rows on/after that
+# instant — used by the craft-v1 interactive A/B readout (2026-07-29 →) to exclude
+# the pre-switch full-layer-v4 Opus 5 sessions. ISO timestamps compare as strings.
+PARITY_SINCE = os.environ.get("PARITY_SINCE", "")
+
 METRIC_VERSION = "corr-regex-v1"  # frozen 2026-07-16; see module docstring
 CORRECTION = re.compile(
     r"that'?s (not|wrong)|still (broken|not)|(doesn|didn|isn)'?t work|you didn'?t"
@@ -88,6 +93,8 @@ def load_arms():
             sid = r.get("session_id") or ""
             if not sid:
                 continue  # unjoinable
+            if PARITY_SINCE and (r.get("ts") or "") < PARITY_SINCE:
+                continue  # before the cohort window
             if sid not in arms:
                 arms[sid] = r
                 order.append(sid)
@@ -265,6 +272,8 @@ def main():
     metric = f"judged ({len(judged)} sessions)" if judged else METRIC_VERSION
     print(f"\nparity interactive A/B readout — metric: {metric}")
     print(f"opus substrate: {OPUS_SUBSTRATE} (earlier-substrate Opus sessions excluded as a prior cohort)")
+    if PARITY_SINCE:
+        print(f"cohort window: sessions on/after {PARITY_SINCE} (craft-v1 A/B; treated=minimal craft rule vs control)")
     print(f"telemetry: {len(arms)} unique sessions; usable: {len(rows)}; excluded: {len(excluded)}")
     for sid, arm, why in excluded:
         print(f"  excluded {arm:7s} {sid[:8]}: {why}")
