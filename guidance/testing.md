@@ -408,6 +408,14 @@ GitHub Actions `cache: npm` with `npm ci` requires `package-lock.json` in the re
 
 **Fix:** Remove `package-lock.json` from `.gitignore` and commit it. This also ensures deterministic installs across environments.
 
+## Verify Regression Tests Actually Discriminate (2026-07-29)
+
+"The suite is green after the fix" does NOT prove a new regression test discriminates between buggy and fixed code — it might pass under both. Real case (promptlibrary PR #204, run #343): three route-level tests were added for three symptoms of one SQL-escaping bug. Stashing only the source fix (`git stash push <source-file>`, keeping the tests) produced **2** failures, not 3 — the third test passed against the buggy source too, because its fixture was too weak (the pre-fix pattern matched "any row containing a backslash," and only one seeded row had one, so the assertion held either way).
+
+**Rule:** after writing a regression test, stash only the source fix and run the affected test file(s). Confirm the number of failures equals the number of new tests you expect to discriminate — read the per-test results, not just the aggregate pass/fail count. If a new test passes pre-fix, either strengthen its fixture until it fails, or label it explicitly as a lock-in test that's expected to pass both ways. Never claim a test proves a fix without having seen it fail without that fix.
+
+**Fixture corollary:** a discriminating fixture usually needs a *decoy* — an input the buggy code mishandles in the opposite direction from the case you're testing. Testing only the straightforward positive case often passes under both implementations.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)
