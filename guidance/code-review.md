@@ -310,3 +310,17 @@ Secret-scrubbing functions (shell-history redaction, log sanitizers, chat-log sc
 .replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+):[^/\s@]+@/gi, '$1:[REDACTED]@')
 ```
 This leaves ordinary URLs (`host:port/path`, `user@host`, scp targets) byte-identical, avoiding over-redaction. Verified in an internal pipeline scrubber (2026-07-22). Sibling scrub functions to audit: session-recall (scrub module), browser-agent (sanitizer), chat-log-export skill.
+
+### Link-liveness checkers: tri-state, fail-open, body-aware — a status code and a `<title>` are both insufficient (2026-07-29)
+A cross-repo audit of five independent link/product/job-liveness checkers (shopper `link-verifier.ts`, employ `link-check.ts`, job-pipeline `liveness.py`, and two job-scraper `link-checker.js` copies) found all five were false-flagging live pages as dead, driven by one root cause: bot walls that return a normal-looking HTTP response. Worst offender — Amazon serves its CAPTCHA page as **HTTP 200** with `<title>Amazon.com</title>` (and intermittently a bare 404 for the same live product); neither the code nor the title reveals the block, only the body does. Measured impact in shopper before the fix: 25 of 88 link warnings were live Amazon products mislabeled "possible wrong product," 14 more mislabeled "Dead link - HTTP 404" while returning 200 on re-check. Full detail: `knowledgeBase/patterns/url-liveness-detection.md`.
+
+**Rules for any liveness/dead-link checker:**
+1. **Tri-state, not boolean.** `live` / `dead` / `unknown` — a boolean forces every ambiguous case into a wrong answer.
+2. **Fail open.** Only flag "dead" on positive confirmation; a missing warning is far cheaper than a false one.
+3. **Never treat these as dead:** 401, 403, 408, 429, 451, any 5xx, timeouts, DNS failures — they describe what happened to the *checker*, not the page.
+4. **Inspect the response BODY before trusting the status code.** Returning early on `status >= 400` means a bot-block check can never fire on the exact responses that need it.
+5. **Send a real browser User-Agent.** An identifiable bot UA (e.g. `JobSearchBot/1.0`) is precisely what triggers the 403/429 in the first place.
+6. **Anchor title/text regexes.** A bare `/404/i` matches "Peavey 404 Powered Mixer"; a bare `/robot/i` matches "Robot Vacuum."
+7. **A redirect only proves closure when the job/product ID is LOST**, not when the path merely got shorter — locale strips (`/en-us/careers/job/12345` → `/careers/job/12345`) and suffix drops (`/jobs/12345/apply` → `/jobs/12345`) are benign canonicalization.
+8. **Never guess an ATS board token from a generic subdomain label.** `careers`/`jobs`/`talent`/etc. are real board tokens on OTHER companies' Greenhouse instances — `boards-api.greenhouse.io/v1/boards/talent` returns 200.
+9. **Watch for a shared `AbortController` across a HEAD→GET fallback** — once the timer aborts the HEAD, the GET inherits the already-aborted signal and rejects instantly without touching the network, making the fallback a guaranteed no-op.
