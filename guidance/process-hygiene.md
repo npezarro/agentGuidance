@@ -243,3 +243,16 @@ How to apply:
 When two Bash tool calls are issued in the same message (parallel), the working directory is a single persisted shell state shared across them. If call A does `cd /repo-x && npm run build` and call B (in the same parallel batch) just runs `npm run build` assuming an earlier command's cwd still holds, the two calls can race and B executes in whatever directory A leaves the shell in — producing a false-positive 'build passed' read against the WRONG repo (observed in fix-checker run 612: a check intended for runeval returned promptlibrary's Next.js route table, silently, with no error). Caught only because the printed route names didn't match the target repo.
 
 How to apply: in every Bash tool call that will run alongside others in a parallel batch, put an explicit `cd <absolute-path> &&` at the start of the command — never depend on a prior tool call's cd persisting when there are concurrent siblings issued this turn. Applies to any agent (fix-checker, autonomousDev, learning-agent, ad hoc sessions) doing multi-repo build/test sweeps in parallel.
+
+### Follow-mode log commands piped into head leak a shell process forever (2026-07-30)
+A streaming log command piped into something that exits early leaks a shell process FOREVER. Found on the VM 2026-07-30: `pm2 logs trading-daytrade --lines 100 2>&1 < /dev/null | head -200` had been running for 41 days. `pm2 logs` follows by default and never exits; `head -200` closes the pipe after 200 lines; pm2 does not die on the resulting SIGPIPE, so the wrapping bash waits on it indefinitely. Two sibling orphans (21 days) and an abandoned `claude` session (15 days) were reaped in the same sweep.
+
+Rules:
+
+1. **Never run a follow-mode log command from an agent Bash call without disabling follow.** Use `pm2 logs <app> --nostream --lines N`. The same trap applies to `tail -f`, `journalctl -f`, `docker logs -f`, and `kubectl logs -f`: prefer the tool's own non-streaming flag over piping into `head`.
+
+2. **If a non-streaming flag does not exist, bound it externally**: `timeout 10 <cmd> | head -N`. Piping into `head` alone is NOT sufficient, because it relies on the producer handling SIGPIPE.
+
+3. **These leaks are invisible in normal monitoring.** Each orphan held only ~1 MB RSS, so no memory alert ever fired; they were only found by `ps -o pid,etime` during an unrelated audit. Periodically sweep for long-lived `bash -c source .../shell-snapshots/` processes, which are the signature of a leaked agent Bash call.
+
+4. **The `claude` CLI ignores SIGTERM.** Reaping it needs a SIGTERM then SIGKILL escalation, which is the same reason `bridge-server.js` implements its own SIGTERM -> SIGKILL grace period rather than relying on spawn's `timeout` option.
