@@ -130,7 +130,13 @@ if [ -n "$REPO" ]; then
       # Append as a new section if not already present
       if ! grep -qF "$SUMMARY" "$CLAUDE_MD" 2>/dev/null; then
         printf "\n## %s\n%s\n" "$SUMMARY" "$BODY" >> "$CLAUDE_MD"
-        (cd "$REPO_DIR" && git add CLAUDE.md && git commit -m "docs: $SUMMARY" && git push -u origin HEAD) 2>/dev/null || true
+        # --only: commit CLAUDE.md alone, ignoring anything else already staged.
+        # A bare `git commit` here commits the whole index, and these repos are
+        # shared checkouts — a concurrent session with staged work gets its
+        # in-progress changes swept into a "docs:" commit and pushed. Observed
+        # 2026-07-30: this published another session's extension/background.js
+        # and manifest.json under a docs commit message.
+        (cd "$REPO_DIR" && git add CLAUDE.md && git commit --only CLAUDE.md -m "docs: $SUMMARY" && git push -u origin HEAD) 2>/dev/null || true
       fi
     fi
     DESTINATIONS+=("CLAUDE.md:$CLAUDE_MD")
@@ -158,7 +164,8 @@ if [ -n "$GUIDANCE_FILE" ]; then
     if ! $DRY_RUN; then
       if ! grep -qF "$SUMMARY" "$GUIDANCE_PATH" 2>/dev/null; then
         printf "\n### %s (%s)\n%s\n" "$SUMMARY" "$DATE" "$BODY" >> "$GUIDANCE_PATH"
-        (cd "$TARGET_REPO" && git add "$GUIDANCE_REL" && git commit -m "guidance: $SUMMARY" && git push -u origin HEAD) 2>/dev/null || true
+        # --only: see the note above; never sweep a concurrent session's staged work.
+        (cd "$TARGET_REPO" && git add "$GUIDANCE_REL" && git commit --only "$GUIDANCE_REL" -m "guidance: $SUMMARY" && git push -u origin HEAD) 2>/dev/null || true
       fi
     fi
     DESTINATIONS+=("guidance:$GUIDANCE_PATH")
