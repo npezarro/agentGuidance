@@ -176,4 +176,18 @@ Correct move: commit through a worktree, which never touches the dirty tree:
   git commit && git push -u origin <branch> && gh pr create
   cd <repo> && git worktree remove /tmp/wt --force && git worktree prune
 
-Related: privateContext runs a PR + auto-merger flow, so 'gh pr create' can report 'a pull request already exists' because the merger opened AND merged one within seconds of the push. Confirm with 'gh pr view <n> --json state,mergedAt' rather than treating it as a failed create.
+Related: privateContext runs a PR + auto-merger flow, so 'gh pr create' can report 'a pull request already exists' -- or fail with 'No commits between main and <branch>' -- because the merger opened AND merged one within seconds of the push. Do not treat either as a failed create. Confirm with 'gh pr view <n> --json state,mergedAt', or verify directly:
+  git fetch origin && git log --oneline -3 origin/main
+  git cat-file -e origin/main:<path> && echo "landed on main"
+  git diff HEAD origin/main -- <paths> --stat   # empty == merged content is identical
+
+**If you moved the blocker aside anyway (2026-07-30): the mv is only half the procedure.**
+The worktree route above avoids this entirely and is still preferred. But if you did `mv <file> /tmp/<file>.bak` and switched branches, the file is tracked on the branch you moved TO and untracked on the branch you came FROM -- so `git checkout <original-branch>` DELETES it from the working tree. If you already discarded the backup (e.g. you diffed it against the tracked copy, found them identical, and cleaned up), the file silently vanishes from a tree where it existed before you started.
+
+Recovery / required closing steps whenever you mv a shadow file:
+  1. Record `git status --short` BEFORE you start.
+  2. After returning to the original branch, re-check the file exists.
+  3. If gone: restore the backup if it differed, else `git show origin/main:<file> > <file>`.
+  4. Re-run `git status --short` and confirm it matches step 1 exactly.
+
+Leaving the working tree in a different state than you found it is a silent side effect the user never asked for. Never assume the checkout was symmetric -- verify.
