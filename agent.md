@@ -94,3 +94,14 @@ Load on-demand based on the current task:
 - `guidance/when-to-fan-out.md` -- when to spawn subagents (Task fan-out / parallel bash / Workflow) vs stay single-agent; concurrency-safe 3-phase pattern
 - `guidance/synthetic-panel.md` -- advisory synthetic-user feedback on user-facing changes; fail-open contract, panel-check.sh usage
 - `guidance/opus-fable-parity.md` -- validated instruction layer closing the Opus 4.8 → Fable 5 behavioral gap; inject into Opus pipelines needing Fable-grade rigor (requires ≥45-turn budget)
+
+### Subagent reports must be written to a .md in the same turn, not left only in the chat response (2026-07-30)
+2026-07-30: Nick asked "Push those summarizations to a .md for me to review there" after I had delegated two long YouTube transcripts to subagents, distilled their reports into a condensed synthesis doc, committed only the synthesis, and let the raw reports go out solely in the Discord response.
+
+The agent.md rule "Large outputs go to files" already existed but names "analyses, drafts, guides" -- not subagent return values -- so it did not fire.
+
+Why: when a subagent returns a rich structured report, the instinct is to synthesize and move on. But the raw report is often MORE detailed than the synthesis, and after the turn ends it exists nowhere. The Discord response is not storage: it gets truncated in the live view when long, and it is not greppable, diffable, or linkable later.
+
+How to apply: whenever a subagent returns a substantial report, write it to a .md file in the relevant repo IN THE SAME TURN, alongside (not instead of) whatever synthesis you produce. If several subagents cover parallel items, give each its own file plus a README index. If the work cites a source (transcript, dataset, page dump), commit the source too so the claims stay re-checkable.
+
+Related: [[pattern_youtube_caption_tracks_beat_whisper]]
