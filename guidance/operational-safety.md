@@ -505,3 +505,16 @@ Rebuilding the 8 bridge containers to 2.1.220 (2026-07-30) surfaced two traps th
 3. **`auth=pending` on `/health` immediately after a rebuild is expected, not a failure.** `bridge-server.js` sets `AUTH_CHECK_INTERVAL = 30 * 60 * 1000` and the first check lands roughly 60s after start. Wait for `authCheckedSecondsAgo` to be populated before judging.
 
 Credentials survive a rebuild: they live in a named volume (e.g. `shopper_claude-auth` -> `/home/node/.claude`), not in the image, so `docker compose build && up -d` preserves them and no re-OAuth is needed.
+
+### sandbox.network.strictAllowlist is not usable in Docker bridges or on the WSL host (2026-07-30)
+Investigated 2026-07-30 and CLOSED as not-applicable. This corrects an earlier recommendation from the same session that called it "the highest-value remaining security item."
+
+**The bridges cannot use it.** The Claude Code sandbox is enforced by bubblewrap, which requires unprivileged user namespaces. Inside the bridge containers `bwrap` fails with `Creating new namespace failed: Operation not permitted`, including the weaker variant that binds the existing `/proc`. The host kernel is NOT the blocker (`/proc/sys/user/max_user_namespaces` reads 160229 inside the container); Docker's default seccomp profile blocks `CLONE_NEWUSER`. Enabling it would require running the bridges with `--privileged`, `--cap-add SYS_ADMIN`, or `seccomp=unconfined`.
+
+That trade is backwards: it punches a hole in the OUTER isolation boundary in order to add an inner one, on containers whose entire purpose is isolating untrusted public input. **For these bridges, the Docker container IS the sandbox.** Do not weaken it to add a nested sandbox. `enableWeakerNestedSandbox` does not rescue this: it addresses a container that cannot mount a fresh `/proc`, not one forbidden from creating namespaces at all.
+
+**The WSL host cannot use it either, for a different reason.** Per the sandbox docs, on WSL2 sandboxed commands cannot launch Windows binaries or anything under `/mnt/c/`. This ecosystem's primary working directory IS `/mnt/c/Users/npeza`, and Windows interop (`wsl.exe`, Chrome/extension paths, Electron apps) is routine. Enabling the sandbox would break that wholesale, and `docker` is separately documented as sandbox-incompatible.
+
+**Where the real mitigation lives instead.** The exposure that motivated this was `Bash(curl:*)` on untrusted public input. Since the OS-level sandbox is unavailable, the controls that DO apply are: the narrow `--allowedTools` list already in `bridge-server.js`, the alt-account isolation, the Docker boundary itself, and the output scrubber. Harden those rather than reaching for `strictAllowlist`.
+
+**Verify before reopening:** run `docker exec -u root <bridge> bwrap --ro-bind / / --dev /dev echo ok`. If it still prints `Operation not permitted`, this conclusion stands.
