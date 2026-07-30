@@ -167,7 +167,7 @@ git fetch /path/to/x.bundle <name>-backup:<name>-backup
 ### Untracked file shadowing a tracked path blocks checkout; use a worktree, never rm (2026-07-30)
 A repo can hold an UNTRACKED file at a path that IS tracked on origin/main (common in repos where automated sessions drop env/scratch files). 'git checkout -b <new> origin/main' then aborts with 'untracked working tree files would be overwritten by checkout'.
 
-Do NOT rm or mv the blocker to unblock yourself. On 2026-07-30 the blocker was privateContext/automation-hub-env.md, an env file that session did not create; deleting it to land a docs commit would have destroyed uncommitted infra notes belonging to someone else.
+Do NOT rm or mv the blocker to unblock yourself. On 2026-07-30 the blocker was an untracked env-notes file in a private repo that the session did not create; deleting it to land an unrelated docs commit would have destroyed someone else's uncommitted infra notes.
 
 Correct move: commit through a worktree, which never touches the dirty tree:
   git worktree add /tmp/wt -b <branch> origin/main

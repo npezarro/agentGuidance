@@ -60,9 +60,15 @@ log() { echo "  [propagate] $1"; }
 dry() { if $DRY_RUN; then echo "  [dry-run] $1"; else log "$1"; fi; }
 
 # ── Destination 1: Memory ────────────────────────────────────────────
-# Find the primary memory directory (prefer -mnt-c-Users- path, fallback to first available)
+# Prefer the memory dir belonging to the CURRENT project. Claude derives that
+# directory name from the cwd with '/' replaced by '-', so $HOME/repos maps to
+# -home-npezarro-repos. Writing to a different project's dir makes the memory
+# invisible to the session that just learned the thing (was silently happening
+# for every WSL ~/repos session, which landed in the Windows -mnt-c-Users- dir).
 PRIMARY_MEMORY=""
-for d in "$MEMORY_BASE"/-mnt-c-Users-*/memory "$MEMORY_BASE"/-home-npezarro/memory; do
+CWD_PROJECT_DIR="$MEMORY_BASE/$(echo "$PWD" | sed 's|/|-|g')/memory"
+for d in "$CWD_PROJECT_DIR" "$MEMORY_BASE"/-home-npezarro-repos/memory \
+         "$MEMORY_BASE"/-mnt-c-Users-*/memory "$MEMORY_BASE"/-home-npezarro/memory; do
   if [ -d "$d" ]; then PRIMARY_MEMORY="$d"; break; fi
 done
 
@@ -139,12 +145,20 @@ TARGET_REPO="$AGENT_GUIDANCE"
 if $PRIVATE; then TARGET_REPO="$PRIVATE_CONTEXT"; fi
 
 if [ -n "$GUIDANCE_FILE" ]; then
-  GUIDANCE_PATH="$TARGET_REPO/$GUIDANCE_FILE"
+  # Guidance docs live in guidance/, but callers naturally pass the bare filename
+  # (--guidance-file git-workflow.md). Resolving only against the repo root made
+  # every such call silently SKIP, so the rule this script exists to enforce
+  # ("guidance updates go to repo files, not just memory") was quietly no-oping.
+  GUIDANCE_REL="$GUIDANCE_FILE"
+  if [ ! -f "$TARGET_REPO/$GUIDANCE_REL" ] && [ -f "$TARGET_REPO/guidance/$GUIDANCE_REL" ]; then
+    GUIDANCE_REL="guidance/$GUIDANCE_REL"
+  fi
+  GUIDANCE_PATH="$TARGET_REPO/$GUIDANCE_REL"
   if [ -f "$GUIDANCE_PATH" ]; then
     if ! $DRY_RUN; then
       if ! grep -qF "$SUMMARY" "$GUIDANCE_PATH" 2>/dev/null; then
         printf "\n### %s (%s)\n%s\n" "$SUMMARY" "$DATE" "$BODY" >> "$GUIDANCE_PATH"
-        (cd "$TARGET_REPO" && git add "$GUIDANCE_FILE" && git commit -m "guidance: $SUMMARY" && git push -u origin HEAD) 2>/dev/null || true
+        (cd "$TARGET_REPO" && git add "$GUIDANCE_REL" && git commit -m "guidance: $SUMMARY" && git push -u origin HEAD) 2>/dev/null || true
       fi
     fi
     DESTINATIONS+=("guidance:$GUIDANCE_PATH")
