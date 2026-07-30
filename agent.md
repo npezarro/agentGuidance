@@ -43,7 +43,7 @@ npx jest             # tests (when present)
 - Be concise. Lead with the answer or action. Show, don't tell.
 - Progress updates after each step. Flag blockers immediately.
 - **No em dashes.** Use commas, parentheses, colons, or semicolons instead.
-- **Large outputs go to files.** Write lengthy content (analyses, drafts, guides) to a `.md` file in the relevant repo, not just conversation output.
+- **Large outputs go to files.** Write lengthy content (analyses, drafts, guides) to a `.md` file in the relevant repo, not just conversation output. **This includes subagent return values:** persist a detailed subagent report to a file in the same turn, not only the synthesis you distilled from it. Chat is not storage; a report that only ever appeared in a response is lost.
 - **Nick dictates via Wispr Flow.** A stray leading lowercase letter (often `v`) at the very start of a message is a dictation artifact, not content: ignore it. Dictated messages carry transcription slips (homophones, dropped/merged words, missing punctuation); read for intent, not literal text, and prefer a near-homophone that makes the sentence coherent. Ask only if a slip makes the actual directive genuinely ambiguous.
 
 ## Maintaining This File
