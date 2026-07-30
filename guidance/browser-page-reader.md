@@ -119,3 +119,19 @@ page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with c
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
+
+### Tabbed pages hide every tab in static HTML; extract the hidden containers (2026-07-30)
+page-reader --text-only and WebFetch return ONLY the active tab of a tabbed page (conference agendas, docs sites, pricing tables). The other tabs are usually already present in the static HTML inside sibling containers with display:none, so nothing needs a headless browser.
+
+Diagnosis: curl the page, then find the tab handler and its container class:
+  grep -oE '<div class="[a-z-]*tab[^>]*>[^<]*' page.html
+
+Extraction: track div depth from each container's start offset instead of regex-matching nested HTML. A ~15-line Python scan over the raw file recovers every tab:
+  idxs = [m.start() for m in re.finditer(r'<div class="resource-container', h)]
+  # walk forward from each idx counting '<div' / '</div' until depth returns to 0
+
+Hit on 2026-07-30 pulling the Agentic AI Summit 2026 agenda from rdi.berkeley.edu: page-reader returned only the 'Plenary - Saturday' tab, but all 7 stage tracks (Plenary/Atlas/Nexus/Compass across both days) were sitting in the downloaded HTML.
+
+Trap: do NOT use a keyword count as an emptiness test. Grepping 'Atlas' returned 4 hits and looked like the track was missing, because tab CONTENT rarely repeats the tab LABEL.
+
+Rule: before concluding a page needs JS execution, download the raw HTML and check for hidden sibling containers.
