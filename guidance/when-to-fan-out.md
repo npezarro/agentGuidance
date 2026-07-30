@@ -67,3 +67,34 @@ Two failure modes to brief agents against explicitly, both of which bit in that 
 - **Self-inflicted rate limiting.** Bursting a target during testing turns a working
   technique into an apparent failure. Instruct agents to pace and to re-test after a cooldown
   before declaring something impossible.
+
+---
+
+## Persist what agents return (2026-07-30)
+
+A subagent's report exists in exactly one place: the tool result in your context. If you
+distill it into a smaller deliverable and let the raw report go out only in your chat
+response, **the detail is gone** the moment the turn ends. Chat is not storage. It is not
+greppable, diffable, or linkable, and a long response can be truncated in the live view.
+
+> 2026-07-30, summarizing four conference talks: two subagents read a 112-minute and a
+> 47-minute transcript and returned dense, timestamped, verbatim-quoted reports. I wrote a
+> condensed synthesis to a `.md`, committed that, and let both raw reports go out only in
+> the Discord response. Nick's next message was "Push those summarizations to a .md for me
+> to review there." The reports were more detailed than the synthesis and had to be
+> reconstructed from context rather than read back from disk.
+
+Rules:
+
+- **Write each substantial subagent report to a file in the same turn**, alongside (not
+  instead of) whatever synthesis you produce. `agent.md`'s "Large outputs go to files" rule
+  covers this.
+- **One file per agent when they cover parallel items**, plus a `README.md` index. Do not
+  merge N reports into one file and lose the per-item structure the fan-out bought you.
+- **Commit the source too** when the work cites one (transcript, dataset, page dump, query
+  output). It is usually small relative to its value, and it is what keeps every quoted
+  claim re-checkable with `grep` instead of trusting the summary.
+- **Verify delegated claims before publishing.** Require verbatim quotes with locators
+  (timestamps, line numbers, file paths) in the agent's brief, then spot-check the load-bearing
+  ones yourself. Zero-counts ("term X never appears") are worth re-running directly — they are
+  the easiest claim for an agent to get wrong and the most damaging to assert.
