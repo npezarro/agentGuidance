@@ -65,10 +65,28 @@ dry() { if $DRY_RUN; then echo "  [dry-run] $1"; else log "$1"; fi; }
 # -home-npezarro-repos. Writing to a different project's dir makes the memory
 # invisible to the session that just learned the thing (was silently happening
 # for every WSL ~/repos session, which landed in the Windows -mnt-c-Users- dir).
+#
+# $PWD is the wrong signal on its own: this script is usually invoked from a repo
+# the session merely operates on (e.g. cd ~/repos/agentGuidance to commit
+# guidance), NOT from the session's own project dir. Keying off cwd alone filed
+# memories under -home-npezarro-repos-agentGuidance / -home-npezarro-repos, where
+# the calling session never reads them and no MEMORY.md exists to index them
+# (observed 3x on 2026-07-30). Resolve the CALLING SESSION's project first by
+# locating the dir that holds its transcript, then fall back to the cwd guess.
 PRIMARY_MEMORY=""
+SESSION_PROJECT_DIR=""
+if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+  for p in "$MEMORY_BASE"/*/; do
+    if [ -f "${p}${CLAUDE_CODE_SESSION_ID}.jsonl" ]; then
+      SESSION_PROJECT_DIR="${p}memory"; break
+    fi
+  done
+fi
 CWD_PROJECT_DIR="$MEMORY_BASE/$(echo "$PWD" | sed 's|/|-|g')/memory"
-for d in "$CWD_PROJECT_DIR" "$MEMORY_BASE"/-home-npezarro-repos/memory \
+for d in "$SESSION_PROJECT_DIR" "$CWD_PROJECT_DIR" \
+         "$MEMORY_BASE"/-home-npezarro-repos/memory \
          "$MEMORY_BASE"/-mnt-c-Users-*/memory "$MEMORY_BASE"/-home-npezarro/memory; do
+  [ -n "$d" ] || continue
   if [ -d "$d" ]; then PRIMARY_MEMORY="$d"; break; fi
 done
 
@@ -76,11 +94,23 @@ if [ -n "$PRIMARY_MEMORY" ]; then
   MEM_FILE="${MEMORY_NAME:-${TYPE}_${SLUG}}.md"
   MEM_PATH="$PRIMARY_MEMORY/$MEM_FILE"
   if ! $DRY_RUN; then
+    # Frontmatter MUST match the documented memory schema: `name` is the
+    # kebab/snake slug (NOT the prose summary), and `type` lives under
+    # `metadata` with one of user|feedback|project|reference. Emitting a
+    # top-level free-form `type:` produced non-conforming files that had to be
+    # hand-fixed after every run (2026-07-30).
+    case "$TYPE" in
+      feedback) MEM_TYPE="feedback" ;;
+      project)  MEM_TYPE="project" ;;
+      user)     MEM_TYPE="user" ;;
+      *)        MEM_TYPE="reference" ;;   # pattern | infra | rule | anything else
+    esac
     cat > "$MEM_PATH" << MEMEOF
 ---
-name: $SUMMARY
+name: ${MEM_FILE%.md}
 description: $SUMMARY
-type: ${TYPE}
+metadata:
+  type: ${MEM_TYPE}
 ---
 
 $BODY
