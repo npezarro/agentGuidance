@@ -471,3 +471,18 @@ Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25)
 ## Never inline single-quoted code in `ssh 'block'` (2026-06-23)
 
 `ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.
+
+### Audit Claude Code version on every host and pin fan-out/search defaults before upgrading (2026-07-29)
+Claude Code version drift silently keeps already-fixed reliability bugs in play, and headless hosts drift worst because nobody watches their startup banner. Audit 2026-07-29: the local WSL install was 19 versions behind (2.1.201) and the GCP VM host 8 behind (2.1.212) against 2.1.220, so both were still exposed to v2.1.217 (MCP truncated tool outputs kept the full untruncated result in memory for the rest of the session), v2.1.214 (stream-json output truncated at exit for slow-reading SDK/pipeline consumers, which makes a headless job report success with the tail of its response missing), and v2.1.216 (quadratic message-normalization stalls in long sessions).
+
+Rules:
+
+1. Check `claude --version` against `npm view @anthropic-ai/claude-code version` on EVERY host that runs claude (WSL, VM host, Docker bridges), not just the interactive one.
+
+2. Pin fan-out and search behavior BEFORE upgrading, because upgrades change defaults underneath you: v2.1.219 raised default nested-subagent spawn depth from 1 to 3, and v2.1.213 added a session-wide 200-call WebSearch cap. Set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` and `CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION` explicitly so an upgrade never changes spend or research depth implicitly. Implicit depth-3 nesting can outrun what the usage gate reasons about, since the gate models the fan-out the top-level session controls.
+
+3. Set `fallbackModel` (array, max 3 entries, does NOT merge across settings files) on every host running headless runners. Without it a runner hard-fails when its primary model is unavailable or overloaded: the silent-healer failure class from ESSENTIAL rule 8.
+
+4. Verifying a settings change means launching the CLI and getting a reply, not just parsing the JSON. An unsupported or misspelled settings key is accepted silently and does nothing. Corollary: env vars introduced in a version NEWER than the installed CLI are inert until the upgrade lands, so setting them is upgrade-preparation, not an active change.
+
+5. `propagate-learning.sh --guidance-file` resolves from the repo root, so pass `guidance/<file>.md`, not the bare filename. A bare filename silently SKIPs the guidance destination.
