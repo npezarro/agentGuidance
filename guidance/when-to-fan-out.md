@@ -98,3 +98,15 @@ Rules:
   (timestamps, line numbers, file paths) in the agent's brief, then spot-check the load-bearing
   ones yourself. Zero-counts ("term X never appears") are worth re-running directly — they are
   the easiest claim for an agent to get wrong and the most damaging to assert.
+
+### Verify your change in an isolated git worktree when another session is mid-edit in the same checkout (2026-07-30)
+Multiple Claude sessions share one working tree per repo (~/repos/<app>), so a repo-wide `npx tsc --noEmit` or `npm run build` can fail on files you never touched. On 2026-07-30 a concurrent session's in-flight `job-tracker.ts` / `db.ts` edits produced 8 TrackerDb type errors in shopper/foodie/travel while the JobDetail.tsx change under test was clean; taking that at face value would mean either falsely reporting a broken build or committing someone else's WIP.
+
+Procedure when `git status` shows modified/untracked files you did not create:
+1. Attribute the errors first: `npx tsc --noEmit 2>&1 | grep -c <your-file>`. Zero hits means the failure is not yours.
+2. Verify in isolation: `git worktree add -b <branch> ~/wt-<repo> origin/<default-branch>`, copy in only your file(s), then run tsc + build there.
+3. node_modules in the worktree must be a hardlink copy (`cp -al ../repo/node_modules node_modules`, ~1s for 549M), NOT a symlink — Turbopack panics with 'Symlink [project]/node_modules is invalid, it points out of the filesystem root' and the build dies before compiling anything. The worktree also must live on the same filesystem as the source (~/ not /tmp) for cp -al to work.
+4. Commit from the worktree, push, open the PR, then `git worktree remove --force` and `git branch -D`.
+5. Revert your leftover edits from the shared checkout afterwards (`git checkout -- <files>`) so the other session's `git add -A` cannot sweep a duplicate of your merged change into their commit.
+
+Also: do NOT deploy from a shared checkout in this state — /staging builds from the local tree and would ship the other session's incomplete work.
