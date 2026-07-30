@@ -494,3 +494,14 @@ Rules:
    Two consequences that do hold:
    - **Pin the version in the Dockerfile** (`@anthropic-ai/claude-code@<version>`). Unpinned means every rebuild is a silent, unreviewed upgrade that can change defaults (see rule 2), and builds are not reproducible.
    - **Rebuild on a cadence, not on demand.** An unpinned image that is never rebuilt is the worst of both worlds: frozen on an old version AND guaranteed to jump many versions at once whenever it finally is rebuilt. Enumerate with `docker exec <container> claude --version` per container.
+
+### Unpinned Docker installs make rebuilds a silent no-op; docker exec probes claude as root and false-alarms on auth (2026-07-30)
+Rebuilding the 8 bridge containers to 2.1.220 (2026-07-30) surfaced two traps that make a rebuild look successful when it did nothing, and make a working bridge look broken.
+
+1. **An UNPINNED install plus Docker layer cache means `docker compose build` is a silent no-op.** travel-bridge rebuilt cleanly and came back still on 2.1.145. Its `RUN npm install -g @anthropic-ai/claude-code` line was byte-identical to the previous build, so Docker reused the cached layer and never re-ran npm. The other seven bridges upgraded ONLY because pinning the version changed that line and busted the cache. So an unpinned image is doubly bad: it freezes at build-day latest AND resists the rebuild you would use to fix it. Either pin the version (preferred, and the cache-bust is a feature) or build with `--no-cache`. Always assert the version INSIDE the container after a rebuild (`docker exec <c> claude --version`); never infer success from a clean build log.
+
+2. **`docker exec <container> claude -p ...` runs as ROOT and reports "Not logged in", even when the bridge is perfectly authenticated.** Credentials live at `/home/node/.claude/.credentials.json`, but root's HOME is `/root`, so the CLI finds nothing. This looks exactly like a rebuild wiping credentials and will trigger a false rollback. Probe as the service user instead: `docker exec -u node -e HOME=/home/node <c> claude -p "..."`. Confirm any suspected breakage against an un-rebuilt container as a control before acting.
+
+3. **`auth=pending` on `/health` immediately after a rebuild is expected, not a failure.** `bridge-server.js` sets `AUTH_CHECK_INTERVAL = 30 * 60 * 1000` and the first check lands roughly 60s after start. Wait for `authCheckedSecondsAgo` to be populated before judging.
+
+Credentials survive a rebuild: they live in a named volume (e.g. `shopper_claude-auth` -> `/home/node/.claude`), not in the image, so `docker compose build && up -d` preserves them and no re-OAuth is needed.
