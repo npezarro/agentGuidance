@@ -36,3 +36,34 @@ Reference implementation: `autonomousDev-private/fix-checker/review-gemini-prs.s
 ## Cost discipline
 
 Fan-out multiplies token spend. Gate every autonomous fan-out behind the usage check (`check-usage.sh --gate-at N`) and `log()` any coverage cap (top-N, no-retry) so silent truncation never reads as full coverage. See `reference_usage_gate_system` and ESSENTIAL rules.
+
+## When fanning out to TEST TECHNIQUES, demand a negative control
+
+A fan-out that asks "which of these N approaches works?" produces confident-sounding
+successes that are easy to misread. Two requirements turn it into evidence:
+
+1. **Every claimed success gets an adversarial re-run** by an agent instructed to *refute*
+   it, from scratch, using only the reported reproduction command. Default to REFUTED when
+   it cannot be reproduced. (Already covered above — this is the same rule applied to
+   technique discovery rather than to bug fixes.)
+
+2. **Require a negative control in the agent's brief.** Ask explicitly: *what is the
+   cheapest change that should NOT work, and does it in fact not work?* Without it you learn
+   "X worked" but not "X worked *because of Y*" — and only the second lets you build on it.
+
+> 2026-07-29, bot-wall bypass: 20 approaches, 37 verified successes. The single most valuable
+> output was not a technique. A verifier ran the control I had skipped — spoofing the
+> User-Agent alone, same IP, same moment — and showed the wall came back **byte-identical**
+> (15,195B both times), while a real browser TLS fingerprint returned 440,804B of real page.
+> That is what identified TLS/JA3 as the mechanism. Without it I had a working trick and no
+> model, and would have built the wrong abstraction (a per-host profile map that later
+> evidence showed would rot silently).
+
+Two failure modes to brief agents against explicitly, both of which bit in that run:
+
+- **Fabricated test fixtures.** An invented product ID / URL returns a genuine 404 and reads
+  as "blocked", sending the whole investigation down a false path. Control URLs must come
+  from the real data source (the production DB, a sitemap), never from memory or typing.
+- **Self-inflicted rate limiting.** Bursting a target during testing turns a working
+  technique into an apparent failure. Instruct agents to pace and to re-test after a cooldown
+  before declaring something impossible.
