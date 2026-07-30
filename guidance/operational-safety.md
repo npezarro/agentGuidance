@@ -487,6 +487,10 @@ Rules:
 
 5. `propagate-learning.sh --guidance-file` resolves from the repo root, so pass `guidance/<file>.md`, not the bare filename. A bare filename silently SKIPs the guidance destination.
 
-6. **Containerized Claude drifts worst, and the host version tells you nothing about it.** Bridge Dockerfiles install with an UNPINNED `RUN npm install -g @anthropic-ai/claude-code`, so each image freezes whatever was latest at build time and never moves again. Audited 2026-07-29: eight live bridges sat at 2.1.145, 2.1.177, and 2.1.196 while the hosts were on 2.1.201/2.1.212. Every one was below 2.1.214, so all of them carried the stream-json exit-truncation bug, which for a public-facing app means a real user silently receives a response with its tail cut off. Two consequences:
+6. **Containerized Claude drifts worst, and the host version tells you nothing about it.** Bridge Dockerfiles install with an UNPINNED `RUN npm install -g @anthropic-ai/claude-code`, so each image freezes whatever was latest at build time and never moves again. Audited 2026-07-29: eight live bridges sat at 2.1.145, 2.1.177, and 2.1.196 while the hosts were on 2.1.201/2.1.212.
+
+   **Match the CVE-style fix list to how the consumer actually invokes claude before calling drift urgent.** First pass of this audit asserted the bridges were exposed to the 2.1.214 stream-json exit-truncation bug, the 2.1.217 MCP-output memory leak, and 2.1.216 long-session stalls. Reading `bridge-server.js` refuted all three: the bridges spawn `claude -p --allowedTools ...` and accumulate PLAIN stdout (no `--output-format stream-json`), attach NO MCP servers, and run one-shot per request rather than long sessions. Version drift is real, but a fix only matters if the invocation path touches it. Check the spawn arguments, not the version number alone.
+
+   Two consequences that do hold:
    - **Pin the version in the Dockerfile** (`@anthropic-ai/claude-code@<version>`). Unpinned means every rebuild is a silent, unreviewed upgrade that can change defaults (see rule 2), and builds are not reproducible.
    - **Rebuild on a cadence, not on demand.** An unpinned image that is never rebuilt is the worst of both worlds: frozen on an old version AND guaranteed to jump many versions at once whenever it finally is rebuilt. Enumerate with `docker exec <container> claude --version` per container.
