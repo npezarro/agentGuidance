@@ -21,10 +21,28 @@ Does NOT apply to: tasks where you already have deep knowledge, pure code implem
 - **Official documentation** -- the product's own docs, FAQ, setup guide
 - **Community forums** -- Reddit threads, Stack Overflow, GitHub issues, Discord servers
 - **Recent blog posts/tutorials** -- published within the last 12 months
-- **Video content** -- YouTube walkthroughs (check descriptions and comments for gotchas)
+- **Video content** -- YouTube walkthroughs (check descriptions and comments for gotchas). **Read the transcript, not a third-party recap** -- see below.
 - **Comparison/review sites** -- when evaluating alternatives
 
 A guide built from 2-3 WebSearch results and their top links is not research. That's skimming.
+
+### 1b. YouTube: pull the caption track, don't settle for a recap (2026-07-30)
+
+Third-party blog recaps of a talk are lossy and often wrong about emphasis. If a video matters to the answer, read what was actually said. The `yt-video-review` skill uses Whisper, which is right for videos **Nick owns** (needs word-level timing). For **someone else's** talk, captions are far faster -- 3.8 hours of video took seconds:
+
+```bash
+yt-dlp --skip-download --write-auto-subs --write-subs \
+       --sub-langs "en.*" --sub-format vtt -o "%(id)s.%(ext)s" "<url>"
+```
+
+Two mandatory post-processing steps, or the output is unusable:
+
+1. **Dedupe.** Auto-caption VTT uses rolling display, so each cue repeats prior lines and a naive strip yields ~3x duplicated text. Strip `<c>` karaoke tags, unescape HTML, drop any line matching the last ~6 emitted lines, then reflow into ~45s timestamped paragraphs so chunks are readable and citable.
+2. **Correct proper nouns.** Auto-captions mangle names badly and *will* make you misquote. Observed in one session: "Tarik Shaupar"/"Derek" = Thariq Shihipar; "Kat Woo" = Cat Wu; "Simon Wilson" = Simon Willison; "cloud"/"quad"/"claw" = Claude; "grap" = grep. Captions also drop plurals. Correct names in your prose, but **keep quotes exactly as captured** so they stay grep-verifiable, and say so in the deliverable.
+
+**Then count terms.** Term frequency on a transcript is cheap and catches what reading misses. Run `grep -oic` for the 5-10 terms central to your question. In one session, counting `eval` vs `verif` across four talks by the same speaker (39 uses of "verif" and 0 of "eval" in a 112-minute talk) revealed his real conceptual vocabulary and inverted the recommendation. A zero-count is a finding, not an absence of data.
+
+**Verify delegated reads.** When subagents read long transcripts, require verbatim quotes with timestamps, then re-grep their key claims in the main thread before publishing. Cheap insurance, and it makes every claim defensible.
 
 ### 2. Gotcha Hunting
 Before recommending any setup or product, explicitly search for problems:
