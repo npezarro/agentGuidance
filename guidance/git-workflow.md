@@ -191,3 +191,44 @@ Recovery / required closing steps whenever you mv a shadow file:
   4. Re-run `git status --short` and confirm it matches step 1 exactly.
 
 Leaving the working tree in a different state than you found it is a silent side effect the user never asked for. Never assume the checkout was symmetric -- verify.
+
+## The shared checkout may host another live agent session (2026-07-30)
+
+`~/repos/<app>` is a single working tree that several agent sessions can be
+editing at once. Two distinct failures came out of one session that assumed sole
+ownership (shopper/foodie/travel-assistant/employ):
+
+**1. `git checkout --` deleted another session's uncommitted WIP.** To isolate my
+own edits I copied my touched files to /tmp, then restored the shared tree with
+`git checkout -- <files>`. `git status` had listed `M src/components/JobDetail.tsx`
+as one entry, but that file held BOTH my one-line change AND ~50 lines of the
+other session's unrelated, uncommitted redesign. The copy captured their work and
+the restore deleted it; it survived only because the /tmp copy still had it.
+
+> **Before `git checkout --` on any file in a shared tree, run `git diff <file>`
+> and confirm every hunk is yours.** An `M` in `git status` is one flag for the
+> whole file, not a claim of single authorship. If a hunk is not yours, leave the
+> file alone and work in a worktree instead.
+
+**2. The other session committed MY uncommitted files under its own message.**
+While a new component sat untracked in the shared checkout, the concurrent
+session `git add`-ed it, wrote its own commit message, and pushed it to
+`origin/master`. My later push was rejected as non-fast-forward, and the
+"conflicting" commit turned out to be byte-identical to my own work. Anything
+uncommitted in a shared tree is fair game for another process running `git add`.
+
+> **When another session may share the checkout, do the whole edit in
+> `git worktree add /tmp/wt-<repo> <trunk>` from the start.** Never leave new
+> files untracked in the shared tree.
+
+**Detect a concurrent session BEFORE the first edit, not at commit time:**
+```bash
+git branch --show-current     # an unexpected branch (e.g. claude/<something>)
+git reflog -5                 # checkouts or commits you did not make
+git worktree list             # worktrees you did not create
+git status --short            # record this; your final state must differ only by your files
+```
+If any of these show another session, branch a worktree off trunk immediately and
+never touch the shared tree. Reconciling afterwards: if the remote already has
+your content (`git diff HEAD origin/<branch> -- <paths>` is empty), do not force
+your duplicate commit -- reset to origin and commit only what is genuinely missing.
