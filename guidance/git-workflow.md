@@ -163,3 +163,17 @@ Restore from a bundle with:
 ```bash
 git fetch /path/to/x.bundle <name>-backup:<name>-backup
 ```
+
+### Untracked file shadowing a tracked path blocks checkout; use a worktree, never rm (2026-07-30)
+A repo can hold an UNTRACKED file at a path that IS tracked on origin/main (common in repos where automated sessions drop env/scratch files). 'git checkout -b <new> origin/main' then aborts with 'untracked working tree files would be overwritten by checkout'.
+
+Do NOT rm or mv the blocker to unblock yourself. On 2026-07-30 the blocker was privateContext/automation-hub-env.md, an env file that session did not create; deleting it to land a docs commit would have destroyed uncommitted infra notes belonging to someone else.
+
+Correct move: commit through a worktree, which never touches the dirty tree:
+  git worktree add /tmp/wt -b <branch> origin/main
+  cp <file> /tmp/wt/<path> && cd /tmp/wt && git add <path>
+  git diff --staged | grep -inE '(api[_-]?key|secret|token|password|bearer|-----BEGIN)'
+  git commit && git push -u origin <branch> && gh pr create
+  cd <repo> && git worktree remove /tmp/wt --force && git worktree prune
+
+Related: privateContext runs a PR + auto-merger flow, so 'gh pr create' can report 'a pull request already exists' because the merger opened AND merged one within seconds of the push. Confirm with 'gh pr view <n> --json state,mergedAt' rather than treating it as a failed create.
