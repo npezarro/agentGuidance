@@ -232,3 +232,30 @@ If any of these show another session, branch a worktree off trunk immediately an
 never touch the shared tree. Reconciling afterwards: if the remote already has
 your content (`git diff HEAD origin/<branch> -- <paths>` is empty), do not force
 your duplicate commit -- reset to origin and commit only what is genuinely missing.
+
+### Acknowledging a gate hit that is not your work
+
+`hooks/check-unpushed.sh` blocks on any file **this session wrote** that is still
+dirty. It cannot tell "I forgot to push" from "I wrote this, reverted it, and
+another session's edits are now on the same path" — and in a shared checkout the
+second case is real (see the section above).
+
+When you have *proven* the dirt is not yours, acknowledge the exact path:
+
+```bash
+printf '%s\t%s\n' "shopper/CLAUDE.md" "reason it is not yours" \
+  >> "/tmp/claude-repos-ack-${SESSION_ID}"
+```
+
+The gate then reports the path in a non-blocking `systemMessage` and appends it to
+`~/.claude/logs/git-push-gate-acks.log` with the session id, timestamp, and reason.
+
+This is deliberately **not** a mute switch:
+- one line acknowledges exactly one path — there is no wildcard,
+- a line with no reason still blocks,
+- any other dirty tracked file still blocks,
+- unpushed **commits** still block regardless of any ack.
+
+Prove it before you use it (`git diff <file>` showing zero hunks of yours, plus
+evidence your own content is already on the remote). Acknowledging work you simply
+forgot to push is the failure this gate exists to catch.
