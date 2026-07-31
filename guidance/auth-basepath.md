@@ -292,7 +292,7 @@ day one (see the config above). Deploy gotchas learned during the rollout:
 - Health checks: some apps' `/api/health` is auth-gated (401 by design, e.g. health-hub,
   runeval) — use page-render 200/307/308 as the liveness signal, not health==200.
 
-## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11)
+## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11, resolved 2026-07-30)
 
 WebView-shell apps (e.g. `pezant-mobile`) can't do OAuth in the WebView — Google blocks
 embedded WebViews with `disallowed_useragent`. Instead they do **native** Google Sign-In
@@ -325,12 +325,32 @@ Debugging checklist for "mobile sign-in does nothing / broken across the board":
    (same package) exists for it, and create one if not. Don't swallow the plugin's error in
    JS — log it so `adb logcat` shows it.
 
-**Automation caveat (browser-agent):** it can read the Cloud Console client *list* to
-confirm what's registered, but it CANNOT reliably drive the "Create OAuth client" form (the
-Application-type dropdown / Material form is not automatable) and CANNOT read the Play App
-Signing SHA-1 (Play Console renders the cert inside a frame the content script can't reach).
-Treat client creation as a manual Cloud Console step, driven on the project-owner's browser
-profile (not an alt account that lacks project access).
+**A diagnosis is not a fix — verify the resource exists, not that someone described it.**
+This exact bug was correctly root-caused on 2026-07-11, written up in three places, and
+then stayed broken for 19 more days because the one required Console click was never
+actually performed. Docs that say "create client X" are not evidence that X exists. Before
+closing a config-gap bug, re-read the *live* resource list and confirm the object is
+there. Treat "known issue, documented" as unfixed until proven otherwise.
+
+**Automation caveat (browser-agent) — CORRECTED 2026-07-30.** An earlier version of this
+guidance said the Cloud Console create-client form was not automatable and the Play App
+Signing SHA-1 was unreadable. **Both were wrong**, and that false verdict is what let the
+outage persist. The entire flow (read Play Console fingerprints -> create the Android OAuth
+clients) was automated end to end. What actually bites:
+- **A CLI timeout is not a failed action.** While a Material overlay (e.g. the
+  Application-type dropdown) is open, the content script stops answering and the CLI
+  prints `Timeout waiting for browser response` — but the click *landed*. Confirm with a
+  screenshot before concluding anything failed. Earlier sessions read the timeout as
+  "not automatable" and stopped.
+- `click` matches CSS **class** selectors but not custom element tag names.
+- Prefer a distinguishing class for submit buttons; a bare text match can hit the page
+  heading instead of the button (e.g. "Create" also matches a "Create client" title).
+- `eval` returns undefined on Google's CSP'd pages — use screenshots instead, and take an
+  element-scoped crop when reading anything you must transcribe exactly. **Never read a
+  cert fingerprint off a downscaled full-page screenshot** — hex glyphs like `48`/`A8`
+  are indistinguishable at that resolution. Prefer DOM text where available.
+Drive it on the project-owner's browser profile (not an alt account lacking project
+access).
 
 ## Rules for Future Work
 
