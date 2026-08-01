@@ -41,7 +41,11 @@ ACKED_FILES=""
 UNPUSHED_REPOS=""
 declare -A CHECKED_REPOS 2>/dev/null || true
 
-while IFS=$'\t' read -r repo_root file_path; do
+# Ledger format is <repo_root>\t<file_path>\t<epoch>. The epoch is read into its own
+# variable and ignored here: without it, the trailing field would be appended to
+# file_path (read gives the remainder of the line to the last variable) and every
+# realpath would miss.
+while IFS=$'\t' read -r repo_root file_path _epoch; do
   [ -d "$repo_root/.git" ] || continue
   repo_name=$(basename "$repo_root")
 
