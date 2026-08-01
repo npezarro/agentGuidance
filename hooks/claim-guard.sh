@@ -238,20 +238,33 @@ fi
 EFF_CWD=$(wti_effective_cwd "$CMD" "$PAYLOAD_CWD")
 GIT_C=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^ &;|]+' | head -1 | sed -E 's/.*-C[[:space:]]+//' | tr -d "'\"")
 if [ -n "$GIT_C" ]; then
-  case "$GIT_C" in
-    "~"|"~/"*) GIT_C="${HOME}${GIT_C#\~}" ;;
-  esac
+  GIT_C=$(wti_expand "$GIT_C")
   case "$GIT_C" in
     /*) EFF_CWD="$GIT_C" ;;
     *)  EFF_CWD="${EFF_CWD}/${GIT_C}" ;;
   esac
 fi
-[ -n "$EFF_CWD" ] && [ -d "$EFF_CWD" ] || exit 0
-REPO=$(git -C "$EFF_CWD" rev-parse --show-toplevel 2>/dev/null || echo "")
-[ -z "$REPO" ] && exit 0
 
 ENTRIES=$(live_entries)
 [ -z "$ENTRIES" ] && exit 0
+
+REPO=""
+if [ -n "$EFF_CWD" ] && [ -d "$EFF_CWD" ]; then
+  REPO=$(git -C "$EFF_CWD" rev-parse --show-toplevel 2>/dev/null || echo "")
+fi
+if [ -z "$REPO" ]; then
+  # The target dir did not resolve, usually an unexpanded variable (`cd $REPO && ...`).
+  # Waving the command through would be a silent miss, so fall back to any contested
+  # repo the command names outright, comparing against a HOME-normalized copy.
+  # Residual gap, accepted: a target built entirely from a variable this hook cannot
+  # resolve is not covered by the deny arm. The warn arm still fires on the writes.
+  CMD_NORM=$(printf '%s' "$CMD" | sed -e "s#\${HOME}#${HOME}#g" -e "s#\$HOME#${HOME}#g" -e "s#~/#${HOME}/#g")
+  while IFS= read -r cand_repo; do
+    [ -z "$cand_repo" ] && continue
+    if printf '%s' "$CMD_NORM" | grep -qF "$cand_repo"; then REPO="$cand_repo"; break; fi
+  done <<< "$(printf '%s\n' "$ENTRIES" | cut -f2 | sort -u)"
+fi
+[ -z "$REPO" ] && exit 0
 HIT=$(printf '%s\n' "$ENTRIES" | awk -F'\t' -v r="$REPO" '$2 == r { print $1 "\t" $4 "\t" $3 }' | sort -u | tail -1)
 [ -z "$HIT" ] && exit 0
 

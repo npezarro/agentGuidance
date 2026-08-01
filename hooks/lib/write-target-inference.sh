@@ -37,18 +37,33 @@ wti_is_write_cmd() {
   return 1
 }
 
+# wti_expand <path> -> echoes the path with ~ and the common env vars resolved
+# Never eval: these strings come from model-authored commands, and `eval` on one is a
+# command-injection primitive. Only a fixed set of variables is substituted, so a path
+# like `$REPO/x` stays unresolved on purpose and callers must handle that.
+wti_expand() {
+  local p="$1"
+  case "$p" in
+    "~"|"~/"*) p="${HOME}${p#\~}" ;;
+  esac
+  p="${p//\$\{HOME\}/$HOME}"
+  p="${p//\$HOME/$HOME}"
+  p="${p//\$\{PWD\}/$PWD}"
+  printf '%s' "$p"
+}
+
 # wti_effective_cwd <command> <payload_cwd> -> echoes the dir relative paths resolve against
 # Honours the last `cd <dir>` in the chain: `cd ~/repos/x && python3 ...` is the shape
 # that matters, and its paths are relative to the cd target, not the session cwd.
+# `$HOME` must be expanded here: the first live test of the deny arm missed a real
+# `cd $HOME/... && git add -A` because the unexpanded target failed the -d check.
 wti_effective_cwd() {
   local cmd="$1" cwd="${2:-}" target
   target=$(printf '%s' "$cmd" \
     | grep -oE '(^|&&[[:space:]]*|;[[:space:]]*|\|\|[[:space:]]*)cd[[:space:]]+[^ &;|)]+' \
     | tail -1 | sed -E 's/.*cd[[:space:]]+//' | tr -d "'\"" || true)
   if [ -n "$target" ]; then
-    case "$target" in
-      "~"|"~/"*) target="${HOME}${target#\~}" ;;
-    esac
+    target=$(wti_expand "$target")
     case "$target" in
       /*) cwd="$target" ;;
       *)  cwd="${cwd}/${target}" ;;
@@ -64,9 +79,7 @@ wti_candidate_paths() {
     | grep -oE '[A-Za-z0-9_./~-]+\.(md|js|mjs|cjs|ts|tsx|jsx|json|sh|py|rb|go|html|css|scss|yml|yaml|txt|toml|sql|conf|service)' \
     | sort -u \
     | while IFS= read -r cand; do
-        case "$cand" in
-          "~/"*) cand="${HOME}/${cand#\~/}" ;;
-        esac
+        cand=$(wti_expand "$cand")
         case "$cand" in
           /*) printf '%s\n' "$cand" ;;
           *)  [ -n "$cwd" ] && printf '%s/%s\n' "$cwd" "$cand" ;;
