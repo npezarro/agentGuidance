@@ -52,3 +52,18 @@ Convert markdown to HTML, then upload via Google Drive API with `contentMimeType
 3. **Batch independent formatting calls** in parallel.
 
 **Do NOT use `createGoogleDoc`/`updateGoogleDoc` for long-form docs with tables.** These tools only accept plain text; tables cannot be created through them.
+
+### Verify a pushed GDoc by re-reading the published doc, not the intermediate files (2026-08-01)
+A markdown-to-GDoc render pipeline can report success at every stage and still publish literal markdown, because each script only sees the slice it handles. Intermediate-file checks are not verification: the HTML looked clean while the Doc showed raw '####' markers.
+
+Verify against the PUBLISHED document via the Docs API, counting paragraph styles and scanning the concatenated text for every markdown residue class:
+
+  fields=body(content(paragraph(paragraphStyle(namedStyleType),bullet,elements(textRun(content)))))
+
+Then assert: named-style histogram is non-trivial (not everything NORMAL_TEXT), native bullet count > 0, and ZERO matches for /\*\*/, /^#{1,6} /m, /\|/, backtick, /^>/m, /^[-*] /m.
+
+Two real bugs this caught on 2026-08-01 that all upstream checks passed:
+1. render-app-doc.js handled only #/##/### — '#### ' fell through to the paragraph branch and printed literally.
+2. Heading text used esc() not inline(), so **bold** inside a heading printed its markers. Fixing bug 1 EXPOSED bug 2: promoting those lines to headings moved them onto the esc() path, and the '**' count went 0 -> 38. A fix that changes which code path a line takes can activate a latent bug on the new path, so re-run the full residue scan after every fix rather than only the check that just failed.
+
+Also: grep silently returns nothing on these scripts because they contain a non-UTF-8 byte and grep treats them as binary. Use 'grep -a', or a search that finds nothing will read as 'the code isn't there.'
