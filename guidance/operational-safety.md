@@ -353,6 +353,8 @@ Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook fail
 
 ## Concurrent Sessions in One Checkout
 
+> **Scope.** This section covers the *automated* guard only. For the workflow side of the same problem (worktree per session, real locks for singletons, Stop-gate granularity, the diagnostic order when something keeps reverting) see `guidance/concurrent-sessions.md`, and for the cross-repo view see KB `patterns/shared-checkout-concurrent-sessions.md`. Three documents on one topic is already one too many: put new material in whichever of the three it belongs to, do not start a fourth.
+
 Several Claude sessions run in the same `~/repos/<repo>` working tree with `--dangerously-skip-permissions`. Nothing about the filesystem stops two of them owning the same file, and neither `git` nor the deploy scripts serialize them.
 
 **Symptom to recognize:** a deployed artifact or a doc "keeps reverting". Suspect a concurrent session writing the same path before you blame Cloudflare, a cron, or a build cache. Diagnostic order is in the `learning_concurrent_session_clobber` memory.

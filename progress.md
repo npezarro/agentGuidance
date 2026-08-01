@@ -94,3 +94,4 @@
 ## 2026-07-16
 - 2eb0f17 Add goal-conditions.md; /goal evaluator Stop-hook exemption in stop-hook-safety.md; agent.md index line (95/100 lines)
 - 2026-07-17: goal-conditions.md gains "Two traps found in production" (stdin leak, rejection-as-success)
+2026-08-01 | hooks | claim-guard.sh: warn on same-file/same-repo writes by a live peer session, deny `git add -A/--all/.`, `git commit -a/--all` and `rsync --delete` into /var/www while a peer holds the target. Per-session liveness (`/tmp/claude-session-alive-<sid>`), two ledgers so Bash-inferred writes never reach the Stop-time push gate, own-subagent exemption. 21/21 payload tests plus live verification; the live run caught a `$HOME` expansion miss that all 21 literal-path tests had passed. `809a04d`, `fcf2d4e`.
