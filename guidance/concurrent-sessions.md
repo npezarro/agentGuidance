@@ -43,8 +43,34 @@ Real costs, stated honestly:
   `/mnt/c/Users/npeza/Documents/repos/browser-agent` is still its own clone and still has
   to be pulled before `ext-reload`.
 
-**Status: browser-agent is the trial repo.** Roll out per-repo rather than globally, and
-only after a repo's cron/PM2 assumptions have been eyeballed.
+### Per-repo rollout step, do this FIRST
+
+Add to the repo's `.gitignore`:
+
+```
+.claude/worktrees/
+```
+
+Without it the worktree directory shows up as `?? .claude/` in the **canonical** tree, so a
+`git add -A` there commits an entire nested worktree. Measured on browser-agent 2026-08-01:
+unignored, `git status` in the canonical checkout listed `?? .claude/` the moment a worktree
+existed. Ignoring it is what makes the canonical tree stay clean.
+
+### Proof it does what it claims
+
+Reproducing today's exact clobber, with session B in a worktree:
+
+```
+canonical tree (session A):   M CLAUDE.md        <- A's uncommitted edit
+worktree      (session B):    echo >> progress.md ; git add -A
+B staged:                     M  progress.md      <- only its own file
+A's CLAUDE.md edit:           untouched
+```
+
+Same command that captured another session's work today, now inert.
+
+**Status: browser-agent is the trial repo** (`.gitignore` updated). Roll out per-repo rather
+than globally, and only after a repo's cron/PM2 assumptions have been eyeballed.
 
 ## Problem B: take a real lock
 
@@ -88,6 +114,21 @@ done
 ```
 
 Only the wrapper's own pid should appear.
+
+## Known gap: claim-guard false-positives on the command's own text
+
+`hooks/claim-guard.sh:170-171` runs two independent greps over the **whole** command
+string: one for `git add`, one for a bare `-A` / `--all` / `.` token anywhere. They are
+never correlated to the same command segment, so a commit message that *describes* the
+dangerous command is denied as if it were the dangerous command. Hit 2026-08-01 while
+committing this very file: the message contained the words `git add -A`, and staging an
+explicit path was blocked.
+
+This matters more than it looks. A guard that fires on safe commands trains you to ack
+reflexively, which quietly disables it.
+
+Fix: correlate the two patterns, i.e. match the argument list of the `git add` invocation
+itself rather than scanning the full string. Not yet implemented.
 
 ## Known gap: the Stop gate is repo-granular
 
