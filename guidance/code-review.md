@@ -248,3 +248,16 @@ When a loop processes a batch (DB rows, files, API records) and each iteration d
 
 ### Mixed || / ?: precedence silently drops data (2026-07-27)
 `a || b ? c : d` parses as `(a || b) ? c : d`, NOT `a || (b ? c : d)`. In an object-literal value this bites when the taken branch can yield null/undefined and a downstream schema/consumer rejects it. Real case (job-scraper lever.js PR #64, run #341): `salary: salary || data.salaryRange ? formatSalaryRange(data.salaryRange) : undefined` evaluated `formatSalaryRange(undefined)` -> null whenever a text-extracted salary existed but the structured range didn't, so `RoleDataSchema.parse` (salary is z.string().optional(), rejects null) threw and the record was silently dropped (listRoles catch->null->filter). Reviewer checklist: (1) any `x || y ? ... : ...` or `x && y ? ... : ...` in a value position is suspect — add parens or split it; (2) enable eslint `no-mixed-operators` and `no-unneeded-ternary` (the repo's eslint did not flag this); (3) a sibling correct form nearby is a strong tell (greenhouse.js used `salary || undefined`; lever was the outlier). Fix pattern: `salary || formatSalaryRange(range) || undefined` — coalesce to undefined so the field is never null.
+
+### Check for sibling deliverables before revising a doc another session may have deepened (2026-07-31)
+Before extending a deliverable, list the sibling files in its directory and follow every internal link in it. A parallel session may have produced deeper research that CONTRADICTS the doc you are about to extend, and the doc may already carry a superseded-by pointer.
+
+On 2026-08-01, extending a conference prep guide with an itinerary, the guide linked a companion briefing that carried a bold 'Partly superseded' banner pointing at a third doc built from full talk transcripts. That third doc reversed a core recommendation: the target speaker's frame is 'verification', not 'evals' (39 uses vs 0 in a 112-minute workshop), and he is publicly skeptical of evals. The original guide's suggested opening question was eval-framed, i.e. actively wrong. Extending without reading siblings would have shipped a confidently-wrong question into a same-day deliverable.
+
+Procedure before editing any deliverable:
+  ls <dir>                                   # siblings the doc may not link
+  grep -oE '\]\(\./[^)]+\)' <doc>           # every internal link
+  grep -inE 'supersede|correction|stale|outdated|use .* instead' <doc> <siblings>
+
+Then verify each link resolves, since a superseded-by pointer to a missing file is worse than none:
+  for f in $(grep -oE '\]\(\./[^)]+\)' doc.md | sed 's/](\.\///; s/)$//'); do [ -e "$f" ] && echo "OK $f" || echo "MISSING $f"; done
