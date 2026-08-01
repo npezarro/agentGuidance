@@ -259,3 +259,32 @@ This is deliberately **not** a mute switch:
 Prove it before you use it (`git diff <file>` showing zero hunks of yours, plus
 evidence your own content is already on the remote). Acknowledging work you simply
 forgot to push is the failure this gate exists to catch.
+
+### A peer's unpushed commit will block *your* stop
+
+The ack above covers dirty **files**. There is no equivalent for **commits**: the
+gate counts `@{u}..HEAD` per repo and does not care who authored them. In a shared
+checkout, a live peer session that commits without pushing therefore blocks *your*
+stop, on work you did not write and cannot ack away.
+
+Hit 2026-08-01: an affiliate-tag session was gated by `privateContext (1)` — a peer's
+`sync-card-portfolio.sh` commit sitting on the peer's own feature branch.
+
+The resolution is to push it, not to wait it out or reset it:
+
+1. **Identify the author and branch** — `git log --format='%h %an %ad %s' @{u}..HEAD`
+   and `git branch --show-current`. Confirm it is not yours before touching it.
+2. **Secret-scan the diff** you are about to publish. You are pushing content you did
+   not write and did not review; the repo being private does not exempt it.
+3. **Push to the branch it was committed on** — `git push origin HEAD:<that-branch>`.
+   Never redirect a peer's commit to `main`/`master`: they chose that branch, and
+   landing it on a mainline is a scope change you have no mandate for.
+4. **Say so in your final message.** You published someone else's work; that belongs
+   in the report, not buried in a tool call.
+
+Cost of doing this: if the peer later amends or rebases that commit, their next push
+needs a force. That is strictly better than leaving their work stranded local-only,
+which is the exact loss this gate exists to prevent.
+
+Do **not** `git reset` a peer's commit to clear the gate — that destroys work that
+exists nowhere else.
