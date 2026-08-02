@@ -96,3 +96,15 @@ landed.
 For a phone-read doc prefer headings and bullets over markdown tables: table header rows convert
 imperfectly, and numbered headings render as `## 1\.` with `>` escaped as `\>` (cosmetic, but tables
 are the one case where the damage is structural).
+
+### Headless Drive MCP is create-only so a stale gdoc cannot be amended (2026-08-02)
+In Discord/headless runs the only Drive server connected is claude.ai's, exposing create_file, search_files, read_file_content, download_file_content. There is NO update or append tool, so a Google Doc a prior session published cannot be edited in place.
+
+**What happened (2026-08-02):** Asked to 'push the updated agenda to gdocs'. search_files showed an existing prep-guide Doc built from a stale agenda, whose viewedByMeTime matched the minute of the request: the user was reading the wrong doc as he asked. With no update tool, the fix was a NEW Doc titled to state supersession, plus telling him the old one is stale and giving its file id.
+
+**How to apply:**
+1. search_files for an existing doc on the topic BEFORE creating anything. A user sitting on a stale doc means 'that one is wrong' is half the deliverable.
+2. Title the new doc to state supersession ('<Topic> - REVISED <date> - supersedes the <date> version'). A version-number-only difference will not stop the old one being reopened from Drive recents.
+3. Say in the reply that the old doc is stale and could not be edited headless; give its file id so the user can archive it.
+4. fileSize '1' in the create_file response is a red herring, NOT an empty upload. Verify with read_file_content on the returned fileId; that read-back is the only proof content landed.
+5. Prefer headings+bullets over markdown tables for phone-read docs: tables convert with blanked header rows, and numbered headings render as '## 1\.' with '>' escaped.
