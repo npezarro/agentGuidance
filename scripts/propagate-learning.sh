@@ -105,7 +105,20 @@ if [ -n "$PRIMARY_MEMORY" ]; then
       user)     MEM_TYPE="user" ;;
       *)        MEM_TYPE="reference" ;;   # pattern | infra | rule | anything else
     esac
-    cat > "$MEM_PATH" << MEMEOF
+    # NEVER clobber an existing memory. `--memory-name` pointing at a file that
+    # already exists means the caller wants to UPDATE it, and a blind `cat >`
+    # destroys everything already in there (2026-08-02: wiped the piotr-MCP
+    # context, the canonical Drive folder id, and the markdown-conversion quirks
+    # out of infra_gdoc_push_headless_fallback.md; also seen in a prior closeout).
+    # Write the proposal alongside instead and make the caller merge it.
+    MEM_CLOBBER_AVOIDED=false
+    if [ -f "$MEM_PATH" ]; then
+      MEM_WRITE_PATH="$MEM_PATH.proposed"
+      MEM_CLOBBER_AVOIDED=true
+    else
+      MEM_WRITE_PATH="$MEM_PATH"
+    fi
+    cat > "$MEM_WRITE_PATH" << MEMEOF
 ---
 name: ${MEM_FILE%.md}
 description: $SUMMARY
@@ -115,6 +128,11 @@ metadata:
 
 $BODY
 MEMEOF
+    if $MEM_CLOBBER_AVOIDED; then
+      echo "  [propagate] ⚠ MEMORY EXISTS, NOT OVERWRITTEN: $MEM_PATH" >&2
+      echo "  [propagate] ⚠ proposal written to: $MEM_WRITE_PATH" >&2
+      echo "  [propagate] ⚠ MERGE IT BY HAND (keep the existing content), then delete the .proposed file." >&2
+    fi
     # Add to MEMORY.md index if not already present.
     # Cap the hook so the always-loaded index stays under its context budget —
     # the full detail lives in the memory file, not the one-line index entry.
@@ -146,9 +164,13 @@ MEMEOF
         [ "$LOCK_HELD" = true ] && rmdir "$LOCK_D" 2>/dev/null || true
       fi
     fi
-    DESTINATIONS+=("memory:$MEM_PATH")
+    if $MEM_CLOBBER_AVOIDED; then
+      DESTINATIONS+=("memory:$MEM_WRITE_PATH (NEEDS MANUAL MERGE into $MEM_PATH)")
+    else
+      DESTINATIONS+=("memory:$MEM_PATH")
+    fi
   fi
-  dry "Memory: $MEM_PATH"
+  dry "Memory: ${MEM_WRITE_PATH:-$MEM_PATH}"
 fi
 
 # ── Destination 2: Repo CLAUDE.md ────────────────────────────────────
