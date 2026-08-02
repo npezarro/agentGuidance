@@ -165,20 +165,86 @@ fi
 [ "$TOOL" = "Bash" ] || exit 0
 [ -z "$CMD" ] && exit 0
 
+# --- classification -----------------------------------------------------------
+# The command is split into segments and each segment is judged by ITS OWN leading
+# command and arguments. The first implementation ran two uncorrelated greps over the
+# whole string (one for `git add`, one for a bare -A/--all/. anywhere), so a commit
+# whose MESSAGE described the dangerous command was denied as if it were the dangerous
+# command. Reported by a peer session 2026-08-01 while committing a doc about this very
+# guard. That failure mode matters more than a miss: a guard that fires on safe commands
+# trains reflexive acks, which disables it.
+#
+# Preprocessing, in order:
+#   1. drop heredoc bodies      (`git commit -F - <<'MSG' ... MSG` quotes anything)
+#   2. split on ; && || |       (segments)
+#   3. unwrap `ssh <host> '<remote>'` and re-split, so a remote rsync is still seen
+#   4. drop quoted literals     (only when reading a segment's ARGUMENTS)
+
+strip_heredocs() {
+  awk '
+    { line = $0 }
+    inbody { if (line ~ term) { inbody = 0 } ; next }
+    {
+      if (match(line, /<<-?[ \t]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?/)) {
+        m = substr(line, RSTART, RLENGTH)
+        sub(/^<<-?[ \t]*/, "", m)
+        gsub(/['"'"'"]/, "", m)
+        term = "^[ \t]*" m "[ \t]*$"
+        inbody = 1
+        sub(/<<-?[ \t]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?.*$/, "", line)
+      }
+      print line
+    }
+  '
+}
+
+segments_of() {
+  printf '%s\n' "$1" | strip_heredocs | sed -E 's/(&&|\|\||;|\|)/\n/g' | while IFS= read -r seg; do
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    case "$seg" in
+      ssh[[:space:]]*)
+        rem=$(printf '%s' "$seg" | sed -E 's/^ssh[[:space:]]+(-[^[:space:]]+[[:space:]]+)*[^[:space:]]+[[:space:]]+//')
+        rem=$(printf '%s' "$rem" | sed -E "s/^'//; s/'\$//; s/^\"//; s/\"\$//")
+        printf '%s\n' "$rem" | sed -E 's/(&&|\|\||;)/\n/g'
+        ;;
+      *) printf '%s\n' "$seg" ;;
+    esac
+  done
+}
+
 KIND=""
 FIX=""
-if printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^ ]+)?[[:space:]]+add([[:space:]]|$)' \
-   && printf '%s' "$CMD" | grep -qE '[[:space:]](-A|--all|\.)([[:space:]]|$)'; then
-  KIND="git add -A/--all/."
-  FIX="Stage explicit paths instead: git add <the files you actually changed>."
-elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^ ]+)?[[:space:]]+commit([[:space:]]|$)' \
-     && printf '%s' "$CMD" | grep -qE '[[:space:]](-a|-am|-ma|--all)([[:space:]]|$)'; then
-  KIND="git commit -a/--all"
-  FIX="Stage explicit paths first, then commit without -a: git add <your files> && git commit -m '...'."
-elif printf '%s' "$CMD" | grep -qE 'rsync[^;&|]*--delete' && printf '%s' "$CMD" | grep -qE '/var/www/'; then
-  KIND="rsync --delete into /var/www"
-  FIX="Coordinate the deploy target with the other session before mirroring, or deploy after it finishes."
-fi
+while IFS= read -r seg; do
+  [ -n "$KIND" ] && break
+  # Arguments are read with string literals removed, so a -m message can never be
+  # mistaken for a flag. The unwrap above already rescued ssh-quoted remote commands.
+  s=$(printf '%s' "$seg" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g; s/^[[:space:]]+//")
+  case "$s" in
+    git[[:space:]]*|sudo[[:space:]]+git[[:space:]]*)
+      body=$(printf '%s' "$s" | sed -E 's/^(sudo[[:space:]]+)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?//')
+      case "$body" in
+        add|add[[:space:]]*)
+          if printf '%s' "$body" | grep -qE '(^|[[:space:]])(-A|--all|\.)([[:space:]]|$)'; then
+            KIND="git add -A/--all/."
+            FIX="Stage explicit paths instead: git add <the files you actually changed>."
+          fi
+          ;;
+        commit|commit[[:space:]]*)
+          if printf '%s' "$body" | grep -qE '(^|[[:space:]])(-a|-am|-ma|--all)([[:space:]]|$)'; then
+            KIND="git commit -a/--all"
+            FIX="Stage explicit paths first, then commit without -a: git add <your files> && git commit -m '...'."
+          fi
+          ;;
+      esac
+      ;;
+    rsync[[:space:]]*)
+      if printf '%s' "$s" | grep -qE '(^|[[:space:]])--delete([[:space:]]|$)' && printf '%s' "$s" | grep -qE '/var/www/'; then
+        KIND="rsync --delete into /var/www"
+        FIX="Coordinate the deploy target with the other session before mirroring, or deploy after it finishes."
+      fi
+      ;;
+  esac
+done <<< "$(segments_of "$CMD")"
 [ -z "$KIND" ] && exit 0
 
 ack_allows() {
@@ -238,7 +304,7 @@ fi
 EFF_CWD=$(wti_effective_cwd "$CMD" "$PAYLOAD_CWD")
 GIT_C=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^ &;|]+' | head -1 | sed -E 's/.*-C[[:space:]]+//' | tr -d "'\"")
 if [ -n "$GIT_C" ]; then
-  GIT_C=$(wti_expand "$GIT_C")
+  GIT_C=$(wti_expand "$GIT_C" "$CMD")
   case "$GIT_C" in
     /*) EFF_CWD="$GIT_C" ;;
     *)  EFF_CWD="${EFF_CWD}/${GIT_C}" ;;
@@ -263,6 +329,9 @@ if [ -z "$REPO" ]; then
     [ -z "$cand_repo" ] && continue
     if printf '%s' "$CMD_NORM" | grep -qF "$cand_repo"; then REPO="$cand_repo"; break; fi
   done <<< "$(printf '%s\n' "$ENTRIES" | cut -f2 | sort -u)"
+  # Still nothing: record the miss. A guard that cannot see its own blind spots is a
+  # guard nobody can audit, and this is the one path where a real hazard passes silently.
+  [ -z "$REPO" ] && log_event "unresolved-target" "$KIND: could not resolve '${EFF_CWD}' while $(printf '%s\n' "$ENTRIES" | cut -f1 | sort -u | wc -l) live peer(s) held repos"
 fi
 [ -z "$REPO" ] && exit 0
 HIT=$(printf '%s\n' "$ENTRIES" | awk -F'\t' -v r="$REPO" '$2 == r { print $1 "\t" $4 "\t" $3 }' | sort -u | tail -1)

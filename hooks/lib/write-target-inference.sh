@@ -37,12 +37,27 @@ wti_is_write_cmd() {
   return 1
 }
 
-# wti_expand <path> -> echoes the path with ~ and the common env vars resolved
+# wti_expand <path> [command] -> echoes the path with ~, the common env vars, and any
+# variable assigned earlier in the SAME command resolved.
 # Never eval: these strings come from model-authored commands, and `eval` on one is a
-# command-injection primitive. Only a fixed set of variables is substituted, so a path
-# like `$REPO/x` stays unresolved on purpose and callers must handle that.
+# command-injection primitive. Only literal substitution happens here, so a path built
+# from a variable assigned in an earlier turn stays unresolved and callers must handle it.
 wti_expand() {
-  local p="$1"
+  local p="$1" cmd="${2:-}" asg name val
+  # `R=~/repos/x; cd $R && git add -A` — resolve R from the command itself.
+  if [ -n "$cmd" ]; then
+    case "$p" in
+      *'$'*)
+        while IFS= read -r asg; do
+          [ -z "$asg" ] && continue
+          name="${asg%%=*}"; val="${asg#*=}"
+          val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+          p="${p//\$\{$name\}/$val}"
+          p="${p//\$$name/$val}"
+        done <<< "$(printf '%s' "$cmd" | grep -oE '(^|[;&[:space:]])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]+' | sed -E 's/^[;&[:space:]]+//' || true)"
+        ;;
+    esac
+  fi
   case "$p" in
     "~"|"~/"*) p="${HOME}${p#\~}" ;;
   esac
@@ -63,7 +78,7 @@ wti_effective_cwd() {
     | grep -oE '(^|&&[[:space:]]*|;[[:space:]]*|\|\|[[:space:]]*)cd[[:space:]]+[^ &;|)]+' \
     | tail -1 | sed -E 's/.*cd[[:space:]]+//' | tr -d "'\"" || true)
   if [ -n "$target" ]; then
-    target=$(wti_expand "$target")
+    target=$(wti_expand "$target" "$cmd")
     case "$target" in
       /*) cwd="$target" ;;
       *)  cwd="${cwd}/${target}" ;;
@@ -79,7 +94,7 @@ wti_candidate_paths() {
     | grep -oE '[A-Za-z0-9_./~-]+\.(md|js|mjs|cjs|ts|tsx|jsx|json|sh|py|rb|go|html|css|scss|yml|yaml|txt|toml|sql|conf|service)' \
     | sort -u \
     | while IFS= read -r cand; do
-        cand=$(wti_expand "$cand")
+        cand=$(wti_expand "$cand" "$cmd")
         case "$cand" in
           /*) printf '%s\n' "$cand" ;;
           *)  [ -n "$cwd" ] && printf '%s/%s\n' "$cwd" "$cand" ;;

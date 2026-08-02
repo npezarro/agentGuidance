@@ -39,6 +39,7 @@ ack_reason_for() {
 DIRTY_FILES=""
 ACKED_FILES=""
 UNPUSHED_REPOS=""
+PEER_COMMITS=""
 declare -A CHECKED_REPOS 2>/dev/null || true
 
 # Ledger format is <repo_root>\t<file_path>\t<epoch>. The epoch is read into its own
@@ -69,15 +70,32 @@ while IFS=$'\t' read -r repo_root file_path _epoch; do
     fi
   fi
 
-  # Check unpushed commits per repo (only once per repo)
+  # Check unpushed commits per repo (only once per repo).
+  #
+  # Per COMMIT, not per repo. The gate used to count `@{u}..HEAD` for the whole repo, so
+  # touching one file made this session responsible for every unpushed commit in it,
+  # including a live peer's. That fired on 2026-08-01: a session was told to push a
+  # two-minute-old commit written by a different session. A commit counts as this
+  # session's only if it contains a file this session actually wrote (Edit/Write ledger
+  # only; the Bash-inferred ledger is heuristic and must not reach a blocking gate).
   if [ -z "${CHECKED_REPOS[$repo_root]+x}" ] 2>/dev/null; then
     CHECKED_REPOS[$repo_root]=1
     upstream=$(cd "$repo_root" && git rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo "")
     if [ -n "$upstream" ]; then
-      ahead=$(cd "$repo_root" && git rev-list '@{u}'..HEAD --count 2>/dev/null || echo "0")
-      if [ "$ahead" -gt 0 ]; then
-        UNPUSHED_REPOS="${UNPUSHED_REPOS}${repo_name} (${ahead}), "
-      fi
+      MY_PATHS=$(awk -F'\t' -v r="$repo_root" '$1 == r { print $2 }' "$TRACK_FILE" 2>/dev/null \
+        | while IFS= read -r p; do realpath --relative-to="$repo_root" "$p" 2>/dev/null; done | sort -u)
+      mine=0; theirs=0
+      while IFS= read -r sha; do
+        [ -z "$sha" ] && continue
+        files=$(cd "$repo_root" && git show --name-only --format= "$sha" 2>/dev/null)
+        if [ -n "$MY_PATHS" ] && printf '%s\n' "$files" | grep -qxF -f <(printf '%s\n' "$MY_PATHS") 2>/dev/null; then
+          mine=$((mine + 1))
+        else
+          theirs=$((theirs + 1))
+        fi
+      done <<< "$(cd "$repo_root" && git rev-list '@{u}'..HEAD 2>/dev/null)"
+      [ "$mine" -gt 0 ] && UNPUSHED_REPOS="${UNPUSHED_REPOS}${repo_name} (${mine}), "
+      [ "$theirs" -gt 0 ] && PEER_COMMITS="${PEER_COMMITS}${repo_name} (${theirs}), "
     fi
   fi
 done < "$TRACK_FILE"
@@ -86,12 +104,17 @@ MSG=""
 [ -n "$DIRTY_FILES" ] && MSG="Uncommitted files: ${DIRTY_FILES%, }. "
 [ -n "$UNPUSHED_REPOS" ] && MSG="${MSG}Unpushed commits: ${UNPUSHED_REPOS%, }. "
 
+NOTE=""
+[ -n "$PEER_COMMITS" ] && NOTE="Not blocking on another session's unpushed commits: ${PEER_COMMITS%, }. If they are stranded, push to THEIR branch rather than resetting; see guidance/concurrent-sessions.md. "
+
+ACK_NOTE=""
+[ -n "$ACKED_FILES" ] && ACK_NOTE="Acknowledged as not-this-session work: ${ACKED_FILES%, }. "
+
 if [ -n "$MSG" ]; then
-  printf '{"decision":"block","reason":"GIT-PUSH GATE: %sCommit and push before stopping."}\n' "$MSG"
-elif [ -n "$ACKED_FILES" ]; then
-  # Nothing blocking, but keep the acknowledged paths visible rather than silent.
-  printf '{"systemMessage":"GIT-PUSH GATE: passed. Acknowledged as not-this-session'"'"'s work: %s"}\n' \
-    "${ACKED_FILES%, }"
+  printf '{"decision":"block","reason":"GIT-PUSH GATE: %s%sCommit and push before stopping."}\n' "$MSG" "$NOTE"
+elif [ -n "$ACK_NOTE" ] || [ -n "$NOTE" ]; then
+  # Nothing blocking, but keep the acknowledged paths and peer commits visible rather than silent.
+  printf '{"systemMessage":"GIT-PUSH GATE: passed. %s%s"}\n' "$ACK_NOTE" "$NOTE"
 fi
 
 exit 0
