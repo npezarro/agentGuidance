@@ -81,20 +81,49 @@ echo peer > peer.txt; git add peer.txt; git commit -qm "peer session work"
 echo mine > mine.txt; git add mine.txt; git commit -qm "my work"
 
 gate() { jq -nc --arg s "$MYSID" '{session_id:$s}' | bash "$HOOKS/check-unpushed.sh" 2>/dev/null; }
+# jq on EMPTY input prints nothing, so the "//none" fallback never fires and a
+# correctly-silent hook reads as an empty decision. Normalize it here.
+decision_of() { [ -z "$1" ] && { echo none; return; }; printf '%s' "$1" | jq -r '.decision // "none"' 2>/dev/null || echo none; }
 
 echo "check-unpushed: must be per-COMMIT, not per-repo"
 printf '%s\t%s\n' "$PWD" "$PWD/base.txt" > "/tmp/claude-repos-touched-$MYSID"
-out=$(gate); dec=$(printf '%s' "$out" | jq -r '.decision // "none"' 2>/dev/null)
+out=$(gate); dec=$(decision_of "$out")
 [ "$dec" = "none" ] && ok "no block when every unpushed commit is a peer's" \
                     || bad "no block when every unpushed commit is a peer's" "decision=$dec"
 
 printf '%s\t%s\n' "$PWD" "$PWD/mine.txt" > "/tmp/claude-repos-touched-$MYSID"
-out=$(gate); dec=$(printf '%s' "$out" | jq -r '.decision // "none"' 2>/dev/null)
+out=$(gate); dec=$(decision_of "$out")
 [ "$dec" = "block" ] && ok "blocks when an unpushed commit contains this session's file" \
                      || bad "blocks when an unpushed commit contains this session's file" "decision=$dec"
 printf '%s' "$out" | grep -q "Not blocking on another session" \
   && ok "names the peer's commits without blocking on them" \
   || bad "names the peer's commits without blocking on them" "note missing"
+
+# ------------------------------------------------- check-unpushed x git worktree
+# Per-session worktrees (guidance/concurrent-sessions.md) start on a fresh local branch
+# with NO upstream, and their `.git` is a FILE rather than a directory. Both facts made
+# the gate skip them silently, so a session could commit in a worktree, never merge, and
+# stop with no warning at all. Verified silent on 2026-08-02 before the fix.
+echo "check-unpushed: must see work stranded in a git worktree"
+git worktree add -q "$TMPREPO/wt" -b wt/test 2>/dev/null
+cd "$TMPREPO/wt" || exit 1
+echo stranded > wt-only.txt; git add wt-only.txt; git commit -qm "committed in a worktree, never merged"
+
+printf '%s\t%s\n' "$PWD" "$PWD/wt-only.txt" > "/tmp/claude-repos-touched-$MYSID"
+out=$(gate); dec=$(decision_of "$out")
+[ "$dec" = "block" ] && ok "blocks on an unmerged worktree commit (no upstream)" \
+                     || bad "blocks on an unmerged worktree commit (no upstream)" "decision=$dec"
+printf '%s' "$out" | grep -q "worktree wt" \
+  && ok "labels it by project, not by the worktree dir name" \
+  || bad "labels it by project, not by the worktree dir name" "label missing"
+
+# Once the work reaches the remote's default branch it is no longer stranded.
+cd "$TMPREPO/work" && git merge -q --no-ff wt/test -m "merge" && git push -q origin HEAD 2>/dev/null
+cd "$TMPREPO/wt" || exit 1
+out=$(gate); dec=$(decision_of "$out")
+[ "$dec" = "none" ] && ok "goes quiet once the worktree branch is merged and pushed" \
+                    || bad "goes quiet once the worktree branch is merged and pushed" "decision=$dec"
+cd "$TMPREPO/work" && git worktree remove --force "$TMPREPO/wt" 2>/dev/null
 
 echo
 printf 'passed %s, failed %s\n' "$PASS" "$FAIL"

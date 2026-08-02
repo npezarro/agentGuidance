@@ -47,8 +47,20 @@ declare -A CHECKED_REPOS 2>/dev/null || true
 # file_path (read gives the remainder of the line to the last variable) and every
 # realpath would miss.
 while IFS=$'\t' read -r repo_root file_path _epoch; do
-  [ -d "$repo_root/.git" ] || continue
+  # `.git` is a DIRECTORY in a normal checkout but a FILE (`gitdir: ...`) in a linked
+  # worktree, so a -d test silently skips every per-session worktree
+  # (guidance/concurrent-sessions.md) and the gate never sees that work at all.
+  [ -e "$repo_root/.git" ] || continue
   repo_name=$(basename "$repo_root")
+  # Label a worktree by its PROJECT, not by the worktree directory name: "probe (1)"
+  # tells you nothing about which repo has stranded work. Checks still run against the
+  # worktree itself — only the display name is resolved through the common git dir.
+  if [ -f "$repo_root/.git" ]; then
+    _common=$(cd "$repo_root" && git rev-parse --git-common-dir 2>/dev/null || echo "")
+    case "$_common" in
+      */.git) repo_name="$(basename "$(dirname "$_common")") (worktree ${repo_name})" ;;
+    esac
+  fi
 
   # Check if this specific file has uncommitted changes
   rel_path=$(realpath --relative-to="$repo_root" "$file_path" 2>/dev/null || basename "$file_path")
@@ -80,8 +92,31 @@ while IFS=$'\t' read -r repo_root file_path _epoch; do
   # only; the Bash-inferred ledger is heuristic and must not reach a blocking gate).
   if [ -z "${CHECKED_REPOS[$repo_root]+x}" ] 2>/dev/null; then
     CHECKED_REPOS[$repo_root]=1
+    # A branch with no upstream is NOT automatically safe. A per-session git worktree
+    # (guidance/concurrent-sessions.md) starts on a fresh local branch, so `@{u}` fails
+    # and the old code skipped the unpushed check entirely — a session could commit in a
+    # worktree, never merge, and stop with the gate completely silent. Verified
+    # 2026-08-02: empty output, exit 0, on a committed-but-unmerged file.
+    #
+    # For those branches the right question is not "pushed to my upstream" but "does
+    # this work exist anywhere on the remote yet", so compare against the remote's
+    # default branch instead.
     upstream=$(cd "$repo_root" && git rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo "")
+    RANGE=""
     if [ -n "$upstream" ]; then
+      RANGE='@{u}..HEAD'
+    else
+      base=$(cd "$repo_root" && git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || echo "")
+      if [ -z "$base" ]; then
+        for cand in origin/main origin/master; do
+          if (cd "$repo_root" && git rev-parse --verify -q "$cand" >/dev/null 2>&1); then base="$cand"; break; fi
+        done
+      fi
+      # No remote at all (or a detached HEAD with no base): nothing to compare against,
+      # so stay silent rather than invent a range.
+      [ -n "$base" ] && RANGE="${base}..HEAD"
+    fi
+    if [ -n "$RANGE" ]; then
       MY_PATHS=$(awk -F'\t' -v r="$repo_root" '$1 == r { print $2 }' "$TRACK_FILE" 2>/dev/null \
         | while IFS= read -r p; do realpath --relative-to="$repo_root" "$p" 2>/dev/null; done | sort -u)
       mine=0; theirs=0
@@ -93,7 +128,7 @@ while IFS=$'\t' read -r repo_root file_path _epoch; do
         else
           theirs=$((theirs + 1))
         fi
-      done <<< "$(cd "$repo_root" && git rev-list '@{u}'..HEAD 2>/dev/null)"
+      done <<< "$(cd "$repo_root" && git rev-list "$RANGE" 2>/dev/null)"
       [ "$mine" -gt 0 ] && UNPUSHED_REPOS="${UNPUSHED_REPOS}${repo_name} (${mine}), "
       [ "$theirs" -gt 0 ] && PEER_COMMITS="${PEER_COMMITS}${repo_name} (${theirs}), "
     fi
