@@ -106,3 +106,11 @@
 2026-08-01 | hooks | claim-guard segmentation fix (a commit MESSAGE naming `git add -A` was denied; now judges each command segment after dropping heredoc bodies, unwrapping ssh and stripping string literals) + push gate goes per-commit (intersects each commit's files with the session ledger instead of counting @{u}..HEAD per repo). Both gaps reported by a peer session. Same-command variable assignments now resolve; unresolvable targets are logged, not silent. Suite 29/29. `eb76be0`.
 2026-08-01 | guidance | concurrent-sessions.md is now the single canonical home for this topic (three same-afternoon write-ups consolidated); operational-safety.md reduced to a pointer; hook-health-check.sh gained a weekly settings.json drift check against the new privateContext/claude-config mirror. `f950cc3`.
 2026-08-01 | guidance | operational-safety.md gains "Unattended Jobs That Take Irreversible External Actions": identity gate, magnitude cap, per-period idempotency state file, a `--dry-run` that stops at the irreversible call, and report-every-outcome. Plus the retry-window rule (transient vs real vs already-done, closed by one `--final` alarm) so sweeping a window cannot turn one outage into a dozen emails. Written instead of a skill: the procedure is code-shaped, the rule is not. Reference impl `privateContext/recurring-tasks/scripts/staples-giftcard-buy.py`.
+
+### 2026-08-02 - hooks scan private repos
+- `hooks: scan private repos too, and stop claiming they are public` - pre-commit now scans
+  everywhere with per-visibility wording; visibility cached on disk.
+- `hooks: pre-push also scans private repos` - same fix for the push gate, which still exit 0'd.
+- `hooks: header no longer says these are only for public repos`.
+- Verified: planted identifier blocks on a PRIVATE-marked repo with the private wording; clean
+  commit passes with no false positive. Propagated to 82 repos, cache seeded in 80.

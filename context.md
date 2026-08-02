@@ -122,3 +122,30 @@ Seekable-stdin condition leak + rejected-goal-as-success documented from live po
 
 ## 2026-08-01: unattended irreversible-action safety rule
 `guidance/operational-safety.md` now covers cron jobs that spend money or take other irreversible external actions: gate on identity (not just "the page loaded"), cap the magnitude, keep a per-period idempotency state file, ship a `--dry-run` that stops immediately before the irreversible call, and report every outcome including failure. Adds the retry-window discipline: transient blockers stay silent during the window, real failures email immediately, an already-done period is silent, and one `--final` run closes the window and alarms if the period never completed. Deliberately written as guidance rather than a skill (the multi-step procedure is already a commented template in the reference script; only the safety rule generalises). State: working. Full closeout: privateContext/deliverables/closeouts/2026-08-01-staples-monthly-giftcard-automation.md
+
+## 2026-08-02: sensitive-identifier hooks scan private repos too
+
+**State: working, propagated to 82 repos.**
+
+`hooks/git-pre-commit` and `hooks/git-pre-push` previously had two opposite bugs at once. Installed
+copies (many dated April) had no visibility check and blocked with *"This is a PUBLIC repo"* on
+private repos, which is false. The canonical hooks had the reverse flaw: they `exit 0`'d on
+PRIVATE, so private repos were never scanned.
+
+Both are wrong for the same reason: **a private repo can be flipped public, and a vendored file
+carries its identifiers into every repo that vendors it.** On 2026-07-30 a stale copy caught a
+hardcoded domain and absolute private paths in a shared mailer being copied into ten repos; the
+canonical hook would have let it through.
+
+Now the hooks scan every repo and word the block per visibility. Visibility is resolved once and
+cached at `$(git rev-parse --git-dir)/.repo-visibility` rather than shelling out to `gh` on every
+commit and push.
+
+- **Refreshing installed hooks is not a neutral action.** Before syncing copies from canonical,
+  read what canonical actually does; a plain refresh here would have silently removed the gate
+  from 44 private repos while reading as routine maintenance in the log.
+- Delete `.repo-visibility` after flipping a repo's visibility, or the block wording goes stale.
+- `hooks/install-hooks.sh` was not changed. It copies the corrected hooks, but does not seed the
+  visibility cache, so a fresh repo pays one `gh` call on its first commit.
+
+Full closeout: `privateContext/deliverables/closeouts/2026-08-02-three-followups-and-a-retraction.md`
