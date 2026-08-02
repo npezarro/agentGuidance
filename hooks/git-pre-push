@@ -32,12 +32,16 @@ if [ -z "$REPO_SLUG" ]; then
   exit 0
 fi
 
-# Only enforce on public repos (skip check if gh not available)
-if command -v gh &>/dev/null; then
+# Determine visibility for messaging. Private repos are scanned too: they can be
+# flipped public, and a vendored file carries its identifiers into every repo
+# that vendors it. Cached because a gh call on every push is too slow.
+VISIBILITY="UNKNOWN"
+VIS_CACHE="$(git rev-parse --git-dir)/.repo-visibility"
+if [ -f "$VIS_CACHE" ]; then
+  VISIBILITY=$(cat "$VIS_CACHE")
+elif command -v gh &>/dev/null; then
   VISIBILITY=$(gh repo view "$REPO_SLUG" --json visibility -q '.visibility' 2>/dev/null || echo "UNKNOWN")
-  if [ "$VISIBILITY" = "PRIVATE" ]; then
-    exit 0
-  fi
+  [ "$VISIBILITY" != "UNKNOWN" ] && echo "$VISIBILITY" > "$VIS_CACHE"
 fi
 
 # Read stdin for push info: <local ref> <local sha> <remote ref> <remote sha>
@@ -80,6 +84,12 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     echo ""
     echo "========================================="
     echo "  PUSH BLOCKED: Sensitive identifiers    "
+    echo "========================================="
+    if [ "$VISIBILITY" = "PRIVATE" ]; then
+      echo ""
+      echo "Private repo, scanned anyway (repos can go public; vendored files travel)."
+      echo "Deliberate exception: git push --no-verify"
+    fi
     echo "========================================="
     echo ""
     echo "Scanning: $LOCAL_REF -> $REMOTE_REF"
