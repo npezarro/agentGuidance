@@ -79,6 +79,17 @@ Each app needs:
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
 
+- **The `(?!...)` matcher never matches the index route -- add an explicit `"/"` entry** (student-transcript, 2026-08-02). The near-universal "protect everything except these paths" matcher, `"/((?!api/auth|login|_next/static|...).*)"`, compiles to a regex whose final group requires a literal `/` plus a segment: `^\/app(?:\/(_next\/data\/[^/]+))?(?:\/((?!...).*))(\.json)?[\/#\?]?$`. `/app` alone therefore does NOT match and the middleware never runs on the app's own home page -- usually the one page that renders real data. Every sub-route redirects to login, so the app *looks* protected. Add `"/"` as its own matcher entry (it compiles to `^\/app(?:...)?(?:\/(\/?index|\/?index\.json))?[\/#\?]?$`, which does match). **Verify from the build, not by reading the source:** `node -e "require('./.next/server/middleware-manifest.json').middleware['/'].matchers.forEach(m => console.log(m.regexp))"` and test your paths against those regexes.
+
+- **`req.auth` fails OPEN on any Auth.js config error -- check for a user, not for truthiness** (student-transcript, 2026-08-02). `handleAuth` does `await getSession(...).then(r => r.json())`. When `@auth/core` cannot complete (missing `AUTH_SECRET`, `UntrustedHost`, bad provider config) it returns `Response.json({ message: "There was a problem..." }, { status: 500 })`, so `req.auth` becomes a **truthy error object**, not `null`. `if (!req.auth) return redirect(login)` then lets every request through unauthenticated, and the only symptom is a line in the PM2 error log. Gate on identity instead:
+  ```typescript
+  const email = req.auth?.user?.email;
+  if (typeof email !== "string" || email.length === 0) { /* deny */ }
+  ```
+  The `signIn` callback is what restricts *which* identity can get a session; middleware only needs to confirm one exists.
+
+- **Standalone runs from `.next/standalone/`, so your `.env` must live there** (student-transcript, 2026-08-02). `server.js` calls `process.chdir(__dirname)`. A `.env`/`.env.local` in the repo root is never read, and PM2's `env:` block typically only carries `PORT`/`NODE_ENV`/`NEXT_PUBLIC_BASE_PATH` -- so NextAuth starts with no `AUTH_SECRET` and no `AUTH_TRUST_HOST` and throws `UntrustedHost` on every call. Either `cp .env.local .next/standalone/.env` in deploy.sh (humans, finance-tracker, health-hub, student-transcript) or pass `node_args: '--env-file=/var/www/<app>/.env'` in the PM2 config (runeval). This is the same `chdir` root cause as KB `patterns/nextjs-standalone-db-trap.md`.
+
 ### Apps using the proxy
 
 - runeval (`/runeval`, port 3001)
