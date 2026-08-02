@@ -260,17 +260,33 @@ Prove it before you use it (`git diff <file>` showing zero hunks of yours, plus
 evidence your own content is already on the remote). Acknowledging work you simply
 forgot to push is the failure this gate exists to catch.
 
-### A peer's unpushed commit will block *your* stop
+### A peer's unpushed commit (mostly fixed — read this before acting)
 
-The ack above covers dirty **files**. There is no equivalent for **commits**: the
-gate counts `@{u}..HEAD` per repo and does not care who authored them. In a shared
-checkout, a live peer session that commits without pushing therefore blocks *your*
-stop, on work you did not write and cannot ack away.
+> **Superseded for the common case as of `eb76be0` (2026-08-01).** The gate is now
+> **per-commit**: it intersects each unpushed commit's files against this session's
+> Edit/Write ledger and blocks only on commits containing a file *you* wrote. A peer's
+> commit is named in the message but does not block. Verified by
+> `hooks/tests/test-guards.sh` ("no block when every unpushed commit is a peer's").
+>
+> So if the gate fires on a repo, it is because a commit contains **your own** file.
+> Push that. Do not reach for the procedure below reflexively — publishing a peer's
+> unreviewed work is a real action with real risk, and it is now rarely necessary.
+>
+> Two hours before that fix, a session hit the raw block and correctly declined to push
+> a peer's *two-minute-old* commit while that session was still live; the peer pushed it
+> themselves shortly after. **When the peer is live, waiting is right** — they are
+> mid-turn and may still amend. The procedure below is for a genuinely *stranded*
+> commit: the authoring session is gone (no fresh `/tmp/claude-session-alive-<sid>`,
+> see `guidance/concurrent-sessions.md`) and the work exists nowhere else.
+
+The ack above covers dirty **files**. There was no equivalent for **commits**: the gate
+counted `@{u}..HEAD` per repo and did not care who authored them, so a peer's commit
+blocked your stop on work you did not write and could not ack away.
 
 Hit 2026-08-01: an affiliate-tag session was gated by `privateContext (1)` — a peer's
 `sync-card-portfolio.sh` commit sitting on the peer's own feature branch.
 
-The resolution is to push it, not to wait it out or reset it:
+When a commit really is stranded, push it rather than waiting or resetting:
 
 1. **Identify the author and branch** — `git log --format='%h %an %ad %s' @{u}..HEAD`
    and `git branch --show-current`. Confirm it is not yours before touching it.
