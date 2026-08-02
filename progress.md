@@ -11,6 +11,10 @@
 
 ## Log
 
+2026-08-02 | fix | `check-unpushed.sh` sees git worktrees: `.git` may be a FILE (`-e` not `-d`), and a no-upstream branch compares against origin's default (`02c1e13`)
+2026-08-02 | guidance | per-session worktrees enabled by default in `agent.md`; `.gitignore` prerequisite across 5 repos (`5cdf85c`, `aae2b98`)
+2026-08-02 | test | worktree regression cases added, 10 -> 13, negative control verified
+
 2026-08-01 | guidance | `concurrent-sessions.md` + `with-resource-lock.sh`: worktrees for the shared tree, flock for singletons (`4d0c933`, `a19625c`)
 2026-08-01 | test | `hooks/tests/test-guards.sh` — 10 cases for claim-guard + check-unpushed, with a negative control against `eb76be0^` (`4369633`)
 2026-08-01 | guidance | `git-workflow.md` peer-commit push procedure marked superseded by the per-commit gate fix
