@@ -99,6 +99,38 @@ tree the file actually lives in. Testing a worktree file against the canonical r
 every one of them ignored (because of the `.gitignore` entry above) and the session goes
 completely invisible to the guards.
 
+### Enforcement: `hooks/worktree-guard.sh` (PreToolUse, 2026-08-02)
+
+The `agent.md` rule is advisory, so a `PreToolUse` hook on `Edit|Write` backs it. It denies
+the **first write** to a repo when all three hold:
+
+1. the target is inside a repo under the guarded root (`~/repos`, override
+   `WORKTREE_GUARD_ROOT`), **and**
+2. it is not already inside `.claude/worktrees/`, **and**
+3. another **live** session holds that repo.
+
+Condition 3 is what makes this enforcement rather than friction: a solo session in an
+uncontested repo never sees it. Escape hatch (shared with claim-guard, so one override
+covers both):
+
+```bash
+printf '%s\t%s\n' '<repo-name>' '<reason>' >> /tmp/claude-claim-ack-<sid>
+```
+
+**Why PreToolUse and not Stop**, which is the intuitive choice: at Stop the editing has
+already happened in the shared checkout, so blocking cannot retroactively isolate
+anything — there is no remediation left, only nagging. Stop also cannot distinguish
+"correctly skipped" from "forgot", so it would fire on the exempt cases too and train
+reflexive acks. Stop's correct job here is already done by `check-unpushed.sh`: catching
+work *stranded in a worktree*, i.e. "did your work escape this machine", not "did you use
+the workflow".
+
+Keyed on the target **file path**, not `cwd`: editing an absolute canonical path from
+inside a worktree is still unisolated, and `cwd` would call that safe.
+
+Tests: `hooks/tests/test-worktree-guard.sh` (13 cases). Verified live — a real `Write` to
+a contested repo was blocked, the file was not created, and the ack let the retry through.
+
 **Status: enabled by default** (`agent.md`, Core Principles) for multi-edit work in
 `~/repos`. Skip for read-only work, one-file edits and ops. `.gitignore` prerequisite
 applied to agentGuidance, knowledgeBase, privateContext, claude-skills, browser-agent — add
