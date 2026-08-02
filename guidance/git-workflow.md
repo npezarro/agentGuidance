@@ -288,3 +288,13 @@ which is the exact loss this gate exists to prevent.
 
 Do **not** `git reset` a peer's commit to clear the gate — that destroys work that
 exists nowhere else.
+
+### claude-auto-merger auto-merges claude/* audit branches on push, so gh pr create races it (2026-08-01)
+During CLAUDE.md compliance audit run #15 (28 repos), every 'git push -u origin claude/claudemd-audit-15' was intercepted by the claude-auto-merger service, which opened AND squash-merged its own PR within seconds. The subsequent 'gh pr create' then failed with 'No commits between <default> and claude/claudemd-audit-15'.
+
+Consequences and the correct handling:
+1. Treat 'No commits between...' after pushing a claude/* branch as SUCCESS, not failure. The bot already landed the change. Find its PR with 'gh pr list --state all --head <branch>' and reuse that PR number; do not re-push or open a duplicate.
+2. Do NOT retry the push. In one repo (auto-shorts) a retry produced a second PR that also merged; the diffs were byte-identical so nothing duplicated in the file, but two merged PRs for one logical change is misleading history.
+3. Because the bot SQUASH-merges, 'git branch --merged origin/<default>' reports the local audit branch as unmerged even though its content landed. Verify by comparing content (every added line present in 'git show origin/<default>:<file>'), not by SHA ancestry, before deleting the local branch.
+4. Default branch is not uniformly 'main' - page-reader and shopper use 'master'. Resolve it with 'gh repo view --json defaultBranchRef -q .defaultBranchRef.name' rather than assuming.
+5. When verifying added lines with grep, use 'grep -Fqx -- "$line"'. Without the '--', any added line beginning with '-' (a markdown bullet) is parsed as a grep option and the verification silently reports false negatives.
