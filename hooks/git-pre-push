@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-push hook: block sensitive identifiers in ANY repo.
+# pre-push hook: blocks sensitive identifiers in ANY repo (private ones too).
 # Private repos are scanned too (they can go public; vendored files travel).
 # Scans all commits being pushed for sensitive identifiers.
 # Catches secrets that bypassed pre-commit (amended commits, rebases, etc.)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-commit hook for PUBLIC repos
+# pre-commit hook: blocks sensitive identifiers in ANY repo (private ones too).
 # Scans staged changes for sensitive identifiers before allowing commit.
 # Uses security-scan.sh from privateContext for pattern matching.
 # Skips enforcement on private repos (checked via gh CLI).
