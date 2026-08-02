@@ -70,8 +70,42 @@ A's CLAUDE.md edit:           untouched
 
 Same command that captured another session's work today, now inert.
 
-**Status: browser-agent is the trial repo** (`.gitignore` updated). Roll out per-repo rather
-than globally, and only after a repo's cron/PM2 assumptions have been eyeballed.
+### Two hook fixes worktrees REQUIRED, both shipped 2026-08-02
+
+Worktrees were invisible to the push gate, so a session could commit in one, never merge,
+and stop with no warning at all — trading a loud problem (clobber, which you notice) for a
+silent one (stranded work, which you do not). Verified silent beforehand: empty output,
+exit 0. Two independent causes, both fixed in `hooks/check-unpushed.sh`:
+
+- `.git` is a **directory** in a normal checkout but a **file** in a linked worktree, so
+  the `-d` entry test skipped every worktree ledger entry.
+- A worktree branch has **no upstream**, so `@{u}` failed and the unpushed check was
+  skipped. It now compares against origin's default branch, because for such a branch the
+  question is not "pushed to my upstream" but "does this work exist on the remote yet".
+
+### What NOT to do: collapsing a worktree onto its canonical repo
+
+Tempting (claim-guard keys ledgers on repo root, so a worktree looks like a separate
+repo), and wrong twice over. Tried and reverted 2026-08-02:
+
+- The ledger would key on the canonical root while the file lives in the worktree, so
+  `rel_path` resolves to `.claude/worktrees/<name>/…`, which is **gitignored there** and
+  reports clean. Dirty worktree files would look committed.
+- Two sessions in separate worktrees genuinely **cannot** clobber each other's working
+  tree, so cross-warning them is a false positive. Per-working-tree scoping is correct.
+
+One related subtlety if you touch `wti_repo_root`: run its `check-ignore` test against the
+tree the file actually lives in. Testing a worktree file against the canonical repo reports
+every one of them ignored (because of the `.gitignore` entry above) and the session goes
+completely invisible to the guards.
+
+**Status: enabled by default** (`agent.md`, Core Principles) for multi-edit work in
+`~/repos`. Skip for read-only work, one-file edits and ops. `.gitignore` prerequisite
+applied to agentGuidance, knowledgeBase, privateContext, claude-skills, browser-agent — add
+it to any other repo before working in a worktree there.
+
+**Deploys read the canonical checkout**, not your worktree: merge and push before running a
+deploy or `ext-reload`, or you will ship the pre-worktree code.
 
 ## Problem B: take a real lock
 
