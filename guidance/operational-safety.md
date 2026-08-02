@@ -353,47 +353,11 @@ Auto-posting hooks (WordPress, Discord) run on every Claude turn. If a hook fail
 
 ## Concurrent Sessions in One Checkout
 
-> **Scope.** This section covers the *automated* guard only. For the workflow side of the same problem (worktree per session, real locks for singletons, Stop-gate granularity, the diagnostic order when something keeps reverting) see `guidance/concurrent-sessions.md`, and for the cross-repo view see KB `patterns/shared-checkout-concurrent-sessions.md`. Three documents on one topic is already one too many: put new material in whichever of the three it belongs to, do not start a fourth.
+Moved. This topic had grown three homes in one afternoon (this section, `guidance/concurrent-sessions.md`, and a KB page), written by three sessions that could not see each other — which is the problem itself, in miniature.
 
-Several Claude sessions run in the same `~/repos/<repo>` working tree with `--dangerously-skip-permissions`. Nothing about the filesystem stops two of them owning the same file, and neither `git` nor the deploy scripts serialize them.
+Canonical guidance: **`guidance/concurrent-sessions.md`** — worktree per session (Problem A: shared tree), real locks for singletons (Problem B), the `claim-guard.sh` backstop with its behavior table and `~/.claude/settings.json` registration block, and the diagnostic order when something keeps reverting.
 
-**Symptom to recognize:** a deployed artifact or a doc "keeps reverting". Suspect a concurrent session writing the same path before you blame Cloudflare, a cron, or a build cache. Diagnostic order is in the `learning_concurrent_session_clobber` memory.
-
-**Two real incidents:**
-- 2026-07-17: a session made `/visuals/` a report feed while another kept redeploying the finance dashboard to `/var/www/visuals/index.html`. The second session's closeout `git add -A` then committed finance-to-root over the feed commit.
-- 2026-07-30: two live sessions committed `browser-agent/progress.md` 58 seconds apart. Nothing was lost, but only because both diffs happened to be insert-only. One full-file rewrite on a stale read and the other session's docs were gone.
-
-**The guard (2026-08-01):** `hooks/claim-guard.sh`, in two modes.
-
-| | When | Behavior |
-|---|---|---|
-| `warn` | PostToolUse `Bash\|Edit\|Write` | Names the other live session when it wrote the same file (or the same repo). Deduped: once per path per peer session. |
-| `deny` | PreToolUse `Bash` | Blocks `git add -A/--all/.`, `git commit -a/--all`, and `rsync --delete` into `/var/www/<app>` when a live peer holds that repo or deploy target. Exit 2 with the reason. |
-
-Supporting pieces:
-- `hooks/lib/write-target-inference.sh` infers which files a Bash command writes. Heredocs, redirects and `sed -i` are invisible to a `file_path` tracker, and the 2026-07-30 near-miss happened on exactly such a write. Precision is deliberately favored over recall: a bare `python3` is not a write, only one whose body writes.
-- `hooks/session-heartbeat.sh` also writes `/tmp/claude-session-alive-<sid>` per session (including headless runs). Without per-session liveness the guard would fire on `/tmp` ledgers left by sessions that exited weeks ago.
-- Two ledgers: `/tmp/claude-repos-touched-<sid>` is Edit/Write only (authorship, feeds the push gate) and `/tmp/claude-repos-claimed-<sid>` is Bash-inferred (advisory, feeds the guard only). Heuristics must never reach a gate that blocks a session's exit.
-
-**Registration.** The scripts are versioned here; the wiring lives in `~/.claude/settings.json`, which is NOT in any repo. Restore it after a machine rebuild with these entries (hook input must be piped, `session-heartbeat.sh` now needs the session id):
-
-```jsonc
-// PreToolUse, matcher "Bash"
-"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/claim-guard.sh deny'"
-// PostToolUse, matcher "Bash|Edit|Write"  (track first, then guard)
-"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/track-repo-writes.sh; exit 0'"
-"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/claim-guard.sh warn; exit 0'"
-// PostToolUse, matcher "Bash|Edit|Write|NotebookEdit"  (was `cat >/dev/null`, must now pipe)
-"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/session-heartbeat.sh; exit 0'"
-```
-
-The `deny` entry deliberately omits `exit 0`: swallowing its exit code turns the block into a no-op.
-
-**Rules that follow from it:**
-- Stage explicit paths. `git add -A` in a shared checkout is a blast radius, not a convenience, and it is now denied when a peer is live.
-- Never full-file rewrite a doc (`p.write_text(...)`) you read minutes ago in a contested repo. Re-read first, or append.
-- A denial is escapable and logged, never a silent wall: `printf '%s\t%s\n' '<target>' '<reason>' >> /tmp/claude-claim-ack-<sid>`. Overrides land in `~/.claude/logs/claim-guard.log`.
-- Before killing a peer session to end a collision: it is usually the user's own interactive session. Check whether its work is committed and pushed, then ask. See `learning_concurrent_session_clobber`.
+Cross-repo view: KB `patterns/shared-checkout-concurrent-sessions.md`.
 
 ## Job Recovery Safety
 

@@ -115,38 +115,81 @@ done
 
 Only the wrapper's own pid should appear.
 
-## Known gap: claim-guard false-positives on the command's own text
+## The backstop: claim-guard
 
-`hooks/claim-guard.sh:170-171` runs two independent greps over the **whole** command
-string: one for `git add`, one for a bare `-A` / `--all` / `.` token anywhere. They are
-never correlated to the same command segment, so a commit message that *describes* the
-dangerous command is denied as if it were the dangerous command. Hit 2026-08-01 while
-committing this very file: the message contained the words `git add -A`, and staging an
-explicit path was blocked.
+Detection cannot serialize anything, so this is the third line, not the strategy. It earns
+its place by catching the case both columns above miss: two sessions that never took a
+worktree and never took a lock, writing the same path right now.
 
-This matters more than it looks. A guard that fires on safe commands trains you to ack
-reflexively, which quietly disables it.
+`hooks/claim-guard.sh`, two modes:
 
-Fix: correlate the two patterns, i.e. match the argument list of the `git add` invocation
-itself rather than scanning the full string. Not yet implemented.
+| | When | Behavior |
+|---|---|---|
+| `warn` | PostToolUse `Bash\|Edit\|Write` | Names the other live session when it wrote the same file (or the same repo). Deduped: once per path per peer session. |
+| `deny` | PreToolUse `Bash` | Exit 2 on `git add -A/--all/.`, `git commit -a/--all`, and `rsync --delete` into `/var/www/<app>` when a live peer holds that repo or deploy target. |
 
-## Known gap: the Stop gate is repo-granular
+Supporting pieces:
 
-`hooks/check-unpushed.sh` reads the session's touched-**repos** ledger, then asks
-`git rev-list @{u}..HEAD --count`. So touching any file in a repo makes a session
-responsible for *every* unpushed commit in it, including another live session's. This fired
-on 2026-08-01: a session was told to push a two-minute-old commit from a different session.
+- `hooks/lib/write-target-inference.sh` infers which files a Bash command writes. Heredocs,
+  redirects and `sed -i` are invisible to a `file_path` tracker, and the 2026-07-30
+  near-miss happened on exactly such a write. Precision beats recall here: a bare `python3`
+  is not a write, only one whose body writes.
+- `hooks/session-heartbeat.sh` also writes `/tmp/claude-session-alive-<sid>` per session
+  (headless included). Without per-session liveness the guard fires on `/tmp` ledgers left
+  by sessions that exited weeks ago.
+- Two ledgers: `/tmp/claude-repos-touched-<sid>` is Edit/Write only (authorship, feeds the
+  Stop gate); `/tmp/claude-repos-claimed-<sid>` is Bash-inferred (advisory, guard only).
+  Heuristics must never reach a gate that blocks a session's exit.
 
-Fix: for each unpushed commit, intersect `git show --name-only` against the session's file
-ledger (`/tmp/claude-repos-touched-<sid>` already stores paths) and only block on commits
-containing files this session actually wrote. Not yet implemented.
+**Escape hatch, because a denial must never be a dead end:**
+`printf '%s\t%s\n' '<target>' '<reason>' >> /tmp/claude-claim-ack-<sid>`. Denials, overrides
+and unresolvable targets all land in `~/.claude/logs/claim-guard.log`.
+
+**Registration.** The scripts are versioned in this repo; the wiring lives in
+`~/.claude/settings.json`, which is in no repo. Mirror and drift-check:
+`privateContext/claude-config/` (`sync-settings.sh --check`). Restore by hand with:
+
+```jsonc
+// PreToolUse, matcher "Bash"
+"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/claim-guard.sh deny'"
+// PostToolUse, matcher "Bash|Edit|Write"  (track first, then guard)
+"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/track-repo-writes.sh; exit 0'"
+"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/claim-guard.sh warn; exit 0'"
+// PostToolUse, matcher "Bash|Edit|Write|NotebookEdit"  (was `cat >/dev/null`, must now pipe)
+"bash -c 'printf \"%s\" \"$(cat)\" | bash $HOME/repos/agentGuidance/hooks/session-heartbeat.sh; exit 0'"
+```
+
+The `deny` entry deliberately omits `exit 0`: swallowing its exit code turns the block into
+a no-op.
+
+### Closed gaps (both were reported here first)
+
+- **False-positives on the command's own text** (was `claim-guard.sh:170-171`). Two
+  uncorrelated greps meant a commit message *describing* the dangerous command was denied
+  as if it were the command. Fixed 2026-08-01 (`eb76be0`): the command is split into
+  segments (heredoc bodies dropped, `ssh <host> '<remote>'` unwrapped, string literals
+  removed before arguments are read) and each segment is judged by its own leading command
+  and argument list. Covered by three regression tests: quoted `-m` message, heredoc commit
+  body, `echo` of the string.
+- **The Stop gate was repo-granular** (`check-unpushed.sh`). Fixed 2026-08-01 (`eb76be0`):
+  each unpushed commit's files are intersected against this session's Edit/Write ledger, so
+  it blocks only on commits containing files this session wrote. A peer's unpushed commits
+  are now *reported* rather than blocked, pointing at the push-to-their-branch procedure in
+  `git-workflow.md`.
+
+### Remaining gap
+
+A `cd` target built from a variable assigned in an *earlier* turn cannot be resolved (a
+variable assigned in the same command now can be). The deny arm logs `unresolved-target`
+rather than passing silently, so the blind spot is auditable. The warn arm still fires on
+the writes themselves.
 
 ## Diagnostic order when something "keeps reverting"
 
 Before blaming cache or cron, see `learning_concurrent_session_clobber` and KB
-`patterns/concurrent-session-clobber.md`. Short version: `stat` the origin file against your
-deploy time, then `git log -- <path>` for foreign commits, then map live sessions with
-`/tmp/claude-session-alive-*`.
+`patterns/shared-checkout-concurrent-sessions.md`. Short version: `stat` the origin file
+against your deploy time, then `git log -- <path>` for foreign commits, then map live
+sessions with `/tmp/claude-session-alive-*`.
 
 **Do not kill a live session to win a race.** It is usually Nick's own. Check whether its
 tree is clean and pushed, then ask.

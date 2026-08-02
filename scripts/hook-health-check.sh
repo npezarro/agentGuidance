@@ -73,6 +73,23 @@ else
   log "WARN: MANIFEST.md guidance table is stale — run scripts/gen-manifest.sh and commit"
 fi
 
+# --- 3d. settings.json drift (the wiring for EVERY hook in this repo) ---
+# The scripts are versioned here; the registrations that make them run live in
+# ~/.claude/settings.json, which is in no repo. A bad edit or a rebuild disarms every
+# gate at once with nothing to diff against, so the mirror in privateContext is checked
+# weekly. FAILURE-level: a disarmed push gate or claim guard is silent by nature.
+SETTINGS_SYNC="${HOME}/repos/privateContext/claude-config/sync-settings.sh"
+if [ -x "$SETTINGS_SYNC" ]; then
+  if SETTINGS_OUT=$(bash "$SETTINGS_SYNC" --check 2>&1); then
+    log "OK: settings.json matches the tracked mirror — $(printf '%s' "$SETTINGS_OUT" | head -1)"
+  else
+    FAILURES+=("settings.json drift: $(printf '%s' "$SETTINGS_OUT" | head -1)")
+    log "FAIL: $(printf '%s' "$SETTINGS_OUT" | head -3)"
+  fi
+else
+  log "WARN: $SETTINGS_SYNC not present — hook wiring is unmirrored and unverifiable"
+fi
+
 # --- 4. WordPress REST API (save-to-wp-repo.sh dependency) ---
 if [ -n "${WP_SITE:-}" ]; then
   WP_CODE=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "${WP_SITE}/wp-json/wp/v2/posts?per_page=1" 2>/dev/null || echo "000")
