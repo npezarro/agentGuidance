@@ -10,6 +10,10 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+
+2026-08-01 | guidance | `concurrent-sessions.md` + `with-resource-lock.sh`: worktrees for the shared tree, flock for singletons (`4d0c933`, `a19625c`)
+2026-08-01 | test | `hooks/tests/test-guards.sh` — 10 cases for claim-guard + check-unpushed, with a negative control against `eb76be0^` (`4369633`)
+2026-08-01 | guidance | `git-workflow.md` peer-commit push procedure marked superseded by the per-commit gate fix
 2026-08-01 | guidance | git-workflow: new section "A peer's unpushed commit will block *your* stop" — push it to its own branch, never reset it (`54022a0`)
 2026-07-30 | guidance | operational-safety.md, 3 sections on Claude Code version hygiene: audit every host AND container (host version says nothing about containers); pin `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` + WebSearch cap BEFORE upgrading (v2.1.219 raised nested-subagent depth 1→3); set `fallbackModel` on headless runners; match the upstream fix list to the actual invocation path before calling drift urgent (a first-pass claim about the bridges was refuted by reading `bridge-server.js`); unpinned install + Docker layer cache makes a rebuild a silent no-op; `docker exec` runs claude as root and false-alarms `Not logged in`. `77317db`, `601934f`, `4f961b3`.
 2026-07-30 | guidance | process-hygiene.md: follow-mode log commands (`pm2 logs`, `tail -f`, `journalctl -f`) piped into `head` leak a shell process forever, since pm2 ignores SIGPIPE and the wrapper waits indefinitely; use `--nostream` or `timeout`. Found a 41-day-old orphan on the VM; ~1MB RSS each so no memory alert ever fired. `ad1778b`.
