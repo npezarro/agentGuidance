@@ -368,6 +368,53 @@ When the bot recovers persisted jobs on startup:
 
 **Never** automatically re-execute a failed job. The failure may have been caused by the job itself (e.g., it deployed the bot). Automatic re-execution would repeat the failure.
 
+## Unattended Jobs That Take Irreversible External Actions
+
+A cron job that spends money, sends a message, cancels a subscription, or files
+something is not a normal cron job: a bug does not just fail, it does the wrong
+thing to the outside world, and nobody is watching when it happens. Five
+requirements, all of them cheap:
+
+1. **Gate on identity, not just success.** Before the irreversible step, assert
+   the thing in front of you is the thing you meant: expected item/recipient
+   name, expected quantity. Refuse and report on mismatch. A checkout page that
+   loads fine is not evidence it holds the right cart.
+2. **Cap the magnitude.** A hard ceiling (`MAX_TOTAL`) turns a pricing change,
+   a currency bug, or a duplicated line item into a refusal instead of a charge.
+3. **Idempotency guard.** Keep a per-period state file (`~/.state/<job>-last-*.json`)
+   recording the period already completed, and check it first. Without this, a
+   manual re-run, a retry, or two overlapping schedules double-execute. This is
+   the single highest-value guard, because retries are otherwise unsafe to add.
+4. **A `--dry-run` that stops immediately before the irreversible call** and
+   exercises everything up to it. This is what makes the job testable at all;
+   without it the only test is doing the thing for real.
+5. **Report every outcome, including failure.** Silence must never be the
+   success signal. Route through `~/repos/scripts/send-alert-email.sh` (or
+   Discord) on success, failure, AND skip.
+
+**Retry windows: separate transient blockers from real failures.** A job that
+depends on something ambient (the browser being open, a VPN, the laptop being
+awake) cannot be scheduled at one fixed time and called reliable. Sweep a window
+instead, but only if the alerting is retry-aware, or an outage becomes a dozen
+identical emails and the next real alert gets ignored:
+
+- **Transient** (dependency not ready yet, later attempt may clear it): log,
+  stay silent during the window.
+- **Real** (failed gate, missing credential, unparseable confirmation): email
+  immediately; a human is needed and more attempts will not help.
+- **Already done** (idempotency guard fired): silent. This is the steady state.
+- **Close the window with one `--final` run** that alarms if the period never
+  completed. That single email is the "we missed it" signal, and it fires once.
+
+Reference implementation:
+`privateContext/recurring-tasks/scripts/staples-giftcard-buy.py` (all five, plus
+`--retry`/`--final`); siblings in the same directory: `smbx-withdraw.sh`,
+`peloton-cancel.sh`.
+
+**Related:** if the job drives a browser, it also inherits
+`guidance/deployment.md`'s verify-before-claiming rule — parse the confirmation
+for a real identifier (an order number), never trust that the click "worked".
+
 ## Postmortem Template
 
 When a feedback loop or restart storm occurs, document it:
