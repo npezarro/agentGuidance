@@ -1,3 +1,4 @@
+<!-- Load when: several sessions share one checkout; worktrees, resource locks, claim-guard, "it keeps reverting" -->
 # Concurrent Sessions on the Same Repo
 
 Several Claude sessions run in this home dir at once (seven live on 2026-08-01), all with
