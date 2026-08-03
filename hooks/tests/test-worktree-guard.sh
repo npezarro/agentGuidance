@@ -57,8 +57,19 @@ try() {
 touch "/tmp/claude-session-alive-$PEER"
 printf '%s\t%s\t%s\n' "$REPO" "$REPO/agent.md" "$(date +%s)" > "/tmp/claude-repos-touched-$PEER"
 
-echo "fires only on a real collision"
-try deny  "shared checkout + live peer"        "$REPO/agent.md"
+echo "fires only on SAME-FILE contention"
+try deny  "peer wrote the same file"           "$REPO/agent.md"
+# The calibration fix. Shipped 2026-08-02 matching on repo, and within ~15 minutes it
+# produced two false positives against a real peer with ZERO overlapping files, which
+# acked both instead of taking a worktree. Same-repo is the normal state; same-file is
+# the collision.
+: > "$REPO/other.md"
+try allow "peer in the same REPO, different file" "$REPO/other.md"
+# Ledger paths are absolute but not normalized; a real one seen 2026-08-03 contained
+# "/./" and would silently never match a realpath'd target.
+printf '%s\t%s\t%s\n' "$REPO" "$REPO/./agent.md" "$(date +%s)" > "/tmp/claude-repos-touched-$PEER"
+try deny  "peer path is non-normalized (/./)"  "$REPO/agent.md"
+printf '%s\t%s\t%s\n' "$REPO" "$REPO/agent.md" "$(date +%s)" > "/tmp/claude-repos-touched-$PEER"
 try allow "same repo, but inside a worktree"   "$REPO/.claude/worktrees/foo/agent.md"
 try allow "outside ~/repos"                    "/etc/hosts"
 try allow "different repo, peer holds another" "$OTHER/otherrepo/f.md"
