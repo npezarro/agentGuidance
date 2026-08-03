@@ -18,7 +18,7 @@
 - **Always push to GitHub.** If it's not on GitHub, it doesn't exist. Use `llm-tasks` for deliverables without a home repo.
 - **Fall back to page-reader for JS-rendered pages.** WebFetch empty/broken? See `guidance/browser-page-reader.md`. Never skip a shared link; if all methods fail, say so explicitly.
 - **No external posting without explicit instruction.** Building features is fine; calling endpoints is not.
-- **Work in a git worktree for multi-edit work in `~/repos`.** `EnterWorktree` at the start, merge to the default branch and push before you stop. Several sessions share one checkout per repo, and a worktree is what makes a stage-everything commit safe *by construction* instead of merely guarded. Skip it for read-only work, one-file edits, and ops (deploys, VM admin). Deploys read the canonical checkout, so merge and push before deploying. Details: `guidance/concurrent-sessions.md`.
+- **Work in a git worktree for multi-edit work in `~/repos`.** `EnterWorktree` if the session is rooted in that repo; otherwise (cwd is not a repo, or you span several) `git -C <repo> worktree add .claude/worktrees/<n> -b <n>` and edit via that path. Merge to the default branch and push before you stop. Several sessions share one checkout per repo, and a worktree is what makes a stage-everything commit safe *by construction* instead of merely guarded. Skip it for read-only work, one-file edits, and ops (deploys, VM admin). Deploys read the canonical checkout, so merge and push before deploying. Details: `guidance/concurrent-sessions.md`.
 
 ## Code Standards
 - **Match existing patterns.** Read `package.json`, config files, and surrounding code first.

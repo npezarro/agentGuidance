@@ -26,6 +26,26 @@ EnterWorktree                 # creates .claude/worktrees/<name> on a new branch
 ExitWorktree { action: keep|remove }
 ```
 
+**`EnterWorktree` is often unavailable here, and the rule used to assume it wasn't.** The
+tool requires the SESSION cwd to be inside a git repo, but this ecosystem launches sessions
+from `/mnt/c/Users/npeza` (not a repo) and they routinely span several repos at once. An
+instruction that cannot be followed is worse than none: it gets silently skipped, and that
+erodes the rest of the file.
+
+The mechanism is git worktrees; `EnterWorktree` is one convenience wrapper. From anywhere:
+
+```bash
+git -C ~/repos/<repo> worktree add .claude/worktrees/<n> -b <n>
+# then edit via ~/repos/<repo>/.claude/worktrees/<n>/...
+git -C ~/repos/<repo> merge --no-ff <n> && git -C ~/repos/<repo> push
+```
+
+Verified 2026-08-03 from a non-repo cwd: the worktree was created, `worktree-guard` treated
+the path as isolated (it keys on the target file path, not cwd, precisely so this works),
+and `check-unpushed` caught a stranded commit there as
+`activity-tracker (worktree xrepo)`. The whole mechanism works cross-repo; only the tool
+does not.
+
 Then there is no other session's uncommitted work in your tree, so `git add -A` is safe
 **by construction** and the whole class disappears.
 
