@@ -37,7 +37,16 @@ saw nothing" is a setup bug wearing a finding's clothes. Two specific traps:
 a URL/query param is a *request* for state on an SPA, never proof of it; and an
 action reporting success is not proof it acted (`cdp-click` returned
 `clicked: true` on every attempt while the checkbox never toggled — the element
-was outside the rendered viewport). Detail: `guidance/browser-page-reader.md`.
+was outside the rendered viewport).
+
+**And the one that actually caused the wrong answer: several probes of the same
+broken setup are ONE observation, not several.** Three independent-looking
+signals agreed that Hyatt hides award points; all three shared a single root
+cause (award mode was never on), and the real answer was the opposite. If your
+evidence all flows through one setup, corroboration is an illusion — vary the
+setup, or get an outside observation. Never invent a plausible-looking enum
+value; read the real one off the application. Detail:
+`guidance/browser-page-reader.md`.
 
 "The error no longer appears in the code" does NOT pass step 1. "I applied the fix" does not pass it. If the verification tool is unavailable, state that explicitly — do not claim success.
 
