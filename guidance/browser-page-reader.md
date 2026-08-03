@@ -195,3 +195,27 @@ SELF-SERVICE ORDER. Asking the owner is the LAST resort, not the first:
 
 Do not stop at (1) failing. Each step reaches something the previous one
 cannot.
+
+### Search BROADLY, then VERIFY on the page
+
+Two failure modes, both hit in one session:
+
+**Too narrow a query.** Searching the exact string `"ratePlanCode=SRD"` returned
+nothing and I concluded the parameter was unfindable. Searching the HUMAN
+phrasing -- `rate plan SRD flyertalk` -- surfaced it immediately, in a FlyerTalk
+thread titled "Loyalty Points Guarantee is not valid without rate plan SRD".
+Vary the framing before concluding a parameter is undocumented:
+- the exact `param=value` string
+- the human phrasing ("rate plan SRD", "award rate code")
+- forum/blog scoped (`flyertalk`, `reddit`, `thepointsguy`, `site:<domain>`)
+- the error message a user would post about it
+
+**Trusting a search result without testing it.** Web search gave IHG's
+`qRtP=IVANI`, which is real and DOCUMENTED and no longer works -- IHG disabled
+the deep-link route in April 2026, so it now only populates the dropdown. Only
+loading it in a real browser revealed that. Blog and forum posts are snapshots;
+vendors change these silently.
+
+**So the loop is: search broadly -> collect EVERY candidate -> load each in a
+real browser -> keep what actually renders.** A parameter is "confirmed" only
+after the page shows the data, never because a search result mentioned it.
