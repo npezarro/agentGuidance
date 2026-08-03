@@ -169,7 +169,40 @@ Resource naming scheme (keep it stable, the string IS the lock):
 | `browser-extension` | the live Chrome extension: reload, CDP, tab state |
 | `vm:skills` | `~/.claude/skills` on the VM |
 
-Wired in so far: `browser-cli ext-reload` (self-wraps; set `BROWSER_AGENT_NO_LOCK=1` to opt out).
+Wired in:
+
+| Resource | Where |
+|---|---|
+| `browser-extension` | `browser-cli ext-reload` self-wraps (`BROWSER_AGENT_NO_LOCK=1` opts out) |
+| `vm:skills` | `claude-skills/sync.sh` — replaces the hand-run rsync pair; also counts SKILL.md across all three copies and fails on a mismatch |
+| `deploy:<app>` | the `deploy` and `staging` skills. Wired at the skill, not in 10+ per-repo `deploy.sh` files, because the ecosystem rule is already that deploys go through these skills |
+
+## Hygiene and monitoring
+
+**`scripts/reap-session-ledgers.sh`** (hourly cron). Sessions never clean up their `/tmp`
+state. Measured 2026-08-03: 299 files, 1.1MB, **59 alive markers for ~2 live sessions**.
+Two harms, neither cosmetic: the raw marker count misleads anyone who reads it, and
+claim-guard iterates every ledger on each qualifying command. Reaps at 24h (48x
+`LIVE_WINDOW`) with a hard 2h floor that refuses any shorter age, because a too-eager reap
+would silently blind the guards rather than fail loudly.
+
+**`scripts/guard-calibration-report.sh`** (daily cron). Alerts when a guard is being
+**routed around**, which is the failure nothing was watching for. The signal is the
+override rate, not the deny count: a guard that fires and is obeyed works; one that fires
+and gets overridden is indistinguishable from an absent one.
+
+Counts **distinct sessions**, not log lines. One ack decision logs a line on every
+subsequent write, so a line-based rate inflates without bound, and a first pass nearly
+tuned the threshold against the test suite's own synthetic ids. First real reading:
+
+```
+worktree-guard   sessions denied=3, of which overrode=3 (100%)
+claim-guard      sessions denied=5, of which overrode=0   (0%)
+```
+
+Every real session that hit worktree-guard routed around it. Both known causes (repo-level
+matching, and reading the heuristic ledger) are now fixed; the guard is **unproven** and
+this report is what will say whether the fixes took.
 
 Behavior worth knowing:
 - Backed by `flock(2)`, so the kernel releases the lock when the holder exits **including
