@@ -1,3 +1,4 @@
+<!-- Load when: authentication and base path patterns -->
 # Auth.js v5 + Next.js basePath
 
 Preventing the AUTH_URL/basePath mismatch that breaks OAuth on subpath deployments.
@@ -73,10 +74,21 @@ Each app needs:
 - **Next.js 16 proxy.ts**: Next.js 16 renamed `middleware.ts` to `proxy.ts` and exports `proxy()` instead of `middleware()`. Having both files causes a build error.
 - **Matcher excludes auth paths**: If the middleware matcher excludes `api/auth` (common for auth-protected apps), add `/api/auth/signin/:path*` as a separate matcher entry so the cookie-setting code runs.
 - **NextAuth `basePath` must always be `"/api/auth"`, never `"/<app>/api/auth"`**: In Next.js standalone output (`output: 'standalone'`), the basePath is stripped from `req.url` before reaching server code. NextAuth always receives `/api/auth/...` regardless of the Next.js basePath. Setting `basePath: "/<app>/api/auth"` in `auth.ts` prevents NextAuth from matching action routes and silently breaks auth. Source: shopper debugging loop (2026-05-18, commit 832c47b).
-- **Middleware matcher must include basePath prefix**: In Next.js 16 basePath apps, the `config.matcher` in `middleware.ts` must use the full path including the basePath prefix — e.g., `["/<app>/api/auth/signin/:path*"]`, NOT just `["/api/auth/signin/:path*"]`. Without the prefix, Next.js never fires the middleware for those routes (it routes using the full path), so the `__auth_target` cookie is never set and the auth-proxy cannot route the callback. Caused a 4-commit debugging loop on shopper (2026-05-17) before the root cause was identified. Same fix required for `req.nextUrl.pathname.startsWith()` check in the middleware body.
+- **Middleware/proxy matcher must NOT include basePath prefix** (Next.js 16 standalone, re-verified 2026-06-05): The basePath is stripped from `req.nextUrl.pathname` before middleware/proxy fires (same behavior as Route Handlers, just above). Both `config.matcher` and any `req.nextUrl.pathname.startsWith()` body check must use the UNPREFIXED path, e.g., `matcher: ["/api/auth/signin/:path*"]`. Verified against shopper (`src/middleware.ts`), humans (`src/proxy.ts`), and foodie (`src/proxy.ts`, fix commit f27c340) -- all Next.js 16.2.6, all unprefixed, all working. *Earlier revision of this note (2026-05-17) claimed Next.js 16 needed the prefix after a shopper debugging loop; that was a misattribution and broke foodie auth for ~2 weeks before this 2026-06-05 fix.*
 - **Prisma generate**: After pulling new Prisma schema models on the VM, run `npx prisma generate` before building.
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
+
+- **The `(?!...)` matcher never matches the index route -- add an explicit `"/"` entry** (student-transcript, 2026-08-02). The near-universal "protect everything except these paths" matcher, `"/((?!api/auth|login|_next/static|...).*)"`, compiles to a regex whose final group requires a literal `/` plus a segment: `^\/app(?:\/(_next\/data\/[^/]+))?(?:\/((?!...).*))(\.json)?[\/#\?]?$`. `/app` alone therefore does NOT match and the middleware never runs on the app's own home page -- usually the one page that renders real data. Every sub-route redirects to login, so the app *looks* protected. Add `"/"` as its own matcher entry (it compiles to `^\/app(?:...)?(?:\/(\/?index|\/?index\.json))?[\/#\?]?$`, which does match). **Verify from the build, not by reading the source:** `node -e "require('./.next/server/middleware-manifest.json').middleware['/'].matchers.forEach(m => console.log(m.regexp))"` and test your paths against those regexes.
+
+- **`req.auth` fails OPEN on any Auth.js config error -- check for a user, not for truthiness** (student-transcript, 2026-08-02). `handleAuth` does `await getSession(...).then(r => r.json())`. When `@auth/core` cannot complete (missing `AUTH_SECRET`, `UntrustedHost`, bad provider config) it returns `Response.json({ message: "There was a problem..." }, { status: 500 })`, so `req.auth` becomes a **truthy error object**, not `null`. `if (!req.auth) return redirect(login)` then lets every request through unauthenticated, and the only symptom is a line in the PM2 error log. Gate on identity instead:
+  ```typescript
+  const email = req.auth?.user?.email;
+  if (typeof email !== "string" || email.length === 0) { /* deny */ }
+  ```
+  The `signIn` callback is what restricts *which* identity can get a session; middleware only needs to confirm one exists.
+
+- **Standalone runs from `.next/standalone/`, so your `.env` must live there** (student-transcript, 2026-08-02). `server.js` calls `process.chdir(__dirname)`. A `.env`/`.env.local` in the repo root is never read, and PM2's `env:` block typically only carries `PORT`/`NODE_ENV`/`NEXT_PUBLIC_BASE_PATH` -- so NextAuth starts with no `AUTH_SECRET` and no `AUTH_TRUST_HOST` and throws `UntrustedHost` on every call. Either `cp .env.local .next/standalone/.env` in deploy.sh (humans, finance-tracker, health-hub, student-transcript) or pass `node_args: '--env-file=/var/www/<app>/.env'` in the PM2 config (runeval). This is the same `chdir` root cause as KB `patterns/nextjs-standalone-db-trap.md`.
 
 ### Apps using the proxy
 
@@ -85,6 +97,7 @@ Each app needs:
 - finance-tracker (`/finance`, port 3008)
 - student-transcript (`/student`, port 3009)
 - shopper (`/shopper`, port 3090, tunneled from WSL)
+- foodie (`/foodie`, port 3094)
 
 ### AUTH_URL origin-only pattern for tunneled apps
 
@@ -229,15 +242,126 @@ When multiple NextAuth apps share a domain (e.g., `example.com`), they MUST have
 cookies: {
   sessionToken: {
     name: "__Secure-<appname>.session-token",
-    options: { httpOnly: true, sameSite: "lax", path: "/", secure: true },
+    // path is the app's basePath, NOT "/" — see "Cookie accumulation" below.
+    // Valid because the name uses __Secure- (only __Host- would force path "/").
+    options: { httpOnly: true, sameSite: "lax", path: "/<basePath>", secure: true },
   },
 },
 session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal apps
 ```
 
-**Current cookie names:** finance, health-hub, student, runeval, shopper, travel.
+**Add to the new-app checklist:** assign a unique cookie name AND scope its `path`
+to the app's basePath (both prevent cross-app problems on the shared domain).
 
-**Add to the new-app checklist:** When adding a new app, assign a unique cookie name following this pattern.
+## Cookie accumulation exceeds Apache's header limit (2026-07-18)
+
+The flip side of many single-domain NextAuth apps: each sets its session cookie with
+`path: "/"`, so the browser sends ALL of them in one `Cookie:` header on every
+request to the domain. Once ~8-10 apps exist, the combined header exceeds Apache's
+default `LimitRequestFieldSize` (8190 bytes) and the origin returns:
+
+```
+400 Bad Request — Size of a request header field exceeds server limit.
+```
+
+(This is Apache's own error page, served through the CDN — the CDN passed the large
+header, the origin rejected it. Symptom appears right after a user signs into the
+Nth app.)
+
+**The non-obvious fix — set it on the DEFAULT vhost for the port, not the matched one.**
+For name-based SSL vhosts, Apache reads the request headers under the DEFAULT server
+for that `ip:port` (the first/`_default_` vhost, selected before the Host header is
+parsed). So `LimitRequestFieldSize` on the app's own matched vhost — or globally in
+`apache2.conf` — has NO effect on this limit. It must go inside the `<VirtualHost *:443>`
+that `apache2ctl -S` reports as the "default server" for `:443`:
+
+```apache
+<VirtualHost *:443>
+    LimitRequestFieldSize 65536
+    ...
+</VirtualHost>
+```
+
+Then `apache2ctl configtest` and restart. Verify by reproducing directly against the
+origin (bypass the CDN): `curl --resolve <host>:443:127.0.0.1 https://<host>/... -H "Cookie: junk=<~10KB of a's>"` should return the app's normal code, not 400.
+
+**Next ceiling after Apache:** Node's default `--max-http-header-size` is ~16 KB, so a
+Next.js standalone server returns `431` above that (well above real cookie sizes for
+now).
+
+**Structural fix (DONE 2026-07-18):** each app's session cookie is now scoped to its
+basePath (`path: "/<app>"`) so the browser only sends it to that app's subtree — they
+stop accumulating. Rolled out to collab, employ, shopper, foodie, travel, finance,
+health-hub, runeval (verified: page render + OAuth POST redirect_uri intact per app;
+the OAuth callback does NOT read the session cookie — the auth-proxy uses only the
+`__auth_target` cookie — so subpath scoping is safe). New apps should ship scoped from
+day one (see the config above). Deploy gotchas learned during the rollout:
+- Apps whose `basePath` comes from an env var (finance, runeval) must be built with
+  `BASE_PATH` / `NEXT_PUBLIC_BASE_PATH` set, or every route 404s.
+- Some apps keep runtime data INSIDE `.next/standalone/` (runeval: `standalone/data`,
+  `standalone/prisma/data`) — exclude those dirs from an `rsync --delete` or it breaks.
+- Health checks: some apps' `/api/health` is auth-gated (401 by design, e.g. health-hub,
+  runeval) — use page-render 200/307/308 as the liveness signal, not health==200.
+
+## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11, resolved 2026-07-30)
+
+WebView-shell apps (e.g. `pezant-mobile`) can't do OAuth in the WebView — Google blocks
+embedded WebViews with `disallowed_useragent`. Instead they do **native** Google Sign-In
+via Credential Manager (`@capgo/capacitor-social-login`), get an ID token, and POST it to
+a server endpoint that mints the web app's session cookie(s). The mint endpoint verifies
+the token's `aud` against the **web** OAuth client id (the `serverClientId`).
+
+**The trap that silently breaks sign-in for every user:** Credential Manager authorizes
+the *calling app* by package name + its **signing-cert SHA-1**, matched against an
+**Android** OAuth client in the Google Cloud project. If the SHA-1 of the *installed*
+build is not registered, the plugin returns **no idToken** and sign-in fails silently —
+the server never even sees a request (its mint logs stay empty).
+
+**An Android OAuth client holds exactly ONE package + ONE SHA-1** — there is no "add
+fingerprint" (that only exists for API-key restrictions). So you need a **separate Android
+OAuth client per signing cert**, all sharing the same package name. With **Play App Signing
+ON** (the default), the installed app is re-signed by Google, so its cert is NOT your
+upload key. Create a client for the SHA-1 of **every distribution channel**:
+- **Play App Signing key** SHA-1 (Play Console -> App integrity -> App signing key
+  certificate) — required for all Play installs (testers + prod). A client for only the
+  upload key breaks 100% of Play installs.
+- **Debug key** SHA-1 (`~/.android/debug.keystore`) — for `assembleDebug` sideloads.
+- Upload-key SHA-1 alone is never sufficient once Play App Signing is on.
+
+Debugging checklist for "mobile sign-in does nothing / broken across the board":
+1. Confirm the mint endpoint is up and web OAuth works (`curl .../api/auth/providers`).
+2. Check the mint endpoint's logs — zero "minted" lines means the failure is on-device,
+   before the POST (points at SHA-1 / Credential Manager, not the server).
+3. Get the installed build's channel + that channel's SHA-1; verify an Android OAuth client
+   (same package) exists for it, and create one if not. Don't swallow the plugin's error in
+   JS — log it so `adb logcat` shows it.
+
+**A diagnosis is not a fix — verify the resource exists, not that someone described it.**
+This exact bug was correctly root-caused on 2026-07-11, written up in three places, and
+then stayed broken for 19 more days because the one required Console click was never
+actually performed. Docs that say "create client X" are not evidence that X exists. Before
+closing a config-gap bug, re-read the *live* resource list and confirm the object is
+there. Treat "known issue, documented" as unfixed until proven otherwise.
+
+**Automation caveat (browser-agent) — CORRECTED 2026-07-30.** An earlier version of this
+guidance said the Cloud Console create-client form was not automatable and the Play App
+Signing SHA-1 was unreadable. **Both were wrong**, and that false verdict is what let the
+outage persist. The entire flow (read Play Console fingerprints -> create the Android OAuth
+clients) was automated end to end. What actually bites:
+- **A CLI timeout is not a failed action.** While a Material overlay (e.g. the
+  Application-type dropdown) is open, the content script stops answering and the CLI
+  prints `Timeout waiting for browser response` — but the click *landed*. Confirm with a
+  screenshot before concluding anything failed. Earlier sessions read the timeout as
+  "not automatable" and stopped.
+- `click` matches CSS **class** selectors but not custom element tag names.
+- Prefer a distinguishing class for submit buttons; a bare text match can hit the page
+  heading instead of the button (e.g. "Create" also matches a "Create client" title).
+- `eval` returns undefined on Google's CSP'd pages — use screenshots instead, and take an
+  element-scoped crop when reading anything you must transcribe exactly. **Never read a
+  cert fingerprint off a downscaled full-page screenshot** — hex glyphs like `48`/`A8`
+  are indistinguishable at that resolution. Prefer DOM text where available.
+Drive it on the project-owner's browser profile (not an alt account lacking project
+access).
 
 ## Rules for Future Work
 
@@ -286,15 +410,15 @@ session: { strategy: "jwt", maxAge: 90 * 24 * 60 * 60 }, // 90 days for personal
    ```
    This applies to any Next.js app using PrismaAdapter with `session: { strategy: "jwt" }`. If the adapter uses only lightweight deps (e.g., DrizzleAdapter), `auth()` may work — but `getToken()` is always safe for middleware.
 
-8. **Standalone mode changes basePath behavior.** In `next dev`, Next.js strips the basePath from `req.url` before the route handler sees it. In standalone mode (`node server.js`), it does NOT strip it — `@auth/core` sees the full URL including the basePath prefix. So the NextAuth `basePath` must include the Next.js basePath:
-   ```typescript
-   // next dev: handler sees /api/auth/signin/google → basePath: "/api/auth"
-   // standalone: handler sees /finance/api/auth/signin/google → basePath: "/finance/api/auth"
+8. **Standalone basePath stripping — RESOLVED for Next.js 16.2.8+ (updated 2026-07-09).** Historically this file carried two contradictory claims: (a) standalone STRIPS the basePath so NextAuth `basePath` must be `/api/auth` (shopper/foodie/humans note above), and (b) standalone does NOT strip it so `basePath` must be `/<app>/api/auth` (the finance-tracker note this bullet used to assert). **Both cannot be true, and the version matters.** As of **Next.js 16.2.8+ (verified on 16.2.9)**, `output: 'standalone'` **STRIPS the basePath** from `req.url` before Route Handlers AND middleware run — identical to `next dev`. The "does NOT strip" behavior belonged to an earlier Next.js and is no longer correct.
 
-   // Dynamic config that works in both modes:
-   basePath: `${process.env.BASE_PATH || ""}/api/auth`,
-   ```
-   **Why this trips people up:** The runeval fix (above) uses a hardcoded `"/api/auth"` because runeval's Apache proxy rewrites the URL. Apps without that rewrite need the dynamic basePath.
+   **This caused a total OAuth outage on runeval (2026-07-09)** after a Dependabot bump 16.2.7 → 16.2.9. runeval used `basePath: "${NEXT_PUBLIC_BASE_PATH}/api/auth"` = `/runeval/api/auth`; once standalone started stripping, the incoming path became `/api/auth/...` and every `/runeval/api/auth/*` endpoint threw `[auth][error] UnknownAction: Cannot parse action at /api/auth/session` (HTTP 400). Insidious detail: server-side `auth()` session reads keep working (they build the URL via `createActionURL(AUTH_URL + basePath)`, not the request path), so **pages return 200 while sign-in is dead** — a homepage uptime check misses it entirely.
+
+   Two valid fixes:
+   - **(A) `basePath: "/api/auth"`** (the stripped form). Simplest, but `createActionURL` then builds the OAuth `redirect_uri` WITHOUT the subpath (`https://host/api/auth/callback/google`), so you must restore `/<app>` via a `customFetch` or an Apache redirect (finance-tracker does this).
+   - **(B) keep `basePath: "/<app>/api/auth"` and re-prepend the subpath to the request pathname in a thin `route.ts` wrapper** before delegating to next-auth's `handlers.GET/POST`. Keeps `redirect_uri` correct with NO customFetch — preferred when the app forbids customFetch hacks (e.g. runeval). runeval's `restoreAuthBasePath()` (`lib/basePath.ts`) does this; it is idempotent so it survives a future Next reverting to non-stripping. runeval commit `5032c55`.
+
+   **Always verify a Next.js bump against a REAL standalone build, not `next dev`:** `curl http://127.0.0.1:PORT/<app>/api/auth/providers` must return 200 JSON, and a signin POST must 302 to the IdP with `redirect_uri` including `/<app>`.
 
 9. **Never use `NEXT_PUBLIC_*` env vars in server-side auth config.** `NEXT_PUBLIC_*` variables are inlined at build time by the Next.js bundler. If the build environment doesn't have the var set, the value becomes `undefined` permanently — it won't be read at runtime even if `.env` has it. Use a non-prefixed env var (e.g., `BASE_PATH` instead of `NEXT_PUBLIC_BASE_PATH`) for any value that server-side code needs at runtime.
 
@@ -333,4 +457,58 @@ Google({
 
 This tells the OAuth provider exactly where to redirect, bypassing Auth.js's URL construction entirely. Works when `NEXTAUTH_URL` already includes the basePath (e.g., `https://example.com/student`).
 
+## Third-Party API OAuth Token Refresh
+
+When integrating with external APIs that issue short-lived access tokens (~24h), **auto-refresh on expiry — do not return errors to callers**.
+
+### The pattern
+
+Third-party APIs (Garmin Connect, Strava, etc.) issue access tokens that expire in ~24h alongside long-lived refresh tokens. A route that stores and uses these tokens should:
+
+1. Check expiry before calling the downstream API
+2. If expired, call the provider's token refresh endpoint with the stored `refresh_token`
+3. Persist the new `access_token` and `expires_at` to DB
+4. Proceed with the original request using the fresh token
+5. Only return a "user must re-link" error if the **refresh itself** fails (e.g., refresh token also expired or revoked)
+
+```typescript
+// health-hub: src/app/api/garmin/training/push/route.ts
+let accessToken = tokenRow.accessToken;
+if (tokenRow.expiresAt && tokenRow.expiresAt.getTime() < Date.now()) {
+  try {
+    const refreshed = await refreshAccessToken(tokenRow.refreshToken);
+    const newExp = new Date(Date.now() + (refreshed.expires_in ?? 86400) * 1000);
+    await prisma.oAuthToken.update({ where: { id: tokenRow.id },
+      data: { accessToken: refreshed.access_token, expiresAt: newExp } });
+    accessToken = refreshed.access_token;
+  } catch {
+    return Response.json({ error: "Token refresh failed; user must re-link" }, { status: 401 });
+  }
+}
+```
+
+### Why this matters
+
+Without silent refresh, **any automated job that runs daily against a ~24h-lived access token will fail after the first day**. The Garmin daily push-to-watch cron (runeval → health-hub) hit this: the initial OAuth flow sets the access token, the cron runs fine on day 1, then fails with 401 every day after until the user manually re-links. Silent refresh means the cron never surfaces this failure.
+
+### What NOT to do
+
+- Do NOT return `{ error: "OAuth token expired; user must re-link" }` on expiry of a short-lived access token. This surfaces unnecessary friction when a refresh is all that's needed.
+- Do NOT cache the `access_token` in env vars or process memory — always read it from DB so refreshes are immediately visible to all processes.
+
+**Source:** health-hub commit `69aa711` (2026-06-07) — Garmin push route switched from 401-on-expiry to silent auto-refresh, fixing the automated daily push-to-watch cron.
+
 **Trade-off:** Simpler (no Apache redirect needed), but couples the callback URL to the env var. The three-part pattern is more robust for complex proxy setups.
+
+## Gating a secret/page to one Google identity: reuse the Apache OIDC gate (2026-06-23)
+
+Before reaching for Cloudflare Access / Zero Trust (which needs first-time onboarding: a team-domain choice + a payment method on file), check the Apache config. The VM already runs `mod_auth_openidc` gating admin surfaces:
+```apache
+<Location /tools>
+    AuthType openid-connect
+    Require user <owner-email>
+</Location>
+```
+Same pattern protects `/tm-scripts` and the auto-shorts admin. To gate a secret behind Google-login-restricted-to-one-email, serve it from a path UNDER `/tools` (e.g. a Node route `/tools/<name>` sourcing the value from env) — it's automatically OIDC-gated, single login, no new infra. Carve-outs use `AuthType None; Require all granted` (e.g. `/tools/downloads`, `/tools/health`, `/api/notify`).
+
+**M2M caveat:** headless pollers and shell hooks CANNOT be interactively OAuth-gated (they'd get an HTML login page instead of JSON). Keep those on a rotated bearer token (`Require all granted` at Apache, token-auth in the app) and gate only the human *retrieval* of the token.

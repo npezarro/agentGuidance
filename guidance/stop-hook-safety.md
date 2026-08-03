@@ -1,3 +1,4 @@
+<!-- Load when: tiered stop hook classification, guard library, Tier 3 recursion prevention -->
 # Stop Hook Safety
 
 Stop hooks fire on every Claude CLI session exit, including pipe-mode (`-p`) sessions spawned by autonomous scripts, subagents, and other hooks. This makes them powerful for enforcement but dangerous for recursion.
@@ -105,6 +106,10 @@ printf '%s' "$LAST_MSG" | tail -c 5000 > "$TMPFILE"
 
 exit 0
 ```
+
+## Exemption: the /goal Evaluator Hook
+
+`/goal` (Claude Code >= 2.1.139) registers its own session-scoped, prompt-based Stop hook: after each turn a small evaluator model checks the goal condition and re-prompts the session if unmet. This hook is harness-managed, exists only for the life of the goal, and is NOT subject to the tier classification or guard-library requirements above — do not flag it as an unregistered Tier 3 hook, and do not wrap it. It does count as a Claude-invoking loop for budget purposes, so goal-wrapped runners must sit behind the usage gate (they do, via `runner_usage_gate`). Writing goal conditions: see `goal-conditions.md`.
 
 ## Rules for All Tiers
 

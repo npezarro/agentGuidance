@@ -1,3 +1,4 @@
+<!-- Load when: async cross-session journal system -->
 # Agent Journal
 
 Cross-session async journal for sharing observations, unfinished work, and suggestions across Claude Code sessions.
@@ -13,6 +14,14 @@ Cross-session async journal for sharing observations, unfinished work, and sugge
 ```bash
 ~/repos/privateContext/journal-post.sh "<category>" "<entry text>"
 ```
+
+### Signal gates (added 2026-06-10)
+
+The journal is a signal feed, not a heartbeat — every entry is re-loaded into every future session's context, so noise compounds. journal-post.sh enforces two gates (bypass with `--force`; `blocker` category always posts):
+- **Substance:** bodies under 40 meaningful characters are suppressed.
+- **Novelty:** an entry whose normalized signature (numbers/costs/dates collapsed) matches the previous entry for the same project+category is suppressed.
+
+Write entries that contain a delta: a state change, a new fact, or a decision. "Run #N completed, 0 findings" is not a delta; scheduled jobs should journal only when something changed.
 
 ### Categories
 

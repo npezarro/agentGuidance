@@ -1,3 +1,4 @@
+<!-- Load when: secret rotation, history rewrite, detection patterns -->
 # Secrets Hygiene
 
 Rules for handling secrets, credentials, and infrastructure details in code — especially in public repositories.

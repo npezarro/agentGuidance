@@ -1,7 +1,7 @@
 #!/bin/bash
 # Session Start Hook (agentGuidance project)
 # Displays session context (context.md, git status).
-# agent.md is loaded by the global fetch-rules.sh hook; no need to fetch it here.
+# agent.md is injected inline by the user-level SessionStart hook; no need to fetch it here.
 
 set -euo pipefail
 

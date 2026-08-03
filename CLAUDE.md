@@ -5,7 +5,6 @@ This is the centralized source of truth for shared agent instructions. Changes h
 ## Structure
 - `agent.md` — core behavioral rules (fetched at session start by all repos)
 - `guidance/*.md` — deep-dive procedures loaded on-demand
-- `profiles/*/` — persistent agent personality profiles + experience logs
 - `hooks/` — executable integration scripts (Discord, WordPress)
 - `templates/` — reusable project templates
 - `scripts/` — propagation and health-check tooling

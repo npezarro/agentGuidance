@@ -36,9 +36,12 @@ redact_sensitive() {
     -e 's/\b(172\.(1[6-9]|2[0-9]|3[01])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]))\b/[REDACTED_IP]/g'
 }
 
-# Read hook input from stdin
+# Read hook input from stdin.
+# Register the cleanup trap BEFORE mktemp (deferred expansion via single
+# quotes) so no exit path after temp file creation can leak it.
+INPUT_FILE=""
+trap 'rm -f "$INPUT_FILE"' EXIT
 INPUT_FILE=$(mktemp)
-trap "rm -f $INPUT_FILE" EXIT
 cat > "$INPUT_FILE"
 SESSION_ID=$(jq -r '.session_id // empty' < "$INPUT_FILE")
 TRANSCRIPT_PATH=$(jq -r '.transcript_path // empty' < "$INPUT_FILE")

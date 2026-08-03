@@ -1,6 +1,16 @@
+<!-- Load when: pre-deploy and post-deploy checklists -->
 # Deployment
 
-## Staging-First Apps
+## Skill Routing (check before any ad-hoc ssh + pm2)
+
+A 2026-07-01 transcript audit found 97 sessions doing raw `ssh + pm2 restart` deploys with zero skill usage, while the deploy skills sat unused. Before running any ad-hoc deploy or restart command, route through the right skill:
+
+- **shopper, foodie, finance-tracker, travel-assistant, employ** (Next.js subpath apps): `staging` skill. Always.
+- **Any other PM2 service on the VM** (bots, APIs, workers): `deploy` skill.
+- **"Styling is broken" / unstyled page / dead buttons / `_next/static` 500s** on any production Next.js app: `fix-static-asset-drift` skill; do not debug CSS first.
+- **VM feels slow / disk warnings**: `vm-health`, then `vm-cleanup`.
+
+Invoke the skill (Skill tool), don't just Read its SKILL.md — invocation is what loads the full procedure and logs usage.
 
 **shopper, finance-tracker, and travel-assistant always deploy through staging.** Use the `/staging` skill. Do not deploy these apps directly to production unless the user explicitly requests it (e.g., emergency hotfix).
 
@@ -42,6 +52,26 @@ If you intentionally skip deploying (e.g., batching changes), note it in context
 
 Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 
+## Publishing Artifacts: Verify the Bytes, Not the Status Code
+
+For anything that publishes a downloadable artifact (installers, auto-update manifests, release binaries), a 200/206 proves only that *something* is at the URL. A CDN will happily serve a stale cached object of the right size, so the status check passes while the client's integrity check rejects the download: CI green, user broken.
+
+A publish step ending in `echo "Uploaded v$VERSION"` has asserted success, not measured it. Verify, in order:
+
+1. Fetch the manifest **cache-busted**; assert the published version equals the built one.
+2. For **every** artifact URL the manifest advertises (not one representative), `curl -sL` with a range request and assert a *final* 200/206. **Follow redirects** — a 301 to a path that 404s looks like success until you follow it.
+3. Download the primary artifact and assert its checksum matches the manifest. This is the same check the client performs, and the only one that catches a poisoned cache.
+
+Publish order matters: **binaries first, manifest last** (the manifest advertises the version, so landing it first lets a client 404 mid-upload), and write the manifest to a temp name then `mv` it. Add retention — nothing pruning releases let one directory reach 2.1GB on a disk at 81%.
+
+Three traps that cost three months of silently-broken releases (2026-07-29, claude-tray-notifier):
+
+- **Never discard the stderr of a command that can abort the script.** `ssh-keyscan ... 2>/dev/null` under `bash -e` killed a step instantly with zero output and no packet reaching the server. Tell: a step failing *far too fast* with an empty log is an aborted `set -e` script, not the failure it appears to be.
+- **A CDN-fronted hostname is not an SSH target.** Keep the origin address and the public hostname as separate config values; a CDN migration otherwise breaks deploys with no obvious connection to the change.
+- **`secrets` is unavailable in a step-level `if:`** — using it there makes GitHub reject the entire workflow file, presenting as a run with zero jobs, no logs, and the file path shown where the workflow name should be. Guard inside the script instead (`env:` may reference secrets). Detector: `grep -nE '^\s*if:.*secrets\.' .github/workflows/*.yml`.
+
+Full case study: knowledgeBase `patterns/release-publish-verification.md`.
+
 ## Automated Deploy Enforcement (Hooks)
 
 Two hooks mechanically enforce post-deploy verification, even if the agent skips the manual checklist above:
@@ -51,6 +81,10 @@ Two hooks mechanically enforce post-deploy verification, even if the agent skips
 2. **`hooks/verify-deploy.sh`** (Stop hook): When a session ends, reads the tracker and curls each deployed service's health endpoint and user-facing URLs from the registry. **Blocks the session exit** if any check fails, forcing the agent to diagnose and fix before stopping.
 
 **Why this exists:** The #1 failure mode was agents deploying, declaring "done," and leaving without testing. The Stop hook makes this structurally impossible for registered services.
+
+3. **`hooks/check-commit-deploy.sh`** (Stop hook): Detects when files were modified in a repo that has a live deployment (per `deploy-registry.json` `repo` field) but no deploy was performed during the session. **Blocks the session exit** until the agent either deploys or documents the pending deploy in context.md.
+
+**Why this exists:** The #2 failure mode was agents committing code to deployed repos and ending the session without deploying. The committed code sat stale while production served the old build (employ incident, 2026-06-29).
 
 ## Next.js Standalone Symlink Fix
 
@@ -108,6 +142,26 @@ Also wrap non-critical side effects (e.g., `sendEmail()`) in `try/catch` so they
 
 **Packages commonly missing:** `nodemailer`, packages using native bindings, packages only imported in server action callbacks. Source: shopper standalone build (2026-05-15).
 
+## Next.js Standalone: Relative SQLite Paths Break
+
+When using `output: 'standalone'`, `process.cwd()` inside `.next/standalone/server.js` resolves to the `.next/standalone/` directory, not the project root. Any `DATABASE_URL` using a relative path (e.g. `file:./prisma/dev.db` or `file:./data/production.db`) will open or create the DB inside `.next/standalone/` instead of the intended location.
+
+**Fix:** Add an absolute-path resolver in your Prisma/DB client:
+```ts
+import path from "path";
+let url = process.env.DATABASE_URL || "file:./prisma/dev.db";
+if (url.startsWith("file:")) {
+  const filePath = url.slice(5);
+  if (!path.isAbsolute(filePath)) {
+    const isStandalone = process.cwd().includes(path.join(".next", "standalone"));
+    const root = isStandalone ? path.join(process.cwd(), "..", "..") : process.cwd();
+    url = `file:${path.resolve(root, filePath)}`;
+  }
+}
+```
+
+This pattern is used in `runEvaluator/lib/prisma.ts` and `health-hub/src/lib/db.ts`. The `isStandalone` check ensures dev mode (where `process.cwd()` is the project root) keeps working.
+
 ## Python Version Compatibility
 
 The GCP VM runs **Python 3.9**. Modern type annotation syntax (`X | None`, `list[str]`, `dict[str, Any]`) requires Python 3.10+. Code using these features will raise `TypeError` at runtime on the VM.
@@ -162,6 +216,35 @@ rsync -az --delete ./dist/ "$DEPLOY_TARGET"
 **Post-deploy .env integrity check:** After rsync, verify critical env vars on the server still have production values. A silent overwrite causes hard-to-diagnose failures (e.g., wrong database port, wrong API base URL) that look like application bugs.
 
 **Why this matters:** A real deploy overwrote a production database port with a local dev port, causing all connections to fail silently. The root cause was `rsync --delete` without `--exclude .env`.
+
+## Concurrent Bot Deploys Race Against PM2 — Serialize with flock
+
+**Any PM2-managed Next.js app that receives autonomous bot deploy triggers (fix-checker, Gemini, learning-agent PRs) must wrap its entire build+restart in `flock`.** Without serialization, a second `next build` deletes `.next/standalone/server.js` while PM2 is still running the previous build's process, causing `ERR_MODULE_NOT_FOUND` crash loops that persist until manual recovery.
+
+**Root cause (2026-06-07 runeval outage):** The fix-checker bot opened and auto-merged a Gemini PR while a human operator deploy was in flight. The second `next build` clobbered the standalone artifact at `ERR_MODULE_NOT_FOUND`, PM2 hit max restarts, and the process dropped offline. The failure mode is silent — PM2 logs `max restart limit reached` but doesn't explain why server.js disappeared.
+
+**Fix:** `deploy.sh` must acquire an exclusive file lock before building:
+
+```bash
+#!/bin/bash
+set -e
+LOCK_FILE="/tmp/<app>-deploy.lock"
+# Guard against re-entry (flock re-executes the script with the lock held)
+if [ "${DEPLOY_LOCK_BYPASS:-0}" != "1" ] && [ -z "${<APP>_DEPLOY_LOCKED:-}" ]; then
+    if [ "${DEPLOY_LOCK_WAIT:-1}" = "1" ]; then
+        exec env <APP>_DEPLOY_LOCKED=1 flock -x -w 900 "$LOCK_FILE" "$0" "$@"
+    else
+        exec env <APP>_DEPLOY_LOCKED=1 flock -x -n "$LOCK_FILE" "$0" "$@"
+    fi
+fi
+# ... git hard-reset to origin/main, npm run build, pm2 restart, health check
+```
+
+**CLAUDE.md rule:** Add a line mandating `./deploy.sh` over bare `npm run build && pm2 restart`. Without this, agents and operators bypass the lock.
+
+**Repos with this pattern:** runeval (`deploy.sh` commit `810573e` + `23e8036`), health-hub (`deploy.sh` commit `4a031fe`). Apply to any Next.js standalone app whose fix-checker is active.
+
+**Env knobs:** `DEPLOY_LOCK_WAIT=0` to fail fast, `DEPLOY_LOCK_BYPASS=1` as a break-glass escape hatch (coordinate before using).
 
 ## Concurrent rsyncs Silently Drop Subdirectories
 
@@ -231,3 +314,53 @@ When configuring PM2 services, set `kill_timeout` and `listen_timeout` in `ecosy
 **`listen_timeout`:** How long PM2 waits for the app to become "ready" (emit `ready` signal or bind port). If your app takes longer to start than this value, PM2 marks it as crashed before it even starts serving. For Next.js standalone builds, 3000ms is usually sufficient; increase to 5000ms if the app does heavy initialization.
 
 **Why this matters:** Not setting these explicitly causes intermittent restart storms that look like application bugs but are actually PM2 race conditions during shutdown/startup.
+
+## SQLite/DB path must never resolve inside the build tree (silent data loss)
+
+**Incident 2026-06-17 (shopper/foodie/travel/runeval):** Next.js standalone apps run with `cwd = .next/standalone/`. A DB layer that falls back to a RELATIVE path (`process.env.DB_PATH || path.join(process.cwd(), "app.db")`, or Prisma `DATABASE_URL="file:./data/x.db"`) silently creates the live DB INSIDE `.next/` whenever the launch doesn't export an absolute path. `npm run build` does `rm -rf .next`, so every deploy ERASES the DB and all rows written since the last build — silent, intermittent, undetected.
+
+**Rules:**
+- Pin an ABSOLUTE DB path in `.env` AND `start.sh`, outside `.next/`. For Prisma use an absolute `file:/abs/path.db` URL.
+- Add a boot guard in the DB layer: `if (path.resolve(dbPath).split(path.sep).includes(".next")) throw` — turns silent loss into a loud crash. No-op when configured correctly.
+- Add row-count-drop + missing-backup alerting. A corruption/integrity check does NOT catch a DB that is intact but missing rows (no baseline). See VM `~/bin/db-guardian.sh`.
+
+**Deploy-model divergence (don't mix them up):**
+- Some VM app dirs are NON-GIT, artifact-only (`.next`+`node_modules`+`package.json`) — deploy via /staging artifact promotion (rsync `.next`), sync loose scripts via scp.
+- Others are git repos whose `start.sh` REBUILDS IN-PLACE when the build-manifest `appDir` != prod dir — deploy via `git pull` + in-place build. Artifact-rsync promotion bakes the staging path into `appDir` and triggers an unwanted on-prod rebuild (caused a ~90s outage). Check which model an app uses before deploying.
+
+Full incident: privateContext/deliverables/incidents/2026-06-17-shopper-family-db-data-loss.md
+
+## VM SSH: don't trip fail2ban with reconnect bursts
+
+**Incident 2026-06-30 (a PM2 service deploy):** A burst of short SSH connections to the production VM, plus one deploy SSH killed mid-run and immediately retried, tripped the VM's fail2ban jail on port 22. Result: a ~10-minute DROP ban on the source IP. Roughly 5 rapid or aborted connections are enough.
+
+**The tell (so you diagnose it in seconds, not minutes):**
+- SSH connect **times out** (not "connection refused") and ICMP/ping is blocked.
+- The production site still returns **HTTP 200 via the CDN**, so the box and web tier are fine; only your SSH is banned.
+- Direct-to-origin ports 80/443 are *always* firewalled to CDN-only, so the **only new signal is port 22 timing out** while HTTP works.
+
+**Recovery:** stop all SSH attempts (each retry re-arms/extends the ban), wait 10-12 minutes, then make ONE clean connection.
+
+**Prevention:**
+- Run all deploy steps inside a **single SSH invocation** with a generous timeout (180s+), not a sequence of short separate connections.
+- Avoid a trailing `pm2 jlist | python ...` parse that can hang the session near the timeout boundary and tempt a kill-and-retry loop. If you need status, give the whole command room (timeout 180s) or split status into a later, separate single connection.
+
+### rsync --chmod=D755,F644 for web-root deploys (mktemp staging perms trap) (2026-07-17)
+See memory infra_rsync_mktemp_perms: rsync -a from a mktemp -d staging dir propagates mode 700 onto the destination dir; Apache 403s everything beneath. Always rsync -a --chmod=D755,F644 when deploying to a web root.
+
+### Pin Prisma binaryTargets to the deploy runtime's OpenSSL; never ship a build from a different-OpenSSL host to the VM (2026-07-19)
+A Next.js standalone + Prisma app on the production VM (Node links OpenSSL 1.1.1w = debian-openssl-1.1.x) went totally DB-dark on 2026-07-18/19: every DB route/cron returned HTTP 500 with an EMPTY body, homepage still 200'd (static shell) so uptime checks missed it. Cause: prisma/schema.prisma had no binaryTargets, so prisma generate emitted only the build host's engine. A build produced on the WSL dev clone (OpenSSL 3.0.13 = debian-openssl-3.0.x) was shipped out-of-band to the VM, bundling only libquery_engine-debian-openssl-3.0.x into .next/standalone/node_modules/.prisma/client. VM runtime needs 1.1.x -> PrismaClientInitializationError: could not locate the Query Engine. Diagnosis tell-tales: the error's 'searched locations' list names the build-host dev path (/home/npezarro/repos/...); the live-dir reflog head is 'pull: Fast-forward' not deploy.sh's 'reset --hard origin/main' (out-of-band build, same delivery anti-pattern as the static-asset 'styling broke' outage but it breaks the DB layer instead of CSS). Fix (both): (1) pin binaryTargets = [native, debian-openssl-1.1.x, debian-openssl-3.0.x] in schema.prisma so any build host bundles the VM's engine; (2) redeploy via the app's ./deploy.sh, which runs prisma generate ON the VM (native = 1.1.x) and rebuilds standalone with both engines. Verify: a DB-touching endpoint returns 200 and ls .next/standalone/node_modules/.prisma/client shows the 1.1.x engine.
+
+### Verify the shipped standalone bundle after an rsync-promote, not just health 200 (2026-07-24)
+During the travel-assistant deploy, the staging→prod promote `rsync -a --delete <stg>/.next/ <prod>/.next/` exited 0 and `/api/health` returned 200, but `.next/standalone/` was NOT updated: prod's `app/api/query/route.js` still referenced the OLD content-hashed chunks and none of the new code shipped. A plain `rsync -a` (size+mtime quick-check) silently under-transferred the standalone chunks; re-running with `--checksum` fixed it and the change's marker string appeared. Lesson for the staging skill Step 6 promote: after the artifact rsync, `grep -rl '<a-new-literal-or-symbol-from-the-change>' <prod>/.next/standalone/.next/server/` BEFORE restarting or declaring success. Health 200 and "rsync done" both lie here because the route module isn't executed until a real request renders it. Prefer `rsync -a --checksum --delete` for standalone `.next` promotes.
+
+### Cloudflare cache rules are LAST-match-wins; MCP servers should use token auth not OAuth when headless consumers exist (2026-07-29)
+Two corrections from the 2026-07-29 Cloudflare MCP session.
+
+1. CACHE RULE ORDERING. Cloudflare cache rules are **last**-match-wins, not first. CF docs: 'When multiple rules specify the same setting, the last matching rule wins.' Verified on the production zone: an `/<app>/_next/` bypass at array index 2 overrides the broader `/<app>` caching rule at index 1 (asset serves cf-cache-status: DYNAMIC). To carve an exception out of a broad caching rule, place the exception AFTER it. When debugging 'my bypass is not working', look for a LATER rule re-enabling cache, not an earlier one.
+
+   This claim was previously WRONG in two places: the cloudflare-site-setup skill and the 2026-06-02 migration closeout (which was the origin; it propagated into the skill). Both corrected. Lesson: one topic documented in two places is how a wrong claim survives.
+
+2. MCP AUTH FOR HEADLESS ECOSYSTEMS. Vendors label OAuth 'recommended' for MCP servers, but OAuth-authenticated MCP servers are ABSENT from headless 'claude -p' runs (autonomousDev, learning-agent, VM #requests worker, Docker bridges). Prefer a Bearer API token when the server supports one, even when the setup docs only mention OAuth (check the server's README; the vendor setup page mentioned only OAuth while the server's own README documented a token path). Verify at CONNECT time via a raw JSON-RPC initialize, not at config-write time, and revert the config if it fails rather than leaving a permanently-401ing server in place.
+
+3. SCOPE PROBING. When a vendor rejects a credential for scope, you usually cannot introspect it. Probe by calling endpoints and read RESULT CONTENTS, not the success flag: a zone-scoped Cloudflare token returns success:true with an EMPTY array from /accounts. Permissions are sectioned; adding more of the wrong section never helps (two Zone-scoped tokens failed identically before Account Settings:Read was added).

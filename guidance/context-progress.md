@@ -1,3 +1,4 @@
+<!-- Load when: context.md and progress.md specs -->
 # Context File and Progress Log
 
 ## Context File (`context.md`)

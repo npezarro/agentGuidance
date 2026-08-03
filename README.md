@@ -29,7 +29,6 @@ This repo solves that by providing a single source of truth for agent behavioral
 - **Behavioral defaults** (`agent.md`): Defines how agents plan, execute, communicate, handle errors, and manage git workflows. These are the base personality and decision-making rules.
 - **Steerability constraints** (`guidance/*.md`): Topic-specific rules for testing, debugging, code review, deployment, and security. Applied contextually based on the task at hand.
 - **Per-project overrides** (each project's `CLAUDE.md`): Project-specific behavioral rules that extend or override the global defaults without editing the source of truth.
-- **Behavioral profiles** (`profiles/`): 15 specialist personas (architect, critic, implementer, user advocate, security, QA, and others), each with distinct personality parameters, expertise boundaries, and deference rules. Each profile accumulates an experience log of behavioral observations across sessions.
 - **Propagation**: A hook-based system ensures every new session in any repo fetches the latest behavioral rules at startup. Changes to `agent.md` apply everywhere on next session start.
 
 ## Design Decisions
@@ -49,7 +48,6 @@ CLAUDE.md (bootstrap) → fetches agent.md (core rules) → loads guidance/*.md 
 1. **`CLAUDE.md`** is read by Claude Code at session start. It fetches the latest `agent.md` from this repo.
 2. **`agent.md`** contains the full ruleset: planning, git workflow, code standards, security, deployment, and more.
 3. **`guidance/`** contains detailed sub-guidance for specific topics (testing, debugging, code review, dependencies).
-4. **`profiles/`** contains behavioral profile definitions and accumulated experience logs.
 5. **`templates/`** contains reusable templates for common project artifacts.
 
 ## Quick Setup
@@ -98,7 +96,6 @@ agentGuidance/
 │   ├── deployment.md                  # Deploy safety, staging, rollback
 │   ├── operational-safety.md          # Resource awareness, guardrails
 │   └── dependencies.md               # Package evaluation and management
-├── profiles/
 │   ├── _schema.md                     # Profile format specification
 │   ├── architect/                     # Systems design persona
 │   ├── critic/                        # Adversarial review persona
@@ -111,7 +108,6 @@ agentGuidance/
 │   ├── pr-body.md                     # Pull request body template
 │   └── commit-message.md             # Commit message format guide
 ├── hooks/
-│   └── fetch-rules.sh                 # SessionStart hook: fetch global rules
 ├── scripts/
 │   └── propagate-hooks.sh             # Push hooks + CLAUDE.md to all repos
 ├── .claude/
@@ -123,6 +119,9 @@ agentGuidance/
 ```
 
 ## Ecosystem
+
+> Operational services (security-scanner, daily-tldr, supervisor reports) moved to the private `agentRuntime` repo on 2026-07-01; this repo is behavioral guidance only.
+
 
 The following public repositories make up the rest of the Claude Code harness that hangs off agentGuidance:
 

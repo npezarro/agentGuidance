@@ -1,3 +1,4 @@
+<!-- Load when: diagnosing issues, log analysis -->
 # Debugging Guidance
 
 A systematic approach to diagnosing and fixing issues.
@@ -194,3 +195,35 @@ Fixes:
 - Make the tested tool the canonical path; prompts that re-describe a "manual fallback" flow drift and silently lose features (e.g. pricing).
 
 Source: fb-marketplace-poster consolidation (2026-05-27) — main.js readline confirm + SDK key dependency forced the Discord agent into a fallback prompt that skipped shopper pricing. See `privateContext/deliverables/closeouts/2026-05-27-fbm-shopper-resale-pricing.md`.
+
+### 12. Reading a SQLite DB Another Process Is Actively Writing (WAL Mode)
+
+When polling a SQLite database that a running app writes to (e.g. an Electron app's `*.sqlite` in WAL mode), a `mode=ro` / `SQLITE_OPEN_READONLY` connection can return a **stale snapshot** — it reads committed WAL frames as of some earlier point and doesn't advance, even across freshly-spawned reader processes. Classic symptom: "it caught the first change but never the next ones," while the process is alive and manual one-off queries look current.
+
+Fix: open a **normal (read-write-capable) connection with `PRAGMA query_only=ON`** instead. It participates in the WAL protocol correctly and reliably sees the latest committed rows, while `query_only` guarantees you never modify the app's data. Add `.timeout <ms>` so a momentary writer lock yields a retry instead of an empty read.
+
+```sh
+# stale under load:
+sqlite3 "file:app.sqlite?mode=ro" "SELECT ..."
+# reliable:
+sqlite3 -cmd ".timeout 2000" -cmd "PRAGMA query_only=ON" app.sqlite "SELECT ..."
+```
+
+Second gotcha when your reader writes to the macOS clipboard: an app that pastes via the clipboard often does save→paste→**restore**, clobbering your write. Re-assert (re-`pbcopy`) for ~1s, checking `pbpaste`, to win the race.
+
+Source: wispr-flow-clipboard (2026-07-10) — watcher on Wispr Flow's `flow.sqlite` History table; `mode=ro` froze on the first dictation. See https://github.com/npezarro/wispr-flow-clipboard.
+
+### 13. Error Log Lines Ending in a Bare Colon = Logger Dropping Arguments (pino)
+
+Pino's signature is `logger.error(mergingObject, msg)` — extra args after a string message are printf interpolation values, and with no `%s`/`%d`/`%o` in the message they are **silently discarded**. Console-style calls like `logger.error('failed:', err.message)` produce `"msg":"failed:"` — the diagnostic ends at the colon and the actual error never reaches any log. Symptom while debugging: an error repeats but its message trails off with `:` and nothing after.
+
+Fixing call sites one-by-one does not work: two audit passes in the Discord bot repo still left 135 multi-arg sites, and new ones reappear with every feature. **Fix the class at the logger:** install a `hooks.logMethod` that appends would-be-dropped extras to the message (see `src/bot/loggerHooks.js` + its test in the Discord bot repo). Canonical `(obj, msg)` and printf-style calls pass through untouched. Any repo that adopts pino gets the hook from day one.
+
+Source: 2026-07-16 Discord/cloud review — threadJanitor error-logged a Discord 500 every 5 minutes for hours with the cause invisible (`Failed to process thread "...":`), the same bug class a 2026-07-14 audit had "fixed" per-site.
+
+### claude -p is the full agentic CLI: run free-text calls in an empty cwd and retry on any non-zero exit or empty stdout (2026-07-21)
+`claude -p --dangerously-skip-permissions` is the FULL agentic Claude Code CLI, not a constrained text-completion endpoint. Two operational consequences apply to any pipeline that shells out to it (e.g. job-pipeline's generate.py, and any free-text generation pipeline):
+
+1. CWD HYGIENE. When the subprocess runs with its working directory inside a repo, the spawned sub-agent can explore that repo and inject meta-commentary into its output (observed: a generated free-text brief narrated the relative source path it was invoked from, e.g. "sourcing/brief.py"). FIX: for free-text generation calls, set the subprocess cwd to an empty/neutral directory (e.g. a tempfile.mkdtemp()) so there is no repo to explore. For calls whose output is strictly parsed (e.g. JSON extraction) the risk is lower, but the same cwd hygiene is cheap insurance.
+
+2. RETRY BREADTH. Retry logic for `claude -p` must retry on ANY non-zero exit code AND on empty stdout, not only when stderr matches "rate"/"limit". Nested `claude -p` invocations intermittently exit 1 with an EMPTY stderr (a transient); code that only retries on rate/limit strings hard-fails on the first blip. FIX: retry on any non-zero return or empty output, with exponential backoff, up to N attempts.

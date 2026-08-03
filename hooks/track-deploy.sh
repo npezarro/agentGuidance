@@ -41,4 +41,19 @@ if echo "$CMD" | grep -qE 'ssh.*pezant.*pm2 restart'; then
   fi
 fi
 
+# Detect deploy-script invocations (a `./deploy*.sh` run from inside a repo).
+# These wrap the pm2 restart INSIDE the script, so the patterns above never see
+# it. Map the repo referenced in the command (repos/<name>) to its service via
+# the registry's repo field.
+if echo "$CMD" | grep -qE '(^|[/ ])deploy[A-Za-z0-9_-]*\.sh'; then
+  REPO_NAME=$(echo "$CMD" | grep -oE 'repos/[A-Za-z0-9_.-]+' | head -1 | sed 's#repos/##' || true)
+  if [ -n "$REPO_NAME" ]; then
+    SVC=$(jq -r --arg repo "$REPO_NAME" '.services | to_entries[] | select(.value.repo == $repo) | .key' "$REGISTRY" 2>/dev/null || true)
+    if [ -n "$SVC" ]; then
+      echo "$SVC" >> "$TRACKER"
+      sort -u -o "$TRACKER" "$TRACKER"
+    fi
+  fi
+fi
+
 exit 0

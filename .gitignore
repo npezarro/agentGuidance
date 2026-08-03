@@ -6,3 +6,10 @@ node_modules/
 *.pem
 *.key
 .DS_Store
+recurring-tasks/logs/
+scripts/security-scanner/*state.json
+
+# Per-session git worktrees (agentGuidance/guidance/concurrent-sessions.md).
+# Without this the worktree shows as untracked in the canonical tree and a
+# stage-everything command there commits the whole nested worktree.
+.claude/worktrees/

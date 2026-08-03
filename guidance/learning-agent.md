@@ -1,3 +1,4 @@
+<!-- Load when: hourly learning review: passes, staging, PR workflow -->
 # Learning Agent — Design
 
 A dedicated agent that periodically reviews recent work across all repos, identifies patterns and learnings that weren't captured, and persists them to the right instruction files.
@@ -44,10 +45,18 @@ Each run reviews a sliding window of recent activity:
 5. **Existing guidance files** (agentGuidance/guidance/)
    - Check for staleness, contradictions, gaps
 
+6. **Activity brief** (`privateContext/daily-activity/brief-<date>.md`, last 24h)
+   - The activity-tracker advisor's distilled record of what Nick actually did
+     (projects, companies, people, open/stalled threads, entities).
+   - Use it to correlate captured activity with what to learn/propose, and to spot
+     work that happened outside git/Discord. Distilled text only (no raw OCR); it
+     reflects observed activity, not confirmed outcomes — do not assert a state
+     from it without verifying at the real source.
+
 ### What It Produces (Output)
 
 1. **Guidance updates** — Edits to existing `agentGuidance/guidance/*.md` files or new files when a gap is identified
-2. **Profile experience entries** — Appends to `profiles/<agent>/experience.md` when a session demonstrated a pattern relevant to that profile
+2. ~~Profile experience entries~~ — retired 2026-07-01 (profiles/ removed from agentGuidance)
 3. **Prompt refinements** — Updates to `privateContext/prompts/*.md` when a prompt strategy worked well or failed
 4. **CLAUDE.md patches** — Updates to specific repo CLAUDE.md files when repo-specific learnings weren't captured
 5. **Journal entries** — Posts observations to agent-journal for other sessions to see

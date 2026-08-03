@@ -17,7 +17,12 @@ if [ -z "${DISCORD_CLOSEOUT_WEBHOOK_URL:-}" ]; then
   exit 0
 fi
 
-CLOSEOUT_CHANNEL_ID="${CLOSEOUT_CHANNEL_ID:?Set CLOSEOUT_CHANNEL_ID in ~/.env}"
+# Graceful guard: :? would die under set -euo pipefail and the settings.json
+# wrapper (; exit 0) masks the failure, so closeouts would silently vanish.
+if [ -z "${CLOSEOUT_CHANNEL_ID:-}" ]; then
+  echo "post-closeout: CLOSEOUT_CHANNEL_ID not set in ~/.env — skipping closeout post" >&2
+  exit 0
+fi
 
 # Bot token — fetched from VM on first use, cached locally
 BOT_TOKEN_CACHE="$HOME/.cache/discord-bot-token"

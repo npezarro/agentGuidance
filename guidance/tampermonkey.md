@@ -1,3 +1,4 @@
+<!-- Load when: TM script hosting and CAPTCHA bypass patterns -->
 # Tampermonkey Userscript Standards
 
 ## Preferred Platform: Chrome Automation Hub

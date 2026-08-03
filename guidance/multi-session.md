@@ -1,3 +1,4 @@
+<!-- Load when: continuity checklist and `--refresh` command -->
 # Multi-Session Continuity
 
 For detailed guidance on session ephemerality, crash recovery, and output design, see `guidance/session-lifecycle.md`.
@@ -14,7 +15,7 @@ When continuing work from a previous session (yours or another agent's), check a
 4. **Check git log.** `git log --oneline -10` to understand recent changes and commit messages.
 5. **Check git status.** Look for uncommitted work left behind.
 6. **Check for open PRs.** `gh pr list` to avoid duplicating existing work.
-7. **Check closeout reports.** Recent closeouts in Discord #closeout or on the blog (search WordPress posts via `search-wp-posts.sh`) often have detailed context on what was done, decisions made, and what's left.
+7. **Check closeout reports.** Recent closeouts in Discord #closeout or on the blog (search WordPress posts via `scripts/search-wp-posts.sh`) often have detailed context on what was done, decisions made, and what's left.
 8. **Check the agent journal.** The startup hook shows recent journal entries — scan for relevant discoveries or blockers.
 9. **Verify the environment.** Are dependencies installed? Is the build working? Are services running?
 

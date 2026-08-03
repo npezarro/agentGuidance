@@ -1,3 +1,4 @@
+<!-- Load when: curating high-quality references and study resources -->
 # Research & Reference Quality
 
 When curating study resources, reference materials, competitive analysis, or any external content for the user, the quality bar is high. Generic content wastes the user's time and erodes trust.

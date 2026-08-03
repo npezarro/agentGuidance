@@ -1,3 +1,4 @@
+<!-- Load when: evaluating and adding packages -->
 # Dependency Management Guidance
 
 Rules for evaluating, adding, updating, and removing packages.
