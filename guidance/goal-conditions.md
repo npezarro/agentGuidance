@@ -1,3 +1,4 @@
+<!-- Load when: /goal for headless runners: mission-file pattern, condition rules, BLOCKED escape hatch -->
 # /goal Conditions for Headless Runners
 
 Claude Code >= 2.1.139 supports `/goal <condition>`: the session re-prompts itself turn after turn until a small evaluator model judges the condition satisfied, then stops. In headless mode the goal string IS the prompt (`claude -p "/goal ..."`). This converts "the session decided it was done" into "the session proved it was done", which directly enforces ESSENTIAL rules 3 and 4 at the harness level.

@@ -34,11 +34,17 @@ When committing to any repo, **ALWAYS push to the GitHub remote branch as well**
 
 **Common gap:** When working across multiple repos in one session (e.g., agentGuidance + llm-tasks + voice-data), it's easy to push some and forget others. After finishing a multi-repo task, verify all repos are clean: `git status` in each one.
 
-## Staging Hygiene in Shared Repos (concurrent agents)
+## Staging Hygiene (ANY repo with in-flight work)
 
-Repos like agentGuidance, privateContext, and knowledgeBase are worked by many agents at once (interactive sessions, hourly learning-agent, doc-sync, autonomousDev). Two rules prevent one agent's commit from corrupting another's work or leaking secrets:
+Repos like agentGuidance, privateContext, and knowledgeBase are worked by many agents at once (interactive sessions, hourly learning-agent, doc-sync, autonomousDev). **This is not a "shared repo" rule — it applies to ANY repo.** Any checkout can hold uncommitted work from a previous session, and a blanket add silently ships it under your commit message.
 
-- **Stage explicit paths, never `git add -A` / `git add .`** in a shared repo. A blanket add sweeps whatever another agent left uncommitted in the working tree into *your* commit. This actually happened 2026-07-12: a concurrent session's `git add -A` bundled an unrelated agent's `testing.md` with its own change (and staged a secret — see below). Name the files you touched: `git add guidance/foo.md scripts/bar.sh`.
+> 2026-07-29: `git add -A` in `job-scraper` — not on the "shared" list — swept a half-finished LinkedIn adapter, a scrape script, and a settings change into a link-checker commit. Caught on the `git show --stat` review before pushing; commit reset and re-made with explicit paths. The rule below already existed; only its scoping made it look inapplicable.
+
+The check is cheap and unconditional: **run `git status` BEFORE staging.** If the tree holds anything you didn't touch, name your paths explicitly.
+
+Two rules prevent one agent's commit from corrupting another's work or leaking secrets:
+
+- **Stage explicit paths, never `git add -A` / `git add .`** in any repo. A blanket add sweeps whatever another agent left uncommitted in the working tree into *your* commit. This actually happened 2026-07-12: a concurrent session's `git add -A` bundled an unrelated agent's `testing.md` with its own change (and staged a secret — see below). Name the files you touched: `git add guidance/foo.md scripts/bar.sh`.
 - **Never `--no-verify` on a public repo.** The pre-commit sensitive-identifier scanner is the last line of defense before a VM username / internal path / token reaches a public GitHub repo. Bypassing it is how leaks ship. If the scanner blocks you, sanitize using `privateContext/sensitive-identifiers.md`; don't override. (The scanner correctly blocked the 2026-07-12 leak — the proper fix went out sanitized via a PR; the `--no-verify` local commit was orphaned.)
 - **Before committing, `git status` and confirm ONLY your files are staged.** If you see files you didn't touch, unstage them (`git restore --staged <path>`) — they belong to another agent.
 
@@ -110,9 +116,205 @@ Open PRs that sit unmerged cause cascading merge conflicts across all other bran
 - **Don't leave PRs for someone else to merge** unless the task explicitly requires review. Unmerged PRs are invisible debt that compounds with every new branch.
 - **Never modify `context.md` or `progress.md` on a branch that other branches also modify.** These files conflict constantly. If you must update them, do it as the very last commit before merging, after rebasing on main. The auto-merger can resolve context.md/progress.md conflicts locally, but code conflicts in these files alongside real code conflicts will block the merge entirely.
 - **If a merge fails with code conflicts:** close the PR, delete the branch, and redo the work on a fresh branch from main. Don't waste time resolving complex merge conflicts on stale branches.
+- **Follow-up fixes after an auto-merge go on a FRESH branch off main.** The auto-merger squash-merges a pushed branch within ~30s and deletes it remotely. Pushing a second commit to that same branch then conflicts every time — main holds one squashed commit while your branch still has the individual originals from the same base — and `gh pr create` may fail with `No commits between main and <branch> / Head sha can't be blank` because the branch no longer exists server-side. Do this instead: `git checkout -b <new> origin/main`, then `git checkout <old-branch> -- <only the changed files>`, commit, push the new branch, close the stale PR. Verify a push actually landed with `git ls-remote --heads origin <branch>` rather than trusting the local `origin/<branch>` ref, which goes stale the moment the merger deletes the branch. (2026-07-29: claude-tray-notifier PRs 30-33 and pezantTools PRs 144-146 each hit this.)
 
 ### autonomousDev must self-verify its own PRs actually merged (2026-07-05)
 fix-checker runs 600-601: three separate autonomousDev-created `claude/auto-*` PRs across different repos (valueSortify #148, runeval #267, and one other) sat MERGEABLE + CI SUCCESS for 2-4 days before fix-checker caught and merged them. Each was a genuine, already-verified fix — the PR just never got merged after creation. Root cause: autonomousDev's closeout logs "PR: <link>" but doesn't check `gh pr view <n> --json state` before ending the session, so a merge step that silently didn't fire (or was never attempted) goes unnoticed until the next fix-checker pass. **Fix:** autonomousDev should re-check `gh pr view --json state,mergeable` for the PR it just created as the last step of its own session, and merge it right then if MERGEABLE + CI SUCCESS, instead of relying on fix-checker as a merge backstop.
 
 ### Merged-PR scope notes are sanctioned follow-up work, not dedup blockers (2026-07-03)
 autonomous-dev run 325: When candidate work looks like a duplicate of a recently MERGED PR, read the merged PR's body before rejecting it. An explicit 'out of scope / flagged as a follow-up' note converts the candidate from forbidden duplicate into sanctioned, pre-vetted follow-up work — and the merged PR often ships infrastructure the follow-up should reuse instead of re-inventing (health-hub PR #66 scope note + safeJsonParse helper -> PR #67 per-event webhook batch isolation). Cite the scope note in the new PR body to make the lineage reviewable.
+
+## Remote Checkouts May Hold Commits That Exist Nowhere Else
+
+Before `git pull`/`git reset` in a checkout you do not own (the VM, a container, another machine), check whether it is **ahead** of origin:
+
+```bash
+git fetch origin <branch>
+git rev-list --count origin/<branch>..HEAD   # non-zero => LOCAL-ONLY commits live here
+```
+
+Non-zero means that checkout holds commits that may exist nowhere else. `git reset --hard origin/<branch>` destroys them permanently. A conflicting `git pull` is a *signal* to investigate, not a nuisance to force past.
+
+**2026-07-29, VM `~/job-scraper`:** 7 ahead / 65 behind. The 7 commits (atomic writes, cron scheduling, log rotation, Discord alerting) were absent from both the local clone and GitHub. A pull conflicted on `data/companies.json` and `package.json`; the reflexive `reset --hard` would have erased all of it.
+
+When you find divergence:
+
+1. **Back it up before touching anything.** `git branch -f <name>-backup HEAD`, then `git bundle create /tmp/x.bundle <name>-backup` and copy the bundle off the machine. A branch on a single host is not a backup. This costs nothing and makes every later step risk-free.
+
+2. **Establish whether those commits actually contain unique content. Do NOT trust the commit subjects.**
+
+   ```bash
+   git diff --stat origin/main..<backup-branch>     # net direction of the delta
+   comm -13 <(git ls-tree -r --name-only origin/main | sort) \
+            <(git ls-tree -r --name-only <backup-branch> | sort)   # files ONLY on that side
+   git diff origin/main..<backup-branch> -- src/ | grep -E "^\+[^+]"  # its unique source lines
+   ```
+
+   Then verify each feature the subjects claim, **in the upstream tree**: `git grep -n "<feature>" origin/main -- src/`.
+
+   A branch can be "7 commits ahead" and still be strictly poorer — early work that upstream later reimplemented properly, often via PRs that were squashed or re-authored so the shas never match. (2026-07-29, VM `~/job-scraper`: subjects promised atomic writes, cron scheduling, log rotation and Discord alerts. The diff was **+185 / −5,602 with ZERO files unique to the VM**, its 74 unique source lines were superseded versions of refactored functions, and every claimed feature was verifiably present upstream and better — `src/pipeline.js:94 renameSync(tmpPath, LAST_RUN_PATH)` was the atomic write. The VM was *missing* three adapters, four modules, ~20 test files, CI and Dependabot. Reset was correct; the initial conservative "cherry-pick, never reset" read was wrong.)
+
+3. **Then choose, on evidence:**
+   - *Superseded fork* (no unique content): `git reset --hard origin/<branch>`. Safe when runtime state is gitignored — check what the code actually writes (`output/`, `*.log`, caches) and confirm any tracked data file is read-only config, not state.
+   - *Genuinely unique content*: port it onto a branch off `origin/main`, commit under a valid author identity, push, and only then reset the remote checkout. Do not leave it stranded. If the push is rejected with `push declined due to email privacy restrictions`, GitHub is checking the **committer** email of every replayed commit, not just the author — that rejection follows the commits, not the pusher, so pushing from elsewhere doesn't help (see "GitHub's Email-Privacy Push Block Checks the Committer, Not Just the Author" below).
+   - *Need one fix now, reconcile later*: cherry-pick onto that checkout's HEAD (`git fetch origin main && git cherry-pick <sha>`). Conflicts are usually files that did not exist on the older HEAD — `git add` the incoming version and `--continue`. This is an interim measure, not an outcome.
+
+   Verify by running that repo's tests **on that host** afterwards. A jump in test count (16 → 283 in the case above) is a good signal you recovered real work.
+4. **Record the outcome in the checkout's own `context.md`** (a warning if unresolved, a RESOLVED note if reconciled) and commit it there. Docs committed upstream are invisible to a checkout that is 65 commits behind — the warning has to live where the next session will actually read it.
+5. **Surface the divergence as an open item.** Reconciling it is the owner's call.
+
+Restore from a bundle with:
+```bash
+git fetch /path/to/x.bundle <name>-backup:<name>-backup
+```
+
+### Untracked file shadowing a tracked path blocks checkout; use a worktree, never rm (2026-07-30)
+A repo can hold an UNTRACKED file at a path that IS tracked on origin/main (common in repos where automated sessions drop env/scratch files). 'git checkout -b <new> origin/main' then aborts with 'untracked working tree files would be overwritten by checkout'.
+
+Do NOT rm or mv the blocker to unblock yourself. On 2026-07-30 the blocker was an untracked env-notes file in a private repo that the session did not create; deleting it to land an unrelated docs commit would have destroyed someone else's uncommitted infra notes.
+
+Correct move: commit through a worktree, which never touches the dirty tree:
+  git worktree add /tmp/wt -b <branch> origin/main
+  cp <file> /tmp/wt/<path> && cd /tmp/wt && git add <path>
+  git diff --staged | grep -inE '(api[_-]?key|secret|token|password|bearer|-----BEGIN)'
+  git commit && git push -u origin <branch> && gh pr create
+  cd <repo> && git worktree remove /tmp/wt --force && git worktree prune
+
+Related: privateContext runs a PR + auto-merger flow, so 'gh pr create' can report 'a pull request already exists' -- or fail with 'No commits between main and <branch>' -- because the merger opened AND merged one within seconds of the push. Do not treat either as a failed create. Confirm with 'gh pr view <n> --json state,mergedAt', or verify directly:
+  git fetch origin && git log --oneline -3 origin/main
+  git cat-file -e origin/main:<path> && echo "landed on main"
+  git diff HEAD origin/main -- <paths> --stat   # empty == merged content is identical
+
+**If you moved the blocker aside anyway (2026-07-30): the mv is only half the procedure.**
+The worktree route above avoids this entirely and is still preferred. But if you did `mv <file> /tmp/<file>.bak` and switched branches, the file is tracked on the branch you moved TO and untracked on the branch you came FROM -- so `git checkout <original-branch>` DELETES it from the working tree. If you already discarded the backup (e.g. you diffed it against the tracked copy, found them identical, and cleaned up), the file silently vanishes from a tree where it existed before you started.
+
+Recovery / required closing steps whenever you mv a shadow file:
+  1. Record `git status --short` BEFORE you start.
+  2. After returning to the original branch, re-check the file exists.
+  3. If gone: restore the backup if it differed, else `git show origin/main:<file> > <file>`.
+  4. Re-run `git status --short` and confirm it matches step 1 exactly.
+
+Leaving the working tree in a different state than you found it is a silent side effect the user never asked for. Never assume the checkout was symmetric -- verify.
+
+## The shared checkout may host another live agent session (2026-07-30)
+
+`~/repos/<app>` is a single working tree that several agent sessions can be
+editing at once. Two distinct failures came out of one session that assumed sole
+ownership (shopper/foodie/travel-assistant/employ):
+
+**1. `git checkout --` deleted another session's uncommitted WIP.** To isolate my
+own edits I copied my touched files to /tmp, then restored the shared tree with
+`git checkout -- <files>`. `git status` had listed `M src/components/JobDetail.tsx`
+as one entry, but that file held BOTH my one-line change AND ~50 lines of the
+other session's unrelated, uncommitted redesign. The copy captured their work and
+the restore deleted it; it survived only because the /tmp copy still had it.
+
+> **Before `git checkout --` on any file in a shared tree, run `git diff <file>`
+> and confirm every hunk is yours.** An `M` in `git status` is one flag for the
+> whole file, not a claim of single authorship. If a hunk is not yours, leave the
+> file alone and work in a worktree instead.
+
+**2. The other session committed MY uncommitted files under its own message.**
+While a new component sat untracked in the shared checkout, the concurrent
+session `git add`-ed it, wrote its own commit message, and pushed it to
+`origin/master`. My later push was rejected as non-fast-forward, and the
+"conflicting" commit turned out to be byte-identical to my own work. Anything
+uncommitted in a shared tree is fair game for another process running `git add`.
+
+> **When another session may share the checkout, do the whole edit in
+> `git worktree add /tmp/wt-<repo> <trunk>` from the start.** Never leave new
+> files untracked in the shared tree.
+
+**Detect a concurrent session BEFORE the first edit, not at commit time:**
+```bash
+git branch --show-current     # an unexpected branch (e.g. claude/<something>)
+git reflog -5                 # checkouts or commits you did not make
+git worktree list             # worktrees you did not create
+git status --short            # record this; your final state must differ only by your files
+```
+If any of these show another session, branch a worktree off trunk immediately and
+never touch the shared tree. Reconciling afterwards: if the remote already has
+your content (`git diff HEAD origin/<branch> -- <paths>` is empty), do not force
+your duplicate commit -- reset to origin and commit only what is genuinely missing.
+
+### Acknowledging a gate hit that is not your work
+
+`hooks/check-unpushed.sh` blocks on any file **this session wrote** that is still
+dirty. It cannot tell "I forgot to push" from "I wrote this, reverted it, and
+another session's edits are now on the same path" — and in a shared checkout the
+second case is real (see the section above).
+
+When you have *proven* the dirt is not yours, acknowledge the exact path:
+
+```bash
+printf '%s\t%s\n' "shopper/CLAUDE.md" "reason it is not yours" \
+  >> "/tmp/claude-repos-ack-${SESSION_ID}"
+```
+
+The gate then reports the path in a non-blocking `systemMessage` and appends it to
+`~/.claude/logs/git-push-gate-acks.log` with the session id, timestamp, and reason.
+
+This is deliberately **not** a mute switch:
+- one line acknowledges exactly one path — there is no wildcard,
+- a line with no reason still blocks,
+- any other dirty tracked file still blocks,
+- unpushed **commits** still block regardless of any ack.
+
+Prove it before you use it (`git diff <file>` showing zero hunks of yours, plus
+evidence your own content is already on the remote). Acknowledging work you simply
+forgot to push is the failure this gate exists to catch.
+
+### A peer's unpushed commit (mostly fixed — read this before acting)
+
+> **Superseded for the common case as of `eb76be0` (2026-08-01).** The gate is now
+> **per-commit**: it intersects each unpushed commit's files against this session's
+> Edit/Write ledger and blocks only on commits containing a file *you* wrote. A peer's
+> commit is named in the message but does not block. Verified by
+> `hooks/tests/test-guards.sh` ("no block when every unpushed commit is a peer's").
+>
+> So if the gate fires on a repo, it is because a commit contains **your own** file.
+> Push that. Do not reach for the procedure below reflexively — publishing a peer's
+> unreviewed work is a real action with real risk, and it is now rarely necessary.
+>
+> Two hours before that fix, a session hit the raw block and correctly declined to push
+> a peer's *two-minute-old* commit while that session was still live; the peer pushed it
+> themselves shortly after. **When the peer is live, waiting is right** — they are
+> mid-turn and may still amend. The procedure below is for a genuinely *stranded*
+> commit: the authoring session is gone (no fresh `/tmp/claude-session-alive-<sid>`,
+> see `guidance/concurrent-sessions.md`) and the work exists nowhere else.
+
+The ack above covers dirty **files**. There was no equivalent for **commits**: the gate
+counted `@{u}..HEAD` per repo and did not care who authored them, so a peer's commit
+blocked your stop on work you did not write and could not ack away.
+
+Hit 2026-08-01: an affiliate-tag session was gated by `privateContext (1)` — a peer's
+`sync-card-portfolio.sh` commit sitting on the peer's own feature branch.
+
+When a commit really is stranded, push it rather than waiting or resetting:
+
+1. **Identify the author and branch** — `git log --format='%h %an %ad %s' @{u}..HEAD`
+   and `git branch --show-current`. Confirm it is not yours before touching it.
+2. **Secret-scan the diff** you are about to publish. You are pushing content you did
+   not write and did not review; the repo being private does not exempt it.
+3. **Push to the branch it was committed on** — `git push origin HEAD:<that-branch>`.
+   Never redirect a peer's commit to `main`/`master`: they chose that branch, and
+   landing it on a mainline is a scope change you have no mandate for.
+4. **Say so in your final message.** You published someone else's work; that belongs
+   in the report, not buried in a tool call.
+
+Cost of doing this: if the peer later amends or rebases that commit, their next push
+needs a force. That is strictly better than leaving their work stranded local-only,
+which is the exact loss this gate exists to prevent.
+
+Do **not** `git reset` a peer's commit to clear the gate — that destroys work that
+exists nowhere else.
+
+### claude-auto-merger auto-merges claude/* audit branches on push, so gh pr create races it (2026-08-01)
+During CLAUDE.md compliance audit run #15 (28 repos), every 'git push -u origin claude/claudemd-audit-15' was intercepted by the claude-auto-merger service, which opened AND squash-merged its own PR within seconds. The subsequent 'gh pr create' then failed with 'No commits between <default> and claude/claudemd-audit-15'.
+
+Consequences and the correct handling:
+1. Treat 'No commits between...' after pushing a claude/* branch as SUCCESS, not failure. The bot already landed the change. Find its PR with 'gh pr list --state all --head <branch>' and reuse that PR number; do not re-push or open a duplicate.
+2. Do NOT retry the push. In one repo (auto-shorts) a retry produced a second PR that also merged; the diffs were byte-identical so nothing duplicated in the file, but two merged PRs for one logical change is misleading history.
+3. Because the bot SQUASH-merges, 'git branch --merged origin/<default>' reports the local audit branch as unmerged even though its content landed. Verify by comparing content (every added line present in 'git show origin/<default>:<file>'), not by SHA ancestry, before deleting the local branch.
+4. Default branch is not uniformly 'main' - page-reader and shopper use 'master'. Resolve it with 'gh repo view --json defaultBranchRef -q .defaultBranchRef.name' rather than assuming.
+5. When verifying added lines with grep, use 'grep -Fqx -- "$line"'. Without the '--', any added line beginning with '-' (a markdown bullet) is parsed as a grep option and the verification silently reports false negatives.

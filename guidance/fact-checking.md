@@ -1,3 +1,4 @@
+<!-- Load when: mandatory search-verification of external actionable claims (prices, eligibility rules, offers) before asserting -->
 # Fact-Checking External Claims
 
 ## Why this exists
@@ -93,3 +94,39 @@ internal-first API (only `/api/*`, requires an `X-Panel-Key` header). The
 author relied on a `MEMORY.md` "LIVE example.com/panel" index line and a
 repo-exists `ls`, neither of which proves public liveness. Use curl per
 `knowledgeBase/patterns/url-liveness-detection.md`.
+
+## "Known / reputable brand" is a factual claim — verify provenance
+
+Calling a brand "known", "established", "reputable", or "trusted" is an
+externally-checkable claim, not flavor. Do not assert it from Amazon star
+counts or review volume — that is the exact fake-review signal a skeptic gate
+is supposed to catch, laundered into credibility. Before applying any such
+label, run one search (`who makes <brand>` / `<brand> company history`) and
+classify:
+- **Established** — an independent company with verifiable history and
+  distribution beyond a single marketplace (e.g. Norpro, founded 1973).
+- **Amazon-native / marketplace label** — an invented seller brand (often an
+  all-caps or nonsense word) sold mainly on Amazon/Walmart with no independent
+  history (e.g. IMEEA is an Amazon-native label; FLAFSTER is a 3-person family
+  side-hustle). Never call these "known brands"; they can still be fine budget
+  picks, but justify that on specific evidence, not borrowed reputation.
+
+Never contradict your own skeptic gate: flagging "no-name" products as a trap
+while presenting same-tier Amazon-native brands as "known brands" in the same
+guide is the failure this rule exists to prevent.
+
+Origin (2026-07-28): a shopper skewers guide listed IMEEA and FLAFSTER as
+"known brands" next to the genuinely-established Norpro. Fixed in all three
+buying-guide instruction sets (buying-assistant/CLAUDE.md, claude-skills
+buying-guide/SKILL.md, shopper/docker/CLAUDE.md) with a Brand provenance gate.
+
+### Amex merchant-coding research: DoC table is stale, issuer pages 403, reddit blocked to WebSearch (2026-08-01)
+When researching which merchants trigger an Amex category statement credit (wireless/streaming/shipping), three constraints bite:
+
+1. Doctor of Credit's 'Amex Benefits Workshop' sortable table is the best aggregate source, but almost every data point in it is dated 2020. Always extract the date column (page-reader --text-only + grep beats WebFetch, which drops the dates), cite the age, and treat 'Works'/'Does not work' as unproven rather than settled. Example: it lists Tello as Works (2020-07-02) and US Mobile as Does not work (2020-05-13) - both six years old as of Aug 2026.
+
+2. Amex's own benefit terms pages under global.americanexpress.com return HTTP 403 to WebFetch and page-reader. Issuer terms therefore have to come from two independent secondary sources (awardwallet + upgradedpoints worked), and the answer should say so rather than implying the issuer was read directly.
+
+3. reddit.com is blocked to WebSearch (API Error 400: 'domains are not accessible to our user agent'), including via allowed_domains. Crowd-sourced data points need an aggregator (Doctor of Credit, FrequentMiler, Miles to Memories, bestmvno) or page-reader instead.
+
+Practical consequence: recommend a test charge before committing to a carrier whose coding rests only on an old data point, and record the evidence gaps explicitly in the deliverable.

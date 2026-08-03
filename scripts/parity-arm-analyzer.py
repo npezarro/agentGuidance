@@ -14,6 +14,9 @@ first manual readout (2026-07-16) proved necessary:
   - VERIFY THE MODEL FROM THE TRANSCRIPT, not the arm log: a mid-session /model switch
     is invisible to the SessionStart hook (found in the wild: a "control opus" session
     that actually ran Fable). Non-Opus sessions are excluded as contaminated.
+  - SUBSTRATE COHORT: the layer/control arms are scoped to OPUS_SUBSTRATE (currently
+    "opus-5"). The A/B re-baselined off Opus 4.8 on 2026-07-29; pre-cutover Opus 4.8
+    sessions are a separate, already-analyzed cohort and are excluded from this readout.
   - drop degenerate sessions (zero assistant turns)
   - exclude non-prompts from the denominator: /commands, <command...>, hook
     <system-reminder>s, <local-command-stdout>, <task-notification>, [Request ...]
@@ -50,6 +53,19 @@ ARCHIVE_DIR = os.environ.get(
 )
 STALE_DAYS = 7
 
+# Opus substrate cohort. The interactive parity A/B was re-baselined from Opus 4.8 to
+# Opus 5 on 2026-07-29 (Opus 5 lands near Fable, so whether the layer still helps is a
+# fresh question on it). Only sessions whose transcript model matches the current
+# substrate are pooled into the layer/control arms; earlier Opus 4.8 sessions are a
+# separate, already-analyzed cohort and are excluded. Override to re-analyze a prior
+# substrate (e.g. PARITY_OPUS_SUBSTRATE=opus-4-8).
+OPUS_SUBSTRATE = os.environ.get("PARITY_OPUS_SUBSTRATE", "opus-5")
+
+# Optional cohort start. PARITY_SINCE=<ISO8601> counts only arm rows on/after that
+# instant — used by the craft-v1 interactive A/B readout (2026-07-29 →) to exclude
+# the pre-switch full-layer-v4 Opus 5 sessions. ISO timestamps compare as strings.
+PARITY_SINCE = os.environ.get("PARITY_SINCE", "")
+
 METRIC_VERSION = "corr-regex-v1"  # frozen 2026-07-16; see module docstring
 CORRECTION = re.compile(
     r"that'?s (not|wrong)|still (broken|not)|(doesn|didn|isn)'?t work|you didn'?t"
@@ -77,6 +93,8 @@ def load_arms():
             sid = r.get("session_id") or ""
             if not sid:
                 continue  # unjoinable
+            if PARITY_SINCE and (r.get("ts") or "") < PARITY_SINCE:
+                continue  # before the cohort window
             if sid not in arms:
                 arms[sid] = r
                 order.append(sid)
@@ -214,10 +232,17 @@ def main():
         if s["aturns"] == 0:
             excluded.append((sid, arm, "degenerate (0 assistant turns)"))
             continue
-        expect = "fable" if arm == "fable-ref" else "opus"
-        if not any(expect in m.lower() for m in s["models"]):
-            excluded.append((sid, arm, f"CONTAMINATED: ran {','.join(s['models'])}"))
-            continue
+        if arm == "fable-ref":
+            if not any("fable" in m.lower() for m in s["models"]):
+                excluded.append((sid, arm, f"CONTAMINATED: ran {','.join(s['models'])}"))
+                continue
+        else:  # layer/control — Opus arms, scoped to the current substrate cohort
+            if not any("opus" in m.lower() for m in s["models"]):
+                excluded.append((sid, arm, f"CONTAMINATED: ran {','.join(s['models'])}"))
+                continue
+            if not any(OPUS_SUBSTRATE in m.lower() for m in s["models"]):
+                excluded.append((sid, arm, f"pre-{OPUS_SUBSTRATE} cohort: ran {','.join(s['models'])}"))
+                continue
         if sid in judged:
             s["corr"] = judged[sid].get("corrections", s["corr"])
             s["prompts"] = judged[sid].get("prompts", s["prompts"])
@@ -246,6 +271,9 @@ def main():
 
     metric = f"judged ({len(judged)} sessions)" if judged else METRIC_VERSION
     print(f"\nparity interactive A/B readout — metric: {metric}")
+    print(f"opus substrate: {OPUS_SUBSTRATE} (earlier-substrate Opus sessions excluded as a prior cohort)")
+    if PARITY_SINCE:
+        print(f"cohort window: sessions on/after {PARITY_SINCE} (craft-v1 A/B; treated=minimal craft rule vs control)")
     print(f"telemetry: {len(arms)} unique sessions; usable: {len(rows)}; excluded: {len(excluded)}")
     for sid, arm, why in excluded:
         print(f"  excluded {arm:7s} {sid[:8]}: {why}")

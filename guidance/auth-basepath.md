@@ -79,6 +79,17 @@ Each app needs:
 - **`redirect()` auto-prepends basePath**: Next.js `redirect("/search")` becomes `/<basePath>/search` automatically. Do NOT include the basePath prefix in redirect paths (e.g., `redirect("/shopper/search")` becomes `/shopper/shopper/search`). This applies to all server-side redirects in basePath-deployed apps.
 - **Trailing slash handling**: Set `trailingSlash: false` in `next.config.ts` for basePath apps behind a reverse proxy. Do NOT use `skipTrailingSlashRedirect: true` -- it is broken with basePath (causes empty response body for the basePath root URL, and middleware never fires). `trailingSlash: false` correctly issues 308 redirects from `/app/` to `/app`, which proxies handle cleanly.
 
+- **The `(?!...)` matcher never matches the index route -- add an explicit `"/"` entry** (student-transcript, 2026-08-02). The near-universal "protect everything except these paths" matcher, `"/((?!api/auth|login|_next/static|...).*)"`, compiles to a regex whose final group requires a literal `/` plus a segment: `^\/app(?:\/(_next\/data\/[^/]+))?(?:\/((?!...).*))(\.json)?[\/#\?]?$`. `/app` alone therefore does NOT match and the middleware never runs on the app's own home page -- usually the one page that renders real data. Every sub-route redirects to login, so the app *looks* protected. Add `"/"` as its own matcher entry (it compiles to `^\/app(?:...)?(?:\/(\/?index|\/?index\.json))?[\/#\?]?$`, which does match). **Verify from the build, not by reading the source:** `node -e "require('./.next/server/middleware-manifest.json').middleware['/'].matchers.forEach(m => console.log(m.regexp))"` and test your paths against those regexes.
+
+- **`req.auth` fails OPEN on any Auth.js config error -- check for a user, not for truthiness** (student-transcript, 2026-08-02). `handleAuth` does `await getSession(...).then(r => r.json())`. When `@auth/core` cannot complete (missing `AUTH_SECRET`, `UntrustedHost`, bad provider config) it returns `Response.json({ message: "There was a problem..." }, { status: 500 })`, so `req.auth` becomes a **truthy error object**, not `null`. `if (!req.auth) return redirect(login)` then lets every request through unauthenticated, and the only symptom is a line in the PM2 error log. Gate on identity instead:
+  ```typescript
+  const email = req.auth?.user?.email;
+  if (typeof email !== "string" || email.length === 0) { /* deny */ }
+  ```
+  The `signIn` callback is what restricts *which* identity can get a session; middleware only needs to confirm one exists.
+
+- **Standalone runs from `.next/standalone/`, so your `.env` must live there** (student-transcript, 2026-08-02). `server.js` calls `process.chdir(__dirname)`. A `.env`/`.env.local` in the repo root is never read, and PM2's `env:` block typically only carries `PORT`/`NODE_ENV`/`NEXT_PUBLIC_BASE_PATH` -- so NextAuth starts with no `AUTH_SECRET` and no `AUTH_TRUST_HOST` and throws `UntrustedHost` on every call. Either `cp .env.local .next/standalone/.env` in deploy.sh (humans, finance-tracker, health-hub, student-transcript) or pass `node_args: '--env-file=/var/www/<app>/.env'` in the PM2 config (runeval). This is the same `chdir` root cause as KB `patterns/nextjs-standalone-db-trap.md`.
+
 ### Apps using the proxy
 
 - runeval (`/runeval`, port 3001)
@@ -292,7 +303,7 @@ day one (see the config above). Deploy gotchas learned during the rollout:
 - Health checks: some apps' `/api/health` is auth-gated (401 by design, e.g. health-hub,
   runeval) — use page-render 200/307/308 as the liveness signal, not health==200.
 
-## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11)
+## Mobile native sign-in (Capacitor WebView apps) — the SHA-1 gotcha (2026-07-11, resolved 2026-07-30)
 
 WebView-shell apps (e.g. `pezant-mobile`) can't do OAuth in the WebView — Google blocks
 embedded WebViews with `disallowed_useragent`. Instead they do **native** Google Sign-In
@@ -325,12 +336,32 @@ Debugging checklist for "mobile sign-in does nothing / broken across the board":
    (same package) exists for it, and create one if not. Don't swallow the plugin's error in
    JS — log it so `adb logcat` shows it.
 
-**Automation caveat (browser-agent):** it can read the Cloud Console client *list* to
-confirm what's registered, but it CANNOT reliably drive the "Create OAuth client" form (the
-Application-type dropdown / Material form is not automatable) and CANNOT read the Play App
-Signing SHA-1 (Play Console renders the cert inside a frame the content script can't reach).
-Treat client creation as a manual Cloud Console step, driven on the project-owner's browser
-profile (not an alt account that lacks project access).
+**A diagnosis is not a fix — verify the resource exists, not that someone described it.**
+This exact bug was correctly root-caused on 2026-07-11, written up in three places, and
+then stayed broken for 19 more days because the one required Console click was never
+actually performed. Docs that say "create client X" are not evidence that X exists. Before
+closing a config-gap bug, re-read the *live* resource list and confirm the object is
+there. Treat "known issue, documented" as unfixed until proven otherwise.
+
+**Automation caveat (browser-agent) — CORRECTED 2026-07-30.** An earlier version of this
+guidance said the Cloud Console create-client form was not automatable and the Play App
+Signing SHA-1 was unreadable. **Both were wrong**, and that false verdict is what let the
+outage persist. The entire flow (read Play Console fingerprints -> create the Android OAuth
+clients) was automated end to end. What actually bites:
+- **A CLI timeout is not a failed action.** While a Material overlay (e.g. the
+  Application-type dropdown) is open, the content script stops answering and the CLI
+  prints `Timeout waiting for browser response` — but the click *landed*. Confirm with a
+  screenshot before concluding anything failed. Earlier sessions read the timeout as
+  "not automatable" and stopped.
+- `click` matches CSS **class** selectors but not custom element tag names.
+- Prefer a distinguishing class for submit buttons; a bare text match can hit the page
+  heading instead of the button (e.g. "Create" also matches a "Create client" title).
+- `eval` returns undefined on Google's CSP'd pages — use screenshots instead, and take an
+  element-scoped crop when reading anything you must transcribe exactly. **Never read a
+  cert fingerprint off a downscaled full-page screenshot** — hex glyphs like `48`/`A8`
+  are indistinguishable at that resolution. Prefer DOM text where available.
+Drive it on the project-owner's browser profile (not an alt account lacking project
+access).
 
 ## Rules for Future Work
 

@@ -135,3 +135,28 @@ Rules:
 3. Every external source captured via `source-registry.sh` with a cached copy?
 4. External claims passed `fact-check`? Status recorded (`verified`/`unverified`).
 5. File frontmatter carries `provenance:` and (external) title carries `(AI-generated)`.
+
+---
+
+## Deliverables built from a live page — retain the raw fetch
+
+When a fact-bearing doc is built by parsing a live web page (conference agenda,
+pricing table, job posting, roster, spec), the page keeps changing and the doc does
+not. Capturing the URL is not enough; capture the **bytes and the parser**.
+
+- **Save the raw fetch into the repo** next to the deliverable, plus the extraction
+  script. `/tmp` is not storage.
+- **On revision, diff raw-vs-raw with the identical parser.** Diffing a fresh fetch
+  against your own written summary conflates "the page changed" with "the summary was
+  wrong". Raw-vs-raw isolates the real delta and gives a citable before/after.
+- **Report entity occurrence counts** across the whole page (`Name: 1 → 0`), not only
+  the structural diff of the section you parsed.
+- **A removed item invalidates experience claims, not just the schedule.** Grep the
+  doc for lines asserting first-hand exposure to the removed thing and neutralize them
+  explicitly — an unrevised "you will have seen X say Y" becomes a fabrication.
+- **Banner the stale doc at the top**, naming which sections still hold.
+- **Third-party archives are not a fallback.** Wayback returned 503 and an empty body
+  during the 2026-08-01 summit-agenda revision; the retained local fetch was the only
+  evidence.
+
+Full write-up: knowledgeBase `patterns/live-page-deliverable-staleness.md`.
