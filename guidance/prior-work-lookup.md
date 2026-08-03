@@ -63,6 +63,37 @@ gh search commits "<keyword>" --owner npezarro --limit 20
 - `~/.claude/projects/-mnt-c-Users-npeza/memory/` — auto-memory system
 - Check existing memory files for project context
 
+## 7. Usage Mining — "is this file/rule/tool actually being used?"
+
+Session logs answer *whether a reference file has ever been loaded*, which is the only honest basis
+for pruning an always-loaded index (`agent.md`, `ESSENTIAL.md`, `MEMORY.md`, a skill roster). Count
+real tool invocations, not text matches:
+
+```bash
+cd ~/.claude/projects
+grep -rhoE '"file_path":"[^"]*guidance/[a-z0-9-]*\.md"' . --include=*.jsonl \
+  | grep -oE '[a-z0-9-]*\.md' | sort | uniq -c | sort -rn
+```
+
+Two traps, both of which produce a confident wrong answer:
+
+- **The index contaminates its own measurement.** A bare `grep -rl "guidance/foo.md"` matches the
+  SessionStart injection of the file that *lists* `foo.md`, so every entry scores ~1 hit per session
+  and the data looks uniformly hot. Anchor on `"file_path"` (the Read tool) and check bash reads
+  separately (`cat`/`head`/`sed`/`grep` inside `"command"`), or you are measuring the index, not usage.
+- **Read count is confounded by age.** A file added last week cannot have 4,000 sessions of history.
+  Check when it was added before reading a low count as "cold".
+
+A zero-read file is not automatically dead weight. Distinguish (a) *superseded* — a skill or CLAUDE.md
+rule now owns the function, so the pointer is redundant; (b) *failed pointer* — the "load when"
+description never matches real tasks, so fix the description rather than delete the file; (c) genuinely
+cold. Cross-check against skill references (`grep -rho 'guidance/[a-z0-9-]*\.md' ~/repos/claude-skills`)
+before cutting: a file skills route to is reachable even with no index entry.
+
+Prefer demoting to deleting. `scripts/gen-manifest.sh` has a `COLD` set that drops a file out of
+`guidance/INDEX.md` (so it stops consuming SessionStart context) while leaving it on disk and listed
+in `MANIFEST.md`. Reversible in one line; deletion is not.
+
 ## Gaps
 - On the WSL host, the recall index (source 0) captures conversation history verbatim even when a
   session produced no commit, closeout, or Discord post — as long as the session ran on this host

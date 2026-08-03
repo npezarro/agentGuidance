@@ -11,6 +11,10 @@
 
 ## Log
 
+2026-08-03 | refactor | `agent.md` 99 -> 44 lines: guidance index externalized to a generated `guidance/INDEX.md` + own SessionStart hook; 9 zero-read files demoted via a `COLD` set (`9912986`)
+2026-08-03 | fix | `gen-manifest.sh` scanned only line 1 for the `Load when:` header, misreporting `browser-page-reader.md` as MISSING; now scans 5 lines and emits both artifacts (`9912986`)
+2026-08-03 | guidance | `prior-work-lookup.md` section 7 "Usage Mining": measuring real file reads from session logs, and the self-contamination trap that makes the naive grep lie
+
 2026-08-03 | feature | `guidance/literature-search.md` + `agent.md` index: Valency MCP primary-literature search (44.2M papers, 91% PubMed, 491M-work citation graph), with a mandatory peer-review guard and explicit negative scope (`8096d4a`)
 
 2026-08-02 | fix | `check-unpushed.sh` sees git worktrees: `.git` may be a FILE (`-e` not `-d`), and a no-upstream branch compares against origin's default (`02c1e13`)
