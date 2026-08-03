@@ -107,7 +107,20 @@ the **first write** to a repo when all three hold:
 1. the target is inside a repo under the guarded root (`~/repos`, override
    `WORKTREE_GUARD_ROOT`), **and**
 2. it is not already inside `.claude/worktrees/`, **and**
-3. another **live** session holds that repo.
+3. another **live** session has written **that same file**.
+
+**Condition 3 was originally "holds that repo", and that was wrong.** Production disagreed
+within ~15 minutes: two denials against a real peer on `knowledgeBase` and
+`privateContext`, with **zero overlapping files** in both, and that session acked both
+rather than taking a worktree. Repo-level co-presence is the normal state when several
+sessions run; it is not a collision. What it actually risks, a stage-everything commit
+sweeping a peer's uncommitted work, is already blocked by claim-guard's deny arm, so the
+wider condition bought friction and no protection.
+
+Two bugs surfaced while narrowing it, both worth knowing if you touch ledger matching:
+ledger paths are absolute but **not normalized** (a real entry contained `/./`, which
+fails plain equality against a realpath'd target and would have made the guard silently
+never fire), and an unquoted heredoc expands variables but does **not** interpret `\n`.
 
 Condition 3 is what makes this enforcement rather than friction: a solo session in an
 uncontested repo never sees it. Escape hatch (shared with claim-guard, so one override
