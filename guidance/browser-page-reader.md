@@ -177,4 +177,21 @@ Procedure for a new site:
 3. Reproduce that URL cold in a fresh tab. If it renders, the adapter is a URL builder - the best possible outcome.
 4. Only if a cold deep link genuinely fails do you build a driven flow, and then record WHY (e.g. IHG disabled its deep-link route in April 2026, so its search must be submitted with a trusted click on a foregrounded tab).
 
-Asking the owner for one working URL is cheap and often faster than any amount of reverse-engineering. Ask early.
+SELF-SERVICE ORDER. Asking the owner is the LAST resort, not the first:
+
+1. **Web search the parameter.** This works more often than expected and cost
+   nothing: searching for IHG's award URL surfaced a real link carrying
+   `qAAR=IVANI` + `qRtP=IVANI`, which was the entire IHG unlock. Search the
+   parameter name, the rate code, and `site:<domain>` deep links; award-travel
+   blogs and FlyerTalk routinely paste working URLs.
+2. **Drive the filter yourself and read `location.search`.** Works where the
+   site keeps state in the URL.
+3. **Capture the XHR** the control fires, including REQUEST BODIES. Choice is
+   the case that needs this: clicking its points toggle changes the rendered
+   rates but leaves the URL untouched, and a URL-only network listing of 159
+   requests showed no rate-plan parameter. `ratePlanCode=SRD` is not reachable
+   by (1) or (2) -- web search did not surface it and the URL never changes.
+4. Only then ask.
+
+Do not stop at (1) failing. Each step reaches something the previous one
+cannot.
