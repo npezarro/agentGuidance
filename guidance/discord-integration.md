@@ -14,6 +14,11 @@ A private Discord server is the central communication hub for all Claude agents.
   ~/repos/privateContext/discord-webhook.sh "Starting new task: <brief description>"
   rm -f ~/.cache/discord-threads/"$CLAUDE_SESSION_ID"
   ```
+- **A link the owner must click goes to `#links-to-click`, not into your response.** OAuth consent screens, email/domain verification, one-time approval pages, CAPTCHA-gated logins: post them to the channel so they outlive the session. A URL that only ever appeared in a chat response is gone when the session ends, and whatever it was blocking stalls silently.
+  ```bash
+  ~/repos/privateContext/send-link-to-click.sh "<title>" "<url>" "<what to do / what to send back>"
+  ```
+  State **which account** to use if several could apply, **what success looks like** (including expected-looking failures, e.g. an OAuth redirect to `localhost` shows a browser error but the code is in the address bar), **what to send back**, and **the likely failure and its fix** so a blocked link does not cost a second round trip.
 - **The owner issues requests** in the `#requests` channel. The bot spawns `claude -p` sessions and posts results back.
 - **Per-project channels** are auto-created by the bot. Work summaries are crossposted there after each job completes.
 - **Specialist agents** (Code Reviewer, DevOps, Architecture, Performance, Testing) can be requested by posting in `#requests` with a tagged description like `[Security Review] ...`.
@@ -142,3 +147,14 @@ Discord re-encodes every uploaded image attachment and strips ALL EXIF/TIFF/GPS 
 **Why it matters:** Any feature that reads uploaded-image metadata (location, capture date, camera) from a Discord attachment gets nothing. Google Photos shared albums strip GPS the same way. EXIF-based extraction only works on direct local files that were never routed through Discord or Google Photos.
 
 **How to apply:** Never rely on EXIF from Discord-sourced or Google-Photos-sourced images; always fall back gracefully (e.g. to a configured default location). Also note sharp's re-encode strips EXIF too, so read metadata from the ORIGINAL bytes before any resize/convert step.
+
+### Links Nick must click go to Discord #links-to-click, never left in a chat response (2026-08-03)
+Created 2026-08-03. Any URL requiring a human in a browser — OAuth consent, email/domain verification, one-time approval pages, CAPTCHA-gated logins — goes to the #links-to-click Discord channel, not into a chat response. A link that only ever appeared in a response dies with the session, and the work it blocks stalls with no trace.
+
+  ~/repos/privateContext/send-link-to-click.sh "<title>" "<url>" "<what to do / what to send back>"
+
+Always include: which account to use if several could apply; what success looks like, including expected-looking failures (an OAuth redirect to localhost shows a browser error, but the code is in the address bar); what to send back; and the likely failure plus its fix, so a blocked link does not need a second round trip.
+
+The webhook resolves at runtime and is never committed; the helper handles lookup itself (exact locations: see privateContext).
+
+Related trap found the same day: Discord/Cloudflare returns 403 to the default 'Python-urllib/x.y' User-Agent. Any script posting to a Discord webhook via urllib MUST set a real User-Agent, and must NOT swallow the failure — db-guardian.sh had been silently failing every alert.
