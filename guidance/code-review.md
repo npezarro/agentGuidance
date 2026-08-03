@@ -261,3 +261,18 @@ Procedure before editing any deliverable:
 
 Then verify each link resolves, since a superseded-by pointer to a missing file is worse than none:
   for f in $(grep -oE '\]\(\./[^)]+\)' doc.md | sed 's/](\.\///; s/)$//'); do [ -e "$f" ] && echo "OK $f" || echo "MISSING $f"; done
+
+### Substring-matching short blocklist tokens silently drops legitimate content (2026-08-03)
+A keyword blocklist matched with a bare substring test (`any(w in text for w in WORDS)`, `text.includes(w)`, `LIKE '%w%'`) is wrong the moment ANY entry is short enough to sit inside an ordinary word. The short entry silently matches unrelated text, and if the match feeds a HARD FILTER the affected item is not down-ranked, it DISAPPEARS. Real case (a YouTube shorts automation repo, run #344): PROFANITY_WORDS contained "ass", matched via `any(p in all_text for p in PROFANITY_WORDS)`. Every window containing pass/class/assist/massive/password/grass/assassin/embarrassing/compass/classic was flagged profane; because score_window returns 0 when a flagged window scores under PROFANITY_ENERGY_THRESHOLD, clean gameplay clips were dropped from candidate selection entirely. 12/12 sampled innocent gaming phrases false-positived.
+
+Do NOT 'fix' this by wrapping every entry in \b. That trades false positives for false NEGATIVES: \bfuck\b stops matching 'fucking', \bshit\b stops matching 'shitty'. And prefix-anchoring (\bass\w*) reintroduces the original bug ('assist', 'assassin'). No single uniform rule is correct, because the list mixes long unambiguous tokens with short dangerous ones.
+
+Correct shape: keep substring matching as the DEFAULT (it catches inflections for free), and maintain an explicit whole-word exception set for the short entries, then add the compound forms back to the main list so bounding costs no recall:
+    WHOLE_WORD = {"ass", "asses"}          # \b-anchored
+    WORDS = [..., "asshole", "dumbass", "badass"]  # substring, unambiguous
+    parts = [rf'\b{re.escape(w)}\b' if w in WHOLE_WORD else re.escape(w) for w in WORDS]
+    PATTERN = re.compile('|'.join(parts))
+
+Reviewer checklist: (1) for every blocklist/keyword filter, ask 'is any entry <= 4 chars, and is it a substring of a common word?' — grep the entry against a word list; (2) trace whether a match causes a hard drop (return 0 / continue / filter out) rather than a score adjustment — hard drops make the bug invisible, since the dropped item leaves no log line; (3) when you add \b anchors, ALWAYS re-test the inflections the old substring form used to catch, in BOTH directions (innocent-must-be-clean AND profane-must-still-match) — a one-directional test suite will happily certify a recall regression; (4) verify escape/anchor interaction for non-alphabetic entries (censor markers like "***" or "[__]") — \b does not apply where there are no word characters at the edges.
+
+Related: this is the same family as pattern-like-escape-char-must-self-escape (matching-layer helper that looks right in isolation but is wrong against the real matcher semantics).
