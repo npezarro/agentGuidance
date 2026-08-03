@@ -408,6 +408,26 @@ GitHub Actions `cache: npm` with `npm ci` requires `package-lock.json` in the re
 
 **Fix:** Remove `package-lock.json` from `.gitignore` and commit it. This also ensures deterministic installs across environments.
 
+### `secrets.*` Is Not Allowed in a Step-Level `if:` — Invalidates the Whole Workflow Silently
+
+GitHub Actions' expression evaluator forbids the `secrets` context inside a step-level `if:` condition. Referencing it there (e.g. `if: secrets.SOME_TOKEN != ''`) doesn't fail that one step — it invalidates the **entire workflow file**. The failure mode has almost no signal: zero jobs run, no logs, no annotations, and the error surfaces with the workflow's file path shown where the job/step name should be, which reads like a missing-workflow problem, not a syntax problem.
+
+**Fix:** `secrets` may be referenced in `env:` (or `with:`), never in `if:`. Move the guard into the step's own script instead:
+```yaml
+# BAD — invalidates the whole workflow with no useful error
+- if: secrets.DEPLOY_TOKEN != ''
+  run: ./deploy.sh
+
+# GOOD — secrets flow through env:, the guard lives in the script
+- env:
+    DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+  run: |
+    if [ -z "$DEPLOY_TOKEN" ]; then echo "skip: no token"; exit 0; fi
+    ./deploy.sh
+```
+
+Source: claude-tray-notifier `.github/workflows/build-and-publish.yml` (2026-08-01/02 delta window) — already fixed and left as an inline comment there, but not yet in this cross-cutting file.
+
 ## Verify Regression Tests Actually Discriminate (2026-07-29)
 
 "The suite is green after the fix" does NOT prove a new regression test discriminates between buggy and fixed code — it might pass under both. Real case (promptlibrary PR #204, run #343): three route-level tests were added for three symptoms of one SQL-escaping bug. Stashing only the source fix (`git stash push <source-file>`, keeping the tests) produced **2** failures, not 3 — the third test passed against the buggy source too, because its fixture was too weak (the pre-fix pattern matched "any row containing a backslash," and only one seeded row had one, so the assertion held either way).

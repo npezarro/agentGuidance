@@ -363,6 +363,18 @@ If `journal_mode=WAL` appears in `DATABASE_URL` (e.g., from an old deploy.sh), *
 
 **Pattern used in:** runeval `lib/prisma.ts` (commit `0ac95bc`, 2026-06-02) — strips `journal_mode` from URL with `url.searchParams.delete("journal_mode")` before constructing the Prisma datasource URL, then applies WAL via PRAGMA at connection time.
 
+## Replacing a WAL-Mode SQLite File Must Delete `-wal`/`-shm` Too, or the DB Corrupts
+
+Deploying a new copy of a WAL-mode SQLite DB over an old one **without removing the sidecar files** produces `SQLITE_CORRUPT` ("database disk image is malformed") on the first read after deploy.
+
+Seen 2026-08-01 (travel-assistant, `travel-prices.db`): the main `.db` file was replaced at 22:47, but `travel-prices.db-wal` was still the 22:32 file from the previous deploy. SQLite opened the new main file, found a WAL whose page numbers referenced the OLD file, replayed it, and corrupted the database. Every page that touched it returned HTTP 500.
+
+**Fix:**
+1. `rm -f <db> <db>-wal <db>-shm` together, then copy. Never overwrite the main file alone.
+2. Produce the copy with `sqlite3 SRC ".backup DEST"`, not `cp`/`scp`/`rsync` of a live file. `.backup` takes a read lock and emits one consistent file; a raw copy of a WAL-mode DB can miss committed pages that live only in the `-wal`.
+
+Distinct from the "WAL Mode Must Be Applied via PRAGMA" gotcha above — that one is about *setting* WAL mode through Prisma; this one is about *deploying over* a DB that's already in WAL mode, via any tool (rsync, artifact copy, manual `cp`).
+
 ## SQLite/DB path must never resolve inside the build tree (silent data loss)
 
 **Incident 2026-06-17 (shopper/foodie/travel/runeval):** Next.js standalone apps run with `cwd = .next/standalone/`. A DB layer that falls back to a RELATIVE path (`process.env.DB_PATH || path.join(process.cwd(), "app.db")`, or Prisma `DATABASE_URL="file:./data/x.db"`) silently creates the live DB INSIDE `.next/` whenever the launch doesn't export an absolute path. `npm run build` does `rm -rf .next`, so every deploy ERASES the DB and all rows written since the last build — silent, intermittent, undetected.
