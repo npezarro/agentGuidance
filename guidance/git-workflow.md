@@ -345,3 +345,41 @@ Consequences and the correct handling:
 3. Because the bot SQUASH-merges, 'git branch --merged origin/<default>' reports the local audit branch as unmerged even though its content landed. Verify by comparing content (every added line present in 'git show origin/<default>:<file>'), not by SHA ancestry, before deleting the local branch.
 4. Default branch is not uniformly 'main' - page-reader and shopper use 'master'. Resolve it with 'gh repo view --json defaultBranchRef -q .defaultBranchRef.name' rather than assuming.
 5. When verifying added lines with grep, use 'grep -Fqx -- "$line"'. Without the '--', any added line beginning with '-' (a markdown bullet) is parsed as a grep option and the verification silently reports false negatives.
+
+## A PR stuck CONFLICTING is invisible to automation (2026-08-03)
+
+**`gh pr view N --json mergeable` returns `UNKNOWN` on the first poll.** GitHub computes
+mergeability lazily; the first read of a PR that has not been checked recently is always
+`UNKNOWN`, and only a follow-up read (~6s later) returns the real `MERGEABLE`/`CONFLICTING`.
+
+Any checker that reads the first response sees `UNKNOWN`, finds nothing actionable, and moves
+on. That is how four PRs in one repo sat blocked for five days with zero alerts while one of
+them accumulated 40 commits and its default branch moved 60 ahead. **Anything gating on
+mergeability must re-poll.**
+
+Diagnosis order when a repo "seems behind on commits":
+1. `git status` — a clean tree means this is almost never uncommitted work.
+2. `gh pr list --state open`, then check each PR's mergeability **twice**.
+3. `git merge-tree --write-tree --name-only <default> <branch>` for a non-destructive trial merge.
+
+**Merge the default branch INTO the stale branch, never the reverse.** A branch that is N
+commits behind will, if pushed onto the default branch, delete everything added there since it
+forked. Verify losslessness per file before committing a resolution — for append-only files
+this must print 0 against both parents:
+
+```bash
+comm -23 <(git show MERGE_HEAD:<file> | sort -u) <(sort -u <file>) | grep -c .
+```
+
+Duplicate commit subjects with different SHAs on the two sides are the tell that sessions have
+been cherry-picking around the block; those duplicates are usually what created the conflict.
+
+**Merging same-file PRs one at a time does not drain a backlog.** Each merge moves the default
+branch under the siblings that touch the same file, so previously-mergeable PRs become
+conflicting. Clearing 12 doc PRs this way moved one backlog from 22 to 25 conflicting, with 13
+PRs newly broken. When N PRs edit the same hotspot file, merge them into a single integration
+branch, resolve the combined set once, and land that.
+
+**Auto-resolve only what is provably safe.** A union resolver should refuse any hunk where the
+two sides share a line, rather than deduplicating by guess — and never union a YAML frontmatter
+hunk, which produces duplicate keys.
