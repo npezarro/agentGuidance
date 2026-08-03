@@ -9,6 +9,8 @@
 > - Never include secrets, credentials, or .env contents
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
+- 2026-08-03: merged PRs #282, #319, #305 (union merges on guidance/mcp-tools.md and 6 other guidance files); sanitized 3 identifier leaks in branch content.
+
 ## Log
 
 2026-08-03 | refactor | `agent.md` 99 -> 44 lines: guidance index externalized to a generated `guidance/INDEX.md` + own SessionStart hook; 9 zero-read files demoted via a `COLD` set (`9912986`)
