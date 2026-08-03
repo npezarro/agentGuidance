@@ -267,12 +267,18 @@ A keyword blocklist matched with a bare substring test (`any(w in text for w in 
 
 Do NOT 'fix' this by wrapping every entry in \b. That trades false positives for false NEGATIVES: \bfuck\b stops matching 'fucking', \bshit\b stops matching 'shitty'. And prefix-anchoring (\bass\w*) reintroduces the original bug ('assist', 'assassin'). No single uniform rule is correct, because the list mixes long unambiguous tokens with short dangerous ones.
 
-Correct shape: keep substring matching as the DEFAULT (it catches inflections for free), and maintain an explicit whole-word exception set for the short entries, then add the compound forms back to the main list so bounding costs no recall:
+Correct shape: keep substring matching as the DEFAULT (it catches inflections for free), and maintain an explicit whole-word exception set for the short entries, then enumerate the compound forms in the main list:
     WHOLE_WORD = {"ass", "asses"}          # \b-anchored
     WORDS = [..., "asshole", "dumbass", "badass"]  # substring, unambiguous
     parts = [rf'\b{re.escape(w)}\b' if w in WHOLE_WORD else re.escape(w) for w in WORDS]
     PATTERN = re.compile('|'.join(parts))
 
 Reviewer checklist: (1) for every blocklist/keyword filter, ask 'is any entry <= 4 chars, and is it a substring of a common word?' — grep the entry against a word list; (2) trace whether a match causes a hard drop (return 0 / continue / filter out) rather than a score adjustment — hard drops make the bug invisible, since the dropped item leaves no log line; (3) when you add \b anchors, ALWAYS re-test the inflections the old substring form used to catch, in BOTH directions (innocent-must-be-clean AND profane-must-still-match) — a one-directional test suite will happily certify a recall regression; (4) verify escape/anchor interaction for non-alphabetic entries (censor markers like "***" or "[__]") — \b does not apply where there are no word characters at the edges.
+
+The compound list is an OPEN CLASS and any enumeration of it is incomplete by construction. Budget for that: document it as incomplete, and do NOT claim "so nothing is lost". In the run that produced this entry the first attempt shipped exactly that claim with a three-item allowlist {asshole, dumbass, badass}; an independent verifier then diffed old-matcher vs new-matcher over 131 strings and found 22 recall losses (jackass, smartass, asswipe, half-assed, fatass, kickass ...). Because the match fed a hard gate, the losses did not merely mislabel: low-energy windows that used to be gated to 0 now scored ~7.4 and became SELECTABLE. Trading a false-positive bug for a false-negative bug of the same size is not a fix.
+
+Two process lessons, both cheap:
+  - Write the recall test in the SAME commit as the anchor change, enumerating the strings the old form caught. The original test suite was one-directional (innocent-must-be-clean) and happily certified the regression green.
+  - For any matching change, mechanically diff old vs new over a few hundred strings drawn from BOTH classes, rather than reasoning about which cases changed. The 22 losses were invisible to inspection and obvious to a diff.
 
 Related: this is the same family as pattern-like-escape-char-must-self-escape (matching-layer helper that looks right in isolation but is wrong against the real matcher semantics).
