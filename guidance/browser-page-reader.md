@@ -156,3 +156,25 @@ Corollaries from the same session:
 - Prefer the element's native activation (input.click() on a checkbox) over synthesized coordinate clicks; it is what actually flipped the control here.
 - When several similar controls exist, a generic selector silently hits the first. This page had TWO label.switch>span.slider pairs ('Accessible Room' and 'Use Points'). Scope with :has(), e.g. label.switch:has(input[aria-label='Use Points']) span.slider.
 - Placeholder text mimics data. The only points-like string while loading was '1234 Points', a skeleton. Do not accept the first regex hit as a value.
+
+### To automate a site feature, DRIVE the feature in a real browser first and read the URL it produces - do not assemble candidate URLs (2026-08-02)
+When you need a site's X-mode page (award/points pricing, a filtered search, a specific rate plan), the FIRST action is to use the feature the way a person does and capture the URL/request the application itself lands on. Only then write the automation.
+
+2026-08-02, hotel chain award rates. I spent many rounds assembling candidate URLs, inventing parameter values, and driving widgets by selector. The owner clicked into Choice's own search-with-points flow and pasted one URL:
+
+  .../rates?checkInDate=&checkOutDate=&ratePlanCode=SRD&view=undefined
+
+ratePlanCode=SRD works on a COLD deep link. It deleted an entire driven flow I had just built and verified (load root -> close a native <dialog> -> navigate in the same tab -> trusted click button.points-toggle -> read from main). That flow worked and returned the same value; it was simply unnecessary, and it was fragile in three ways the one-liner is not: it steals window focus, it depends on a class selector that will rot, and it needs a composited tab.
+
+Costs of getting this order wrong, all incurred in one session:
+- Invented an enum value (rateFilter=WORLD_OF_HYATT_AWARD; the real one is woh) and concluded from the empty result that the chain withheld the data. Wrong, and it reached three commits before being overturned.
+- Declared Choice 'blocked by a locale interstitial' after mistaking a native <dialog>'s residual DOM text for a block.
+- Declared IHG 'blocked' before finding qAAR=IVANI.
+
+Procedure for a new site:
+1. Open the site in the real browser. Use the feature by hand: pick the destination, set dates, select the points/award/filter mode.
+2. Capture the URL AND the XHR the page fires (network capture) at the moment results appear.
+3. Reproduce that URL cold in a fresh tab. If it renders, the adapter is a URL builder - the best possible outcome.
+4. Only if a cold deep link genuinely fails do you build a driven flow, and then record WHY (e.g. IHG disabled its deep-link route in April 2026, so its search must be submitted with a trusted click on a foregrounded tab).
+
+Asking the owner for one working URL is cheap and often faster than any amount of reverse-engineering. Ask early.
