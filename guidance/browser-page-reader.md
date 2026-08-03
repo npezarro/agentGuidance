@@ -219,3 +219,12 @@ vendors change these silently.
 **So the loop is: search broadly -> collect EVERY candidate -> load each in a
 real browser -> keep what actually renders.** A parameter is "confirmed" only
 after the page shows the data, never because a search result mentioned it.
+
+### Aggregator city-slug URLs can silently resolve to the wrong city (2026-08-03)
+When scripting a travel/price aggregator (Kayak, Priceline, Expedia) via page-reader, a human-readable city slug in the URL can silently resolve to a DIFFERENT city and still return a full, plausible page of results.
+
+Observed 2026-08-03: https://www.kayak.com/cars/West-Covina,CA/2026-08-10/2026-09-07 rendered a complete results page with 207 cars and real prices, but the search form read 'Columbia, South Carolina, United States'. The numbers were entirely valid-looking and entirely wrong. Using the numeric city code form (.../West-Covina,California,United-States-c559/...) resolved correctly.
+
+Rule: after loading any aggregator search page headlessly, ALWAYS grep the rendered output for the echoed location string in the search form and confirm it matches the intended city BEFORE reading any price off the page. If it does not match, discard the numbers rather than adjusting them. A wrong-city page does not error, does not warn, and looks exactly like a right-city page.
+
+Corollary for scraped business directories (cmac.ws, loc8nearme, superpages, yellowpages): treat a branch address or phone found only in a scraped directory as an unconfirmed lead. Verify it against the brand's own location index or location API before repeating it as fact. Same session produced a phantom 'Enterprise at 2016 E Garvey Ave S, (626) 974-7984' from cmac.ws that does not exist; the phone was one digit-group off a real nearby branch, the signature of a scrape transcription error.
