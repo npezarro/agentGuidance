@@ -11,6 +11,8 @@
 
 ## Log
 
+2026-08-03 | feature | `guidance/literature-search.md` + `agent.md` index: Valency MCP primary-literature search (44.2M papers, 91% PubMed, 491M-work citation graph), with a mandatory peer-review guard and explicit negative scope (`8096d4a`)
+
 2026-08-02 | fix | `check-unpushed.sh` sees git worktrees: `.git` may be a FILE (`-e` not `-d`), and a no-upstream branch compares against origin's default (`02c1e13`)
 2026-08-02 | guidance | per-session worktrees enabled by default in `agent.md`; `.gitignore` prerequisite across 5 repos (`5cdf85c`, `aae2b98`)
 2026-08-02 | test | worktree regression cases added, 10 -> 13, negative control verified
