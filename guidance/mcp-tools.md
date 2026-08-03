@@ -36,7 +36,7 @@ is the ONLY path that formats correctly in headless `#requests`/`#tasks` runs (t
    nondeterministically — Calibri one upload, Arial the next — so force it here; structure/sizes/colors/
    headings/bullets DO import reliably). Source: headless Tavus packet came out flat, 2026-07-15.
 
-**Never write raw Markdown to Google Docs.** Google Docs does not render Markdown syntax — `#`, `**`, `---`, etc. appear as literal characters. In particular, `contentMimeType:"text/markdown"` is NOT a safe fallback for resumes: their sources use plain "Summary"/"Experience" labels (no `#`/`-`), so the auto-convert has nothing to convert and yields a flat doc.
+**Never write raw Markdown to Google Docs for resumes/cover letters/prep docs.** Google Docs does not render Markdown syntax — `#`, `**`, `---`, etc. appear as literal characters. In particular, `contentMimeType:"text/markdown"` is NOT a safe fallback for resumes: their sources use plain "Summary"/"Experience" labels (no `#`/`-`), so the auto-convert has nothing to convert and yields a flat doc. This is a source-shape problem, not a blanket claim that Drive's markdown auto-convert never works — see "Fallback that works headless" below for content whose source DOES use real markdown syntax (headings, bold, bullets), where the auto-convert is the right tool.
 
 **Preferred: HTML upload (handles all formatting automatically)**
 
@@ -54,6 +54,7 @@ Convert markdown to HTML, then upload via Google Drive API with `contentMimeType
 **Do NOT use `createGoogleDoc`/`updateGoogleDoc` for long-form docs with tables.** These tools only accept plain text; tables cannot be created through them.
 
 **Google Docs tabs cannot be created via the API (verified 2026-07-20).** The Tabs feature visible in the Docs UI is not exposed through the Google Docs or Drive API (issuetracker.google.com issue #375867285). When you need per-topic navigation inside a doc, use dated HEADING_1 sections (newest-first) instead — the built-in outline pane lists them like tabs and the approach works with `append-to-doc.js`. Do not block on tab creation; fall back to sections immediately.
+
 ### Verify a pushed GDoc by re-reading the published doc, not the intermediate files (2026-08-01)
 A markdown-to-GDoc render pipeline can report success at every stage and still publish literal markdown, because each script only sees the slice it handles. Intermediate-file checks are not verification: the HTML looked clean while the Doc showed raw '####' markers.
 
@@ -97,3 +98,42 @@ landed.
 For a phone-read doc prefer headings and bullets over markdown tables: table header rows convert
 imperfectly, and numbered headings render as `## 1\.` with `>` escaped as `\>` (cosmetic, but tables
 are the one case where the damage is structural).
+
+
+## Google Sheets — Bulk Update Safety
+
+**Always re-read the target range immediately before any bulk write.** Do not rely on row indices captured earlier in the session.
+
+External processes (other Claude instances, the user, automated cron jobs) may insert or shift rows between your read and your write. If you write with stale indices, you silently stomp the wrong rows with no error.
+
+**Procedure:**
+1. Call `getGoogleSheetContent` on the target range.
+2. Verify column A (or the identifier column) matches your expected data for each row.
+3. If the range has shifted, recalculate row indices before writing.
+4. Then call `updateGoogleSheet` with the corrected range.
+
+**Why:** On 2026-06-01, a new job row was inserted at row 57 between two writes in the same session. The second write stomped the new row's URL and silently shifted every subsequent row's URL to the wrong company. Detected only by spot-checking the result.
+
+This applies equally to Google Calendar bulk edits, Notion bulk mutations, and any multi-row write against shared state in a long session.
+
+
+## Headless / Discord-Invoked Sessions: Piotr MCP Is Absent
+
+The piotr `google-drive` MCP (and other locally-registered MCP servers) is only connected in **interactive** sessions. Discord-dispatched (`#requests`/`#tasks`) and other headless `claude -p` sessions only have the **claude.ai** MCPs (`mcp__claude_ai_Google_Drive__*`, Gmail, Calendar) — any skill step that hardcodes `mcp__google-drive__createGoogleDoc`/`createFolder` will silently fail to route (tool not found) in that context.
+
+**Fallback that works headless:** `mcp__claude_ai_Google_Drive__create_file` with `contentMimeType: "text/markdown"` and the raw markdown inlined in `textContent`. Drive auto-converts markdown → a real formatted Google Doc (headings, bold, bullets render natively) — no HTML conversion step needed. Create folders with `mimeType: "application/vnd.google-apps.folder"`; nest via `parentId`. Content must be inlined in the tool call (this MCP can't read local files) — reproduce the source content faithfully rather than re-summarizing it. **Do not use this for resumes/cover letters/prep docs** — see "Never write raw Markdown..." above: `render-app-doc.js` + HTML upload is the deterministic path for those and also works headless (it's a local script, not an MCP tool). This fallback is for content whose markdown source already has real `#`/`**`/`-` syntax for the auto-converter to act on.
+
+Quirks: markdown table header rows convert imperfectly (first row can blank out) and underscores in inline code get backslash-escaped — cosmetic only. Source: `push-to-gdoc` skill / `interview-prep` hitting this in a Discord-dispatched run, 2026-07-12.
+
+
+## Google Drive Sharing Limitations (piotr MCP)
+
+**"Anyone with the link" sharing cannot be set via the piotr `google-drive` MCP.** `mcp__google-drive__addPermission` and the `shareFile` wrapper both enforce a non-empty `emailAddress` parameter even when `type=anyone`, returning "Error: Valid email is required." The wrapper validates email format before hitting the Drive API, so the legitimate Drive API path (which accepts `type=anyone` with no email) is unreachable.
+
+**Workarounds:**
+1. Share with a specific recipient's email address directly.
+2. Flag the doc URL to the user and ask them to set "Anyone with link → Viewer" in the GDoc share UI before forwarding.
+
+Do not waste cycles trying to coerce the MCP with empty strings or dummy emails — neither work.
+
+Source: piotr google-drive MCP limitation discovered 2026-06-09 during resume-variant skill share step.
