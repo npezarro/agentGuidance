@@ -136,6 +136,21 @@ The hooks scan the full `git diff`, including removed lines. When you're *removi
 
 This pattern was validated across 7+ repos during the 2026-05 infrastructure redaction sweep (claude-tray-notifier, claudeNet, groceryGenius, manchu-translator, valueSortify, youtubeSpeedSetAndRemember, claude-bakeoff, agentGuidance).
 
+A related, narrower case: a merge commit that only carries forward content **already unchanged on the target branch** (verify with `git grep <string> origin/main`) is not a new leak — bypass is fine there too, since blocking would only prevent landing unrelated, already-reviewed changes in the same commit.
+
+## Concurrent-Commit Entanglement — Quarantine via `git stash`
+
+Two automations (an interactive session and a background agent, or two concurrent agent runs) editing the same repo can land in a single local commit together — one change clean, the other containing sensitive identifiers neither author intended to commit as-is. Discovered 2026-07-12: a concurrent automation's uncommitted `opus-fable-parity.md` edit (containing a raw VM SSH username and internal bot module path) got swept into the same working tree as an unrelated, clean `testing.md` addition.
+
+**Fix: don't commit either until they're un-entangled.**
+1. `git status` / `git diff` to see exactly what's staged vs. unstaged before committing anything.
+2. If a concurrent commit already landed locally (unpushed) mixing clean + sensitive content, use `git reset --soft` to uncommit it, then split: commit and push the clean part on its own.
+3. For the sensitive part, `git stash` it with a clear label (e.g. `"On main: QUARANTINE 2026-07-12: <what> contains sensitive identifiers (<which>) — MUST sanitize with privateContext/sensitive-identifiers.md before any commit to this PUBLIC repo. Original concurrent commit was <sha>."`). This preserves the content losslessly without exposing it — nothing sensitive is committed or pushed, but the work isn't discarded either.
+4. Verify: `git log origin/main..HEAD` clean, `git grep <sensitive-string>` returns nothing in any tracked file, and `origin/main` matches local `main`.
+5. Leave the stash for a human to sanitize (per `privateContext/sensitive-identifiers.md`) and `git stash pop` if the content is still wanted.
+
+This is the safer alternative to either force-committing with `--no-verify` (which would actually leak the identifiers) or discarding the work outright (loses real content). See the 2026-07-12 closeout in `privateContext/deliverables/closeouts/` for the full incident.
+
 ## Pre-Commit Checklist (Manual Fallback)
 
 When the automated hook isn't installed, verify before committing to any public repo:
