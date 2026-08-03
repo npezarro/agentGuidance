@@ -113,3 +113,12 @@ External processes (other Claude instances, the user, automated cron jobs) may i
 **Why:** On 2026-06-01, a new job row was inserted at row 57 between two writes in the same session. The second write stomped the new row's URL and silently shifted every subsequent row's URL to the wrong company. Detected only by spot-checking the result.
 
 This applies equally to Google Calendar bulk edits, Notion bulk mutations, and any multi-row write against shared state in a long session.
+
+
+## Headless / Discord-Invoked Sessions: Piotr MCP Is Absent
+
+The piotr `google-drive` MCP (and other locally-registered MCP servers) is only connected in **interactive** sessions. Discord-dispatched (`#requests`/`#tasks`) and other headless `claude -p` sessions only have the **claude.ai** MCPs (`mcp__claude_ai_Google_Drive__*`, Gmail, Calendar) — any skill step that hardcodes `mcp__google-drive__createGoogleDoc`/`createFolder` will silently fail to route (tool not found) in that context.
+
+**Fallback that works headless:** `mcp__claude_ai_Google_Drive__create_file` with `contentMimeType: "text/markdown"` and the raw markdown inlined in `textContent`. Drive auto-converts markdown → a real formatted Google Doc (headings, bold, bullets render natively) — no HTML conversion step needed. Create folders with `mimeType: "application/vnd.google-apps.folder"`; nest via `parentId`. Content must be inlined in the tool call (this MCP can't read local files) — reproduce the source content faithfully rather than re-summarizing it.
+
+Quirks: markdown table header rows convert imperfectly (first row can blank out) and underscores in inline code get backslash-escaped — cosmetic only. Source: `push-to-gdoc` skill / `interview-prep` hitting this in a Discord-dispatched run, 2026-07-12.
