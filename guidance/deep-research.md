@@ -129,3 +129,17 @@ Observed 2026-08-03 on enterprise.com's live booking engine (Covina S. Citrus br
 Enterprise's own long-term page states monthly rates begin at 'more than 28 days'. That published copy is wrong; the empirical trigger is exactly 28. Vendor documentation about its own pricing tiers is a hypothesis, not a fact.
 
 Rule: when researching any duration-tiered price (car rental, subscription, storage, cloud commitment), bracket the boundary by quoting N-1, N, and N+2 rather than quoting only the requested N. Report the cliff explicitly, because 'book one day longer and save $129' is often the single most actionable finding in the whole research pass.
+
+
+## Company-Specific Deliverables — No Invented Product Claims
+
+When building materials ABOUT a specific product or company (interview memos, prototype decks, product analyses, competitive write-ups), only include product capabilities that are:
+
+1. **Verified via public sources** — official docs, press releases, tech blog posts, shareholder letters, or news articles. Date-stamp and link the source.
+2. **Confirmed in the user's own sketch or brief** — if the user described the feature themselves, use their framing exactly.
+
+Do NOT extrapolate, assume, or invent features that "seem like they should exist" or "fit the product vision."
+
+**Why this matters:** Fabricated features read as authoritative claims to a hiring panel, client, or stakeholder. When challenged, the error is harder to recover from than a knowledge gap. Real case: Netflix final-panel prep required a full ground-up rebuild after agents invented watch parties (not a Netflix feature), a 50% TV access target (no such target exists), and kids-profiles-with-games (false) — costing a full session.
+
+**Self-check before submitting any company-specific deliverable:** For each product claim, ask "where is the public source for this?" If you can't point to one, mark it as assumed or cut it. Reference the user's own words as the floor for what's in scope. Source: Netflix panel prep correction (2026-07-01), S199.

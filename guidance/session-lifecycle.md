@@ -58,7 +58,7 @@ following that file's existing direct-to-main convention — doc-sync-pass execu
 the public autonomousDev mirror per that repo's CLAUDE.md).
 
 Separate observation from the same run: pushing a `claude/doc-sync-<n>` branch to shopper's
-sibling repos (foodie, travel-assistant) triggers `pezant-auto-merger[bot]` to open AND merge
+sibling repos (foodie, travel-assistant) triggers `claude-auto-merger[bot]` to open AND merge
 a PR (titled "Claude Doc Sync <n>") within seconds of the push — there is no actual "staged
 for review" window despite the runner prompt's step 4 ("Stage PRs for review"). Future
 doc-sync runs should not expect the PR to sit open; treat a push to those repos as equivalent

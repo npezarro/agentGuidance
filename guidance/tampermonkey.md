@@ -151,3 +151,19 @@ When searching for a clickable element by text, a non-interactive wrapper `<div>
 
 ### Dismiss Cookie Banners Before Interacting
 Cookie consent overlays intercept all pointer events. Any click on a covered element silently fails. Dismiss banners (ALLOW ALL / REJECT ALL / Accept) **at the start of the automation flow**, before any other interaction. If a well-targeted click has no effect, check for an overlay as a first diagnostic.
+
+
+## Claude Code Skills: YAML Frontmatter Gotcha
+
+Claude Code skills (files in `~/.claude/skills/*/SKILL.md` and `~/repos/claude-skills/`) use YAML frontmatter for `description:` and `when_to_use:`. **YAML treats an unquoted ` #` as a comment start** — any value containing a Discord/Slack channel name (e.g. `#requests`, `#intros`, `#tasks`) gets silently truncated at the `#`.
+
+**Symptom:** The skill still invokes manually, but model-invocation matching uses only the text before the `#`, making the trigger phrase incomplete or wrong. Hard to spot by inspection.
+
+**Fix:** Double-quote any `description:` or `when_to_use:` value that contains `#`:
+
+```yaml
+description: "Post to Discord #requests channel"
+when_to_use: "When the user mentions #cli-mirror output"
+```
+
+**Quick audit:** `python3 -c "import yaml, sys; d=yaml.safe_load(open(sys.argv[1])); print(d.get('description',''))" <skill-file>` — compare output length to the raw value. Found 2026-07-01: bot-self-test, linkedin-outreach-batch, vm-claude-auth-heal all had truncated triggers. Template gotcha added to `claude-skills/SKILL_TEMPLATE.md`.

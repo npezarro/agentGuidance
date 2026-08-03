@@ -122,3 +122,16 @@ The piotr `google-drive` MCP (and other locally-registered MCP servers) is only 
 **Fallback that works headless:** `mcp__claude_ai_Google_Drive__create_file` with `contentMimeType: "text/markdown"` and the raw markdown inlined in `textContent`. Drive auto-converts markdown → a real formatted Google Doc (headings, bold, bullets render natively) — no HTML conversion step needed. Create folders with `mimeType: "application/vnd.google-apps.folder"`; nest via `parentId`. Content must be inlined in the tool call (this MCP can't read local files) — reproduce the source content faithfully rather than re-summarizing it.
 
 Quirks: markdown table header rows convert imperfectly (first row can blank out) and underscores in inline code get backslash-escaped — cosmetic only. Source: `push-to-gdoc` skill / `interview-prep` hitting this in a Discord-dispatched run, 2026-07-12.
+
+
+## Google Drive Sharing Limitations (piotr MCP)
+
+**"Anyone with the link" sharing cannot be set via the piotr `google-drive` MCP.** `mcp__google-drive__addPermission` and the `shareFile` wrapper both enforce a non-empty `emailAddress` parameter even when `type=anyone`, returning "Error: Valid email is required." The wrapper validates email format before hitting the Drive API, so the legitimate Drive API path (which accepts `type=anyone` with no email) is unreachable.
+
+**Workarounds:**
+1. Share with a specific recipient's email address directly.
+2. Flag the doc URL to the user and ask them to set "Anyone with link → Viewer" in the GDoc share UI before forwarding.
+
+Do not waste cycles trying to coerce the MCP with empty strings or dummy emails — neither work.
+
+Source: piotr google-drive MCP limitation discovered 2026-06-09 during resume-variant skill share step.

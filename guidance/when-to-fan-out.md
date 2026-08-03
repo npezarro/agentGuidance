@@ -33,6 +33,43 @@ Parallel agents must never share non-atomic state. If a loop writes a JSON state
 
 Reference implementation: `autonomousDev-private/fix-checker/review-gemini-prs.sh`.
 
+## Node.js subprocess parallelism gotcha: `execSync` blocks
+
+When parallelizing `claude -p` calls from Node.js, use **non-blocking `spawn`**, not `execSync`. `execSync` is synchronous — it blocks the Node.js event loop until the subprocess exits. Wrapping it in `Promise.all` gives NO actual parallelism; calls still run serially despite the async appearance.
+
+**Wrong (serial despite Promise.all):**
+```js
+function callClaude(item) {
+  return execSync(`claude -p "${prompt}"`, { encoding: 'utf8' })  // blocks event loop
+}
+await Promise.all(items.map(callClaude))  // still serial
+```
+
+**Right (actually parallel):**
+```js
+function callClaude(item, prompt) {
+  return new Promise((resolve, reject) => {
+    let output = ''
+    const proc = spawn('claude', ['--print'], { stdio: ['pipe', 'pipe', 'inherit'] })
+    proc.stdin.write(prompt); proc.stdin.end()
+    proc.stdout.on('data', d => { output += d })
+    proc.on('close', code => code === 0 ? resolve(output) : reject(new Error(`exit ${code}`)))
+    proc.on('error', reject)
+    setTimeout(() => { proc.kill('SIGTERM') }, 120_000)  // safety timeout
+  })
+}
+await Promise.all(items.map(item => callClaude(item, buildPrompt(item))))  // actually parallel
+```
+
+For Python, use `concurrent.futures.ThreadPoolExecutor` with a bounded pool (env `*_CONCURRENCY`, default 3):
+```python
+from concurrent.futures import ThreadPoolExecutor
+with ThreadPoolExecutor(max_workers=concurrency) as pool:
+    results = list(pool.map(process_item, items))
+```
+
+Keep all shared-state writes (JSON files, DB, counters) on the main thread in original order after collection. Source: auto-shorts PR #76 + job-pipeline commit f749859 (2026-06-23).
+
 ## Cost discipline
 
 Fan-out multiplies token spend. Gate every autonomous fan-out behind the usage check (`check-usage.sh --gate-at N`) and `log()` any coverage cap (top-N, no-retry) so silent truncation never reads as full coverage. See `reference_usage_gate_system` and ESSENTIAL rules.

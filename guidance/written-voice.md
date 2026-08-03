@@ -97,6 +97,17 @@ He hedges when genuinely uncertain, not out of weakness.
 - Shares his own updates openly — breakups, injuries, hobbies — without being heavy about it
 - "Worth finding time to go deeper? Happy to work around your schedule."
 
+### Hiring-manager follow-up / "show me your work" email: prove it with links and breadth
+When a HM or interviewer asks for detail on relevant work, the register is "professional follow-up" but runs longer than Nick's usual 2-4 sentences. Warmth constant, at most one emoticon, no extended vowels. Defining moves:
+
+- **Link the actual working thing.** Every project mentioned comes with a clickable URL to the deployed app or a concrete example output — never just a homepage, never just a description. `(you can use it here: <app-url>)`, `(see an example here: <shared-result-url>)`. Nick wants the reader to click, not imagine.
+- **Enumerate breadth over one illustrative example.** When describing his ecosystem/infra, list the real components in a short bulleted set. The systematic, multi-part nature IS the selling point; don't collapse it to one sentence.
+- **Prove novelty with a specific, datable fact, not an adjective.** "We were building with a preview version of ChatGPT so we were sorting this all out before anyone had built with LLMs at scale" beats calling the space "brand new" and leaving it there.
+- **Cut interpretive closers that editorialize the fit.** State the work plainly and trust the reader to connect it to the role. "As new blockers arose, I expanded my infrastructure's capability to handle them" wins over "That side keeps me close to the raw question of what the model can do."
+- **Patent link = Lens.org**, not Google Patents (see privateContext for the canonical URL).
+
+Source: voice style guide samples — Meta HM follow-up before/after (Jun 30 2026).
+
 ### Role pitch / referral ask: Experience mapped to requirements
 - Each role gets its own numbered block with a clear pitch
 - Structure: Role → genuine excitement → specific parallel from his career → metric
@@ -255,6 +266,10 @@ In casual writing, specifics take the form of place names, dates, and references
 - **No decorative quotation marks — in any writing.** Quotation marks are reserved for exactly four uses: (1) direct speech (*she said "I'll be there"*), (2) verbatim citation from a source (*the form asks for "a chat log…"*), (3) introducing or critiquing a specific term, single use (*the supposedly "easy" cases*), (4) code/string literals (*set `mode = "production"`*). Every other use is decorative and must be removed. Decision rule: read the sentence without the marks; if the meaning is preserved, the marks are dead weight. Common AI tics to kill: quoting a noun for emphasis (*most "agent" demos* → *most agent demos*), wrapping a paraphrase (*"see a problem" and "ship a fix"* → *seeing a problem and shipping a fix*), quoting a project name (*building "Foodie"* → *building Foodie*). The `write-as-nick` skill mandates `grep -nE '"[^"]+"' <file>` as a mechanical pre-flight. Source: broadened 2026-06-08 after decorative quotes appeared in a YC hackathon application draft — prior rule only covered cover letters.
 - **Cover letters always lead with the resume header.** Every cover letter (Google Doc, plain text, application portal text box) begins with Nick's resume header above the salutation. The literal header text and source-of-truth resume doc reference live in `~/repos/privateContext/guidance/cover-letter-header.md` (this is a public repo so the values are not inlined here). The `write-as-nick` skill enforces this as a Quality Gate.
 - **One-pager resume layout defaults.** When drafting a one-pager variant (compressed to fit one page), use: (1) single-line role headers — `"<Company>, <City> · <Job Title> · <DATES>"` on one paragraph, not stacked across 3 lines (saves 5+ vertical lines vs the standard multi-page spec); (2) contact line includes the portfolio link (from `~/repos/privateContext/guidance/cover-letter-header.md`); (3) summary ends with a portfolio CTA (e.g., "See what I'm building at [portfolio URL]."); (4) patent phrasing as "Inventor on two US patents" (not the longer granted-vs-pending form). The full stacked spec in `privateContext/guidance/resume-formatting.md` still applies to multi-page resumes; the single-line form is only for one-pagers. Source: confirmed 2026-06-08 when Nick re-laid out V1 one-pager with this format.
+
+
+- **No bold lead sentences in cover letters.** Bold is reserved for the resume-header name and the signature line — nothing else. Do not bold the opening sentence of any body paragraph; it reads as an AI writing tic. Let the prose carry the emphasis. (Source: Waymo PM Growth letter, 2026-06-24 — agent bolded each paragraph's opening sentence; Nick flagged it.)
+- **Never tie his PM experience to LinkedIn tenure.** Nick has 10+ years as a PM across his full career (Pocket Gems 2015, Humble Bundle 2016-2019, Curology, Tophatter, LinkedIn from August 2021). Always frame as "10+ years as a PM, most recently at LinkedIn" — never "10 years at LinkedIn." Wrong: "10 years at LinkedIn." Right: "10+ years as a PM."
 - **No buzzwords.** Doesn't say "synergy", "leverage", "paradigm shift."
 - **No throat-clearing.** Never opens with "So I wanted to talk about..." or "In today's post, we'll explore..."
 - **No rhetorical hooks.** Doesn't open with "Have you ever wondered...?"
