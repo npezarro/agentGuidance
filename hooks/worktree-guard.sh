@@ -102,11 +102,19 @@ is_my_subagent() {
   [ -n "$hit" ]
 }
 
-# Is another live session holding this repo? Both ledgers count here: the Bash-inferred
-# one is heuristic, but this hook only DELAYS a write behind a worktree it should have
-# taken anyway, so a rare false positive costs one EnterWorktree call rather than lost
-# work. (Contrast check-unpushed, which blocks a session's exit and therefore reads the
-# authorship ledger only.)
+# AUTHORSHIP ledger only (`claude-repos-touched-*`), never the Bash-inferred
+# `claude-repos-claimed-*`. This hook BLOCKS, and a heuristic must not reach a blocking
+# gate -- a rule this ecosystem already documents and which I violated on the first cut.
+#
+# It produced a real false positive on 2026-08-03: session 31f99dcb was denied on
+# `claude-skills/CLAUDE.md`, a file this session had never edited. The inference had
+# recorded it from `rsync --exclude CLAUDE.md`, i.e. a filename that appeared in a command
+# precisely because it was being EXCLUDED. That session acked and carried on, which is the
+# routed-around outcome the guard exists to avoid.
+#
+# Cost of this narrowing, accepted: a peer writing via heredoc or `sed -i` is invisible
+# here. claim-guard's WARN arm still reads both ledgers, so that case is surfaced, just
+# not blocked -- which is the correct split between a heuristic and a gate.
 # Normalize once: -m tolerates a file that does not exist yet, which is the common case
 # for a Write. Ledger paths are normalized the same way at compare time.
 FP_REAL=$(realpath -m "$FP" 2>/dev/null || printf '%s' "$FP")
@@ -130,11 +138,11 @@ peer_has_file() {
 }
 
 PEER_SID=""; PEER_AGE=""
-for f in /tmp/claude-repos-touched-* /tmp/claude-repos-claimed-*; do
+for f in /tmp/claude-repos-touched-*; do
   [ -f "$f" ] || continue
   m=$(stat -c %Y "$f" 2>/dev/null || echo 0)
   [ $(( NOW - m )) -le "$TOUCH_WINDOW" ] || continue
-  b=$(basename "$f"); sid="${b#claude-repos-touched-}"; sid="${sid#claude-repos-claimed-}"
+  b=$(basename "$f"); sid="${b#claude-repos-touched-}"
   [ "$sid" = "$SID" ] && continue
   session_is_live "$sid" || continue
   is_my_subagent "$sid" && continue

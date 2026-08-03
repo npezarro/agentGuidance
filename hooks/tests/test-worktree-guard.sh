@@ -83,6 +83,16 @@ printf '%s\t%s\n' "myrepo" "" > "/tmp/claude-claim-ack-$MYSID"
 try deny  "ack with an EMPTY reason is not an ack" "$REPO/agent.md"
 rm -f "/tmp/claude-claim-ack-$MYSID"
 
+echo "heuristic ledger must NOT reach a blocking gate"
+# A real false positive on 2026-08-03: a peer was denied on a file recorded only by the
+# Bash-inference ledger, which had picked the name out of `rsync --exclude CLAUDE.md`.
+# A guard that blocks must read authorship, not inference.
+rm -f "/tmp/claude-repos-touched-$PEER"
+printf '%s\t%s\t%s\n' "$REPO" "$REPO/agent.md" "$(date +%s)" > "/tmp/claude-repos-claimed-$PEER"
+try allow "peer file is only in the INFERRED ledger" "$REPO/agent.md"
+rm -f "/tmp/claude-repos-claimed-$PEER"
+printf '%s\t%s\t%s\n' "$REPO" "$REPO/agent.md" "$(date +%s)" > "/tmp/claude-repos-touched-$PEER"
+
 echo "peer liveness"
 # Stale marker: sessions exit without cleaning up, and markers accumulate. A guard that
 # treats a dead session as live blocks work forever.
