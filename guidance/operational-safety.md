@@ -30,6 +30,18 @@ Prevent feedback loops, restart storms, and cascading failures in automated syst
 
 **Rule:** Never deploy or restart a service from within a job that service spawned. Make changes, commit, push, and note that a manual restart is needed.
 
+## Self-Update Bootstrap Deadlock
+
+**The scenario:** A runner script self-updates by fast-forwarding its own checkout (`git fetch && git merge --ff-only`) at the top of every run, so a merged fix takes effect on the next cron tick without a human intervening. This works perfectly for any checkout that is already at-or-past the commit that introduced the self-update call — but a checkout that was **already stale before that commit merged** can never receive it, or anything merged after it, because cron executes the exact bytes on disk, and those bytes predate the self-update logic entirely. The fix that was supposed to end silent staleness becomes permanently unreachable for the one checkout it needed to reach.
+
+**Confirmed 2026-07-24 (learnings-pass run #1012):** `autonomousDev-private`'s local main checkout on this host was frozen at commit `6a495ac` (2026-07-23 07:12 PT). PR #39 (`884b7d0`, "runners: fast-forward local main before every run (fixes silent staleness)") merged to `origin/main` about 5.5 hours later, followed by PR #36 and PR #41. None of the three ever took effect: cron invokes `learnings-pass/run.sh` straight from the stale checkout, and that file — being from before PR #39 — contained no `runner_self_update` call, so it never fetched anything. The checkout sat 28+ hours and 3 merged PRs behind, silently, while six consecutive learning-agent runs (#1006-#1011) each noted "local checkout N commits behind, left untouched per precedent" without recognizing that N should have been shrinking to zero on its own and wasn't — the self-update mechanism had a 0% success rate because it had never executed even once on this checkout.
+
+**This is a bootstrap-order variant of `patterns/silent-healer-failure.md`** (KB): the healer (self-update) looked like ordinary expected drift rather than a dead mechanism, because "checkout is behind" is also the normal transient state right after any merge. The tell that distinguishes "normal, will self-heal next run" from "dead, needs a manual kick" is whether the commit that *added* the self-update call is itself among the missing commits (`git merge-base --is-ancestor <self-update-commit> HEAD`, or simpler: does the checked-out file on disk contain the call at all — `grep runner_self_update <script>`).
+
+**Fix:** One manual, one-time fast-forward unsticks it permanently — `git -C <repo> fetch origin main && git merge --ff-only origin/main` on the main checkout (not a worktree; this advances main to a commit that's already merged, it doesn't create or switch branches, so it doesn't fight the WORKTREE RULE). After that single kick, the now-current script actually contains the self-update call and keeps itself current on every future run.
+
+**When investigating "checkout still behind" reports:** don't default to "normal, will resolve itself" — check whether the self-update commit is reachable from the stale HEAD. If it isn't, the checkout needs the manual kick above, not another cycle of waiting.
+
 ## Restart-Recovery Loop (Debate Jobs)
 
 **The scenario:** A debate job is running. The auto-merger merges a PR and calls `vm-ops.sh deploy bot`. The deploy guard in vm-ops.sh sends SIGINT, but the bot ignores it (active jobs). PM2 escalates to SIGTERM, force-killing the bot. On restart, the bot loads `jobs.json`, finds the incomplete debate, re-queues it, and starts running it. Meanwhile the auto-merger retries the deploy (or another merge triggers it), creating an infinite loop of: deploy → kill → restart → recover debate → deploy.
@@ -172,6 +184,37 @@ if "NODE_CHANNEL_FD" in env:
 kwargs["env"] = env
 ```
 
+### CWD Hygiene and Retry Breadth for Subprocess `claude -p` Calls (2026-07-22)
+
+Two additional hygiene rules for pipelines that shell out to `claude -p` for free-text generation:
+
+**CWD hygiene.** When a `claude -p` subprocess runs with its working directory inside a code repo, the spawned sub-agent can explore that repo and inject meta-commentary into its output (e.g., a generated brief that narrates the relative source path it was invoked from). For free-text generation calls whose output is the primary return value, set the subprocess `cwd` to an empty/neutral directory:
+
+```python
+# Python — use a temp dir so the sub-agent sees no repo context to narrate
+import tempfile
+with tempfile.TemporaryDirectory() as tmp_cwd:
+    result = subprocess.run([CLAUDE_BIN, "-p", "--dangerously-skip-permissions", prompt],
+                            cwd=tmp_cwd, capture_output=True, text=True)
+```
+
+For calls whose output is strictly parsed (e.g. structured JSON extraction), the risk is lower but the cwd hygiene is cheap insurance.
+
+**Retry breadth.** Retry logic for `claude -p` must retry on **ANY non-zero exit code AND on empty stdout**, not only when stderr matches "rate"/"limit". Nested `claude -p` invocations intermittently exit 1 with an entirely empty stderr (a transient fault). Code that only retries on rate-limit strings hard-fails on the first transient blip:
+
+```python
+for attempt in range(MAX_RETRIES):
+    result = subprocess.run([CLAUDE_BIN, "-p", "--dangerously-skip-permissions", prompt],
+                            cwd=tmp_cwd, capture_output=True, text=True)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout  # valid response
+    # retry on any non-zero exit OR empty stdout, not just rate-limit strings
+    time.sleep(BASE_DELAY * (2 ** attempt))
+raise RuntimeError(f"claude -p failed after {MAX_RETRIES} attempts")
+```
+
+**Real incident (job-pipeline `generate.py`, 2026-07-22):** generated brief narrated the repo source path it was invoked from (cwd was the repo root). Fix: set cwd to `tempfile.mkdtemp()` for free-text generation calls.
+
 ### OAuth Refresh Rate-Limiting (the real cause of the 2026-05-28 synthetic 401s)
 
 **The scenario:** `~/repos/scripts/refresh-claude-token.sh` runs every 3h via cron and calls `https://platform.claude.com/v1/oauth/token` with a `refresh_token` grant. The endpoint is **rate-limited**, and under load can return `rate_limit_error: Rate limited. Please try again later.` for multiple consecutive cron cycles.
@@ -190,11 +233,25 @@ kwargs["env"] = env
 
 **When the consecutive-failure Discord alert fires:** The alert means the API refresh path is stuck. Do NOT wait for the next cron cycle — trigger `claude-auto-relogin.sh` (or the `/refresh-main-auth` skill). The browser OAuth path is not subject to the API rate limit and will recover the token immediately.
 
+> **⚠ BROKEN as of 2026-07-15:** `claude-auto-relogin.sh` runs `claude auth login --claudeai`; that flag was removed in CLI v2.1.61 (exits 2 with "unknown option '--claudeai'"). Additionally, the browser-agent `eval` verb is CSP-blocked on `claude.ai` and the `cdp-eval` alternative is absent from the current browser-cli build, so the Authorize click cannot finalize the consent. Until the script is updated to use `claude setup-token`, re-auth requires a HUMAN: run `claude setup-token` on the target host, open the printed URL, Authorize, paste the code. The cron `refresh-claude-token.sh` path (OAuth refresh_token grant) is unaffected; only the full re-login automation is broken.
+
 **Why "strip the env vars" was misdiagnosed as the fix:** The original 401 investigation happened to ship the env-strip at ~10am PDT on 2026-05-28; the OAuth refresh independently recovered at 12:00 PDT; the next observation cycle was clean and the env-strip was assumed causal. Isolated repro (full polluted env in 2026-05-29) showed the env vars alone do not produce 401. The env-strip is preserved as defensive hygiene but is not the actual fix.
 
-**Layered defense — browser path as safety net (production validated 2026-05-29):** The cron `refresh-claude-token.sh` path and the browser-based `claude-auto-relogin.sh` / `claude-auth-probe.sh` path are independent recovery mechanisms. When the OAuth API endpoint is rate-limiting (the cron path fails), the browser-based path completes `claude auth login --claudeai` via the web OAuth flow — bypassing the API endpoint entirely. The two paths ran in sequence on 2026-05-29: the 13:55 PDT manual run and the 15:00 PDT cron both exhausted all retries with `rate_limit_error`; the browser `claude-auto-relogin.sh` chain at ~16:17 PDT ran `claude auth login` through browser-agent, sidestepping the rate-limited endpoint; the 18:00 PDT cron cycle ran clean with the counter reset to 0.
+**Layered defense — browser path as safety net (production validated 2026-05-29, but SEE ABOVE for broken status):** The cron `refresh-claude-token.sh` path and the browser-based `claude-auto-relogin.sh` / `claude-auth-probe.sh` path are independent recovery mechanisms. When the OAuth API endpoint is rate-limiting (the cron path fails), the browser-based path was designed to complete `claude auth login --claudeai` via the web OAuth flow — bypassing the API endpoint entirely. The two paths ran in sequence on 2026-05-29 and confirmed the design; however, the `--claudeai` flag has since been removed from the CLI and the browser automation is currently broken (see above).
 
-**Implication:** When debugging a prolonged OAuth failure, check both paths. If the cron log shows persistent `rate_limit_error` and the access token is expired, the recovery path is NOT to wait — it is to trigger `claude-auto-relogin.sh` (or the `/refresh-main-auth` skill) which uses the browser and is not subject to the API rate limit.
+**Implication:** When debugging a prolonged OAuth failure, check both paths. If the cron log shows persistent `rate_limit_error` and the access token is expired and the refresh token is still valid, the keep-alive cron will self-heal once the throttle clears — do NOT trigger `claude-auto-relogin.sh` (it will error immediately). If the refresh token itself is dead, manual `claude setup-token` is required until the script is updated.
+
+**Further mitigation (2026-07-15) — cross-host access-token relay bridge:** If the rate limit is bad enough to block BOTH the refresh grant AND new-token issuance (`setup-token`/`claude auth login` also 429) on one host, and a second host on the *same* Anthropic account has a healthy, independently-refreshing OAuth chain, bridge the two rather than waiting out the throttle blind. Access tokens are account-scoped, not host-bound, so a token minted on the healthy host works for `claude -p` calls on the throttled host. A relay cron on the healthy host periodically pushes only the current access token + expiry (never the refresh token, and never over argv — use stdin so it doesn't land in shell history or process listings) to the throttled host, merging it into that host's credentials file while leaving that host's own refresh token untouched and inert. Run the relay on a cadence comfortably shorter than the token TTL (e.g. every 2h for an ~8h token). This is a bridge, not a fix — the throttled host's own chain still needs the underlying rate limit to clear before it can refresh independently again; drop the relay once it does.
+
+### Never Pause an Alerting/Probe Cron Alongside Its Paired Keep-Alive Cron
+
+**The trap:** When a keep-alive/refresh cron (e.g. `refresh-claude-token.sh`) is stuck in a rate-limit storm, it's tempting to pause it AND its paired alerting/probe cron (e.g. `claude-auth-probe.sh`) together — they look like one feature, so silencing both "to stop the noise" feels natural.
+
+**Why this is dangerous:** The probe cron's only job is to detect and page on failure. If the keep-alive cron never recovers (the throttle clears but the underlying refresh token has actually gone dead), the probe is the only thing that would catch it. Pause it too, and the failure goes fully silent.
+
+**Real incident (2026-07-10):** Both `refresh-claude-token.sh` and `claude-auth-probe.sh` were commented out with a `#PAUSED-20260710-throttle` tag to stop an OAuth rate-limit storm. The keep-alive path never recovered — with the probe also paused, no alert fired, and VM host `claude` CLI auth was silently dead for ~5 days, 401ing every automated review cycle depending on it.
+
+**Rule:** A probe/alarm cron that only tests cheap, already-issued-token state (e.g. `claude -p "ok"`, not an OAuth refresh grant) is typically throttle-safe and should stay running even while its paired keep-alive cron is paused. If it must be paused too, tag it with an explicit re-enable trigger (date + condition to check), not a bare `#PAUSED-<date>` — a pause with no removal trigger is a landmine that outlives the incident it was meant for.
 
 ### React SPA Hydration Race in Browser-Agent OAuth Scripts
 
@@ -368,6 +425,11 @@ When the bot recovers persisted jobs on startup:
 
 **Never** automatically re-execute a failed job. The failure may have been caused by the job itself (e.g., it deployed the bot). Automatic re-execution would repeat the failure.
 
+**Any recovery cron that runs concurrently with the primary job path must compare-and-swap on status, and its stale-timer must exceed the primary path's own timeout.** Shopper/foodie/travel-assistant all run a periodic `run-recovery.js` cron that re-executes jobs it believes are stuck. Two invariants keep it from overwriting a good result the main request path already produced (symptom: a job the user saw succeed later flips to `failed` with a recovery-origin error like "Request timed out" or "Response too short"):
+1. **Compare-and-swap on every write.** Both the success and failure `UPDATE`s must carry `AND status = 'pending'`, and notifications must be skipped when the guarded write reports `changes === 0`. Without the guard, a late timeout/short-response from the duplicate recovery call overwrites the main path's completed result.
+2. **Stale threshold must exceed the primary executor's own timeout.** If the main path times out a job at 20 minutes, the recovery cron's stale-pending threshold must be set higher (e.g. 25 minutes) — otherwise recovery grabs a job the main path is still legitimately working on. Keep the two values in sync whenever either changes.
+
+**Why:** hit identically in three separate apps (shopper, foodie, travel-assistant) — same `run-recovery.js` pattern, same missing CAS guard, same too-tight stale threshold, same user-visible symptom (a completed search silently flips to failed minutes later). Any writer that can run concurrently with a primary job path needs this same pair of guards.
 ## Unattended Jobs That Take Irreversible External Actions
 
 A cron job that spends money, sends a message, cancels a subscription, or files
@@ -527,6 +589,49 @@ Source: trading-agent `error_handler.py` commit 2af1a41 → 3acbd93 (2026-05-25)
 
 `ssh host 'big block ...'` wraps the whole remote command in single quotes. Any single quote INSIDE the block (e.g. JS `app.get('/path', ...)`, Python `'text/plain'`) terminates the outer quote and silently mangles the code. This shipped invalid JS to a prod server.js and crash-looped the service. Fix: write the script/patch to a LOCAL file and `scp` it, then run `ssh host 'python3 /tmp/file.py'`. Always `node --check` / syntax-validate on the VM BEFORE `pm2 restart`, and keep a `.bak` to restore.
 
+## A "reverting" deployed artifact may be a second concurrent session, not cache or cron (2026-07-17)
+
+When multiple agent sessions run in the same home directory (common under `--dangerously-skip-permissions`), nothing prevents two of them from owning the same deploy target or repo file. If a deployed file "keeps reverting to the old version" after you redeploy it, suspect a **second live session writing the same path** before jumping to caching or a stray cron job. This is a distinct failure mode from the `git add -A` staging collision documented above (that one corrupts a commit at staging time; this one is two processes racing on the same deploy target repeatedly, well after either committed).
+
+**Diagnostic order (cheapest signal first):**
+1. `stat` the origin file's mtime/size against your own deploy time — if it changed AFTER you deployed, someone else wrote it.
+2. Check the edge cache header (`curl -sI ... | grep cf-cache-status`) — `DYNAMIC`/`no-store` rules out Cloudflare as the cause.
+3. `git log --format='%h %ci %s' -- <path>` — look for a foreign commit between yours and the current state. A `git add -A` closeout commit is a common clobberer.
+4. `ps -eo pid,etimes,cmd | grep claude`, then grep the most-recently-modified transcripts under `~/.claude/projects/<proj>/*.jsonl` for the path in question — the session with recent writes to it is the culprit.
+5. Fix by coordinating targets (point the other session at a different path), not by re-deploying repeatedly to "win" the race. Killing a live interactive session is destructive — ask first, don't just kill it.
+
+Source: two concurrent sessions both deploying to the same static-site `index.html` target on `example.com`, one repeatedly clobbering the other's report-feed redesign with a stale finance-dashboard rebuild (2026-07-17).
+
+## Cron-Triggered Runners Silently Execute Stale Code After a PR Merges (2026-07-21)
+
+A cron job that operates on a local git checkout (reads its own prompt template, sources its own lib functions, scans other repos) has no reason to ever be behind — but nothing fast-forwards that checkout unless something explicitly does. A `git pull`/`fetch`+`merge --ff-only` is not implied by "the PR merged." This is easy to miss because the staging side (worktree-based PR flow, so the main checkout stays untouched for concurrent sessions' hooks) actively *avoids* touching the checkout, and there's no separate step that ever brings it forward.
+
+**Confirmed:** a learning-agent run (#988) found its own generated mission file still exhibited a bug (S149, `{{PLACEHOLDER}}` corruption in `${var//pattern/replacement}` substitutions) whose fix had merged to `origin/main` **40 minutes earlier** (`autonomousDev-private` PR #38). The local checkout the cron job actually executes from was still 1 commit behind — the merge had happened on GitHub, but nothing had ever pulled it down locally. The same gap existed independently in a second pipeline (`agentRuntime/security-scanner`, 3 cron scripts, no shared lib at all).
+
+**Fix pattern:** at the very top of each runner (right after its lock is acquired, before reading any prompt template or repo content), fetch + fast-forward-merge the runner's own repo:
+```bash
+_branch=$(git -C "$REPO_DIR" branch --show-current 2>/dev/null || echo "")
+if [ "$_branch" = "main" ] || [ "$_branch" = "master" ]; then
+  git -C "$REPO_DIR" fetch origin "$_branch" --quiet 2>/dev/null \
+    && git -C "$REPO_DIR" merge --ff-only "origin/$_branch" --quiet 2>/dev/null \
+    || log "WARN: self-update failed for $REPO_DIR — running possibly-stale code"
+fi
+```
+Fail-open (log a warning, never abort the run) — a transient fetch failure shouldn't turn a cron job into a hard outage. `--ff-only` is safe alongside uncommitted local state changes (runner-managed `state.json`/log files) since it only advances the branch pointer when there's no real divergence.
+
+**Applies beyond the runner's own code:** any pipeline that reads a SEPARATE repo's content (a different repo's `CLAUDE.md`, a shared guidance dir) to build a prompt or stage a worktree branch has the same exposure on that repo's checkout too — a stale read either re-proposes already-merged content or forks a new branch from a stale base (a likely contributor to past merge-conflict cleanup in this very pipeline's own PR history).
+
+Source: `autonomousDev-private` PR #39 and `agentRuntime` PR #2 (both 2026-07-21) — see each repo's `lib/runner-lib.sh` (or inline copy) for the `runner_self_update`/equivalent implementation.
+
+## Autonomous Runners Strand Their Checkout on a Merged PR Branch (2026-07-21, confirmed recurring 2026-07-27)
+
+Distinct from the staleness bug above: this is about a runner's checkout being left on the WRONG branch entirely, not just behind on the right one. When a cron-triggered agent stages a fix by checking out a working branch in its OWN repo checkout (`git checkout -b claude/auto-*` or `gemini/fix-*`, commit, push, open a PR) and that PR later merges, nothing ever returns the checkout to `main`/`master`. The next run's `SessionStart` hooks and any lib code reading "the current branch" execute against a dead feature branch instead of main — silently, since the branch still exists locally and `git status` shows a clean tree.
+
+**Confirmed 3 separate runners with this gap, so far:** `autonomousDev-private/run.sh` and `fix-checker/run-gemini.sh` (learning-agent run #1003 found 17 repos stranded this way, some since April 2026) and, newly confirmed 2026-07-27, `autonomousDev/claudemd-audit/run.sh` (`pezantTools` checkout left on `claude/claudemd-audit-14` for a full day after PR #143 merged — recovered by fast-forwarding to `origin/main` and deleting the stale local branch once a content diff confirmed nothing unique was on it). Only `learnings-pass/prompt.md` currently carries an explicit WORKTREE RULE; the other runner prompts don't instruct the agent to return to the default branch after pushing.
+
+**Fix pattern:** the runner's prompt must never let the agent `git checkout` a work branch in its own main checkout at all — stage all edits in a throwaway worktree (`git -C <repo> worktree add /tmp/wt-<repo> -b claude/<branch>`, edit/commit/push/PR from there, then `git -C <repo> worktree remove /tmp/wt-<repo>`), the same rule `learnings-pass/prompt.md` already follows. This avoids the stranding failure mode entirely rather than trying to detect and recover from it after the fact. Recovery for an already-stranded checkout: confirm the PR is merged (`gh pr view <n> --json state,mergedAt`), diff the branch's unique commits against `origin/<default-branch>` to confirm no content would be lost (squash-merges change the commit hash, so compare file diffs, not `git merge-base --is-ancestor`), then `git checkout <default-branch> && git merge --ff-only origin/<default-branch>` and `git branch -D` the stale local branch.
+
+**Applies to any new automation repo** created without copying the worktree-staging pattern — it isn't specific to autonomousDev-private's runners. Full audit + suggested prompt fix (not applied directly — out of scope for a doc-capture pass to edit another agent's prompt): `autonomousDev-private/learnings-pass/suggestions.md` S225 and S229.
 ### Audit Claude Code version on every host and pin fan-out/search defaults before upgrading (2026-07-29)
 Claude Code version drift silently keeps already-fixed reliability bugs in play, and headless hosts drift worst because nobody watches their startup banner. Audit 2026-07-29: the local WSL install was 19 versions behind (2.1.201) and the GCP VM host 8 behind (2.1.212) against 2.1.220, so both were still exposed to v2.1.217 (MCP truncated tool outputs kept the full untruncated result in memory for the rest of the session), v2.1.214 (stream-json output truncated at exit for slow-reading SDK/pipeline consumers, which makes a headless job report success with the tail of its response missing), and v2.1.216 (quadratic message-normalization stalls in long sessions).
 

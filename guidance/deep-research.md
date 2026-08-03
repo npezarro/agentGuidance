@@ -129,3 +129,10 @@ Observed 2026-08-03 on enterprise.com's live booking engine (Covina S. Citrus br
 Enterprise's own long-term page states monthly rates begin at 'more than 28 days'. That published copy is wrong; the empirical trigger is exactly 28. Vendor documentation about its own pricing tiers is a hypothesis, not a fact.
 
 Rule: when researching any duration-tiered price (car rental, subscription, storage, cloud commitment), bracket the boundary by quoting N-1, N, and N+2 rather than quoting only the requested N. Report the cliff explicitly, because 'book one day longer and save $129' is often the single most actionable finding in the whole research pass.
+
+### All-in cost gate: unpublished labor is still part of the price (2026-08-03)
+A pricing recommendation that quotes only the published materials/list price is wrong the moment the item requires labor, fabrication, assembly, or a service fee the vendor doesn't publish alongside it. Real case: a shopper buying guide recommended TAP Plastics for a cut-to-size job priced on its published material list alone — materials ran ~$15 over the quote, and ~$80 of fabrication labor (quoted only by email, never published) was never mentioned, so the guide's number missed roughly the cost of the whole job.
+
+Rule: price the FINISHED, usable outcome, not just the SKU. Labor or fees the item can't be used without is part of the price, never silently dropped. When that cost is unpublished, don't stay silent about it — surface a sourced estimate (comparable vendor quotes, published rate cards for similar work) plus explicit instructions to get a real quote before buying, and rank alternatives on the all-in number rather than the published one, since a cheaper base price can hide a more expensive total.
+
+Propagated same-day across three independent recommendation surfaces (shopper's service-mode pricing, buying-assistant's CLAUDE.md, and the `buying-guide` skill) — this is a general research-quality rule for any pricing/buying research, not a shopper-specific fix.

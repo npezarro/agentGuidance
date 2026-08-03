@@ -33,6 +33,14 @@ Parallel agents must never share non-atomic state. If a loop writes a JSON state
 
 Reference implementation: `autonomousDev-private/fix-checker/review-gemini-prs.sh`.
 
+## Sub-agent delegation pitfalls
+
+**Agents given a vague "research X" prompt tend to recursively spawn their own sub-agents and return immediately** with "I've launched N agents, waiting for them" — before compiling anything. Their parents also stall waiting. You get a deadlocked tree of coordinators, each waiting on children, none synthesizing. Peer sub-agents cannot message each other.
+
+**Fix:** When instructing leaf agents to do research, be explicit: *"Do the web searches YOURSELF. Do NOT spawn sub-agents. Return compiled findings in your final message."* Agents that do their own searches return dense, cited findings; agents given delegation latitude deadlock.
+
+**The deep-research Workflow harness can fail fast** with `StructuredOutput retry cap (5) exceeded` on its very first scope-decomposition agent — aborting before any research runs. Have a fallback: either run searches directly in the main thread via `WebSearch`/`WebFetch` batches (reliable, ~2-3 parallel batches cover most research angles), or use the `general-purpose` agent type with the explicit no-delegation instruction above.
+
 ## Cost discipline
 
 Fan-out multiplies token spend. Gate every autonomous fan-out behind the usage check (`check-usage.sh --gate-at N`) and `log()` any coverage cap (top-N, no-retry) so silent truncation never reads as full coverage. See `reference_usage_gate_system` and ESSENTIAL rules.

@@ -145,5 +145,70 @@ function checkAuth() {
 
 Source: foodie commit 8a35730, shopper commit f4d935b, travel commit 51950cc (2026-05-27).
 
+### Unbounded per-call batch size causes silent 0-result failures (2026-07-16)
+**Rule:** Never ask one headless `claude -p` bridge call for an unbounded or large batch of results under a fixed timeout. Bound the batch size per call and paginate across multiple calls instead; make the response parser tolerant of truncated output.
+
+**Why:** employ's "Exhaustive" discovery tier asked a single bridge call to find 45-70 roles. The call either over-ran the bridge's 10-minute timeout (SIGTERM'd mid-generation) or hit the model's output-token ceiling, leaving a truncated response with no closing JSON fence. The parser returned `[]` on the malformed JSON, so the run reported "found 0 roles" with no error surfaced. Worse, the downstream augment/expand safety net also refused to run because it requires a non-empty initial set — so the failure compounded to a total of 0 instead of degrading gracefully.
+
+**How to apply:**
+1. Cap every bridge call at a fixed max batch size (employ uses `MAX_ROLES_PER_CALL=25`) regardless of how large the requested total is; accumulate toward the full target across multiple passes instead.
+2. Soften "as many as possible, even if it takes longer" style prompt directives for large-breadth tiers — aim each call at the per-call cap, not the grand total.
+3. Retry once on a 0-result parse before treating it as a real empty result.
+4. Harden the parser to merge all fenced JSON blocks in a response and recover complete objects from truncated/unclosed JSON via a balanced-brace scan, rather than failing the whole batch on one truncation.
+
+Source: employ commits `06e979e` (fix) and `df111d8` (scale window/batch by depth), 2026-07-16.
+
 ### Enforce subprocess timeouts with SIGTERM to SIGKILL; keep bridge budget under client timeout (2026-07-17)
 Node.js child_process spawn({ timeout }) only sends ONE SIGTERM when the timeout elapses. Long-running CLIs like 'claude -p' (and their child processes / streaming API sockets) can ignore SIGTERM, so the process hangs and the promise never settles — leaving the server holding the request open until the CLIENT aborts. Enforce timeouts yourself: an explicit setTimeout that escalates SIGTERM -> SIGKILL after a grace period, a 'settled' guard flag so close/error settle once, and a distinct 'timeout' rejection (map to HTTP 504). Also keep a bridge's TOTAL work budget strictly under its client's timeout (e.g. 18min bridge < 20min client < 25min recovery threshold), and for multi-pass work (first pass + refinement) split that budget against a single deadline so the bridge returns a real, diagnosable error BEFORE the client gives up with an opaque 'Request timed out (20min)'. Surface the internal reason (exit code / spawn error, sanitized) on the catch-all 500 so downstream [RECOVERY FAILED] alerts are debuggable. Applies to all pezant *-bridge servers (shopper/foodie/travel/employ) which share this bridge-server.js shape. Root cause: shopper Job #96 recovery loop, 2026-07-17.
+
+### A VM-side `claude -p` caller should prefer the local worker over the VM host's own OAuth chain (2026-07-17)
+If a VM-hosted component shells out to `claude -p`, it inherits the fragility of whichever OAuth chain it calls. The **VM host's own** `claude` CLI chain has died silently and repeatedly (~10 days in 2026-06, ~5 days in 2026-07-10→15) — a documented single point of failure, not a one-off. A **local-worker** SSH path (reverse tunnel from the VM back to a healthy dev-machine `claude` CLI) has an independent, separately-maintained auth chain and has stayed healthy through both VM-host outages.
+
+**Rule:** prefer the local-worker path first, and fall back to the VM host CLI only if the tunnel is unreachable — don't invert that order by default just because the VM host CLI is "closer."
+
+**How:** `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p <local-worker-port> <user>@localhost claude -p --output-format text --max-turns 1` with the prompt piped on stdin; wrap it with a try/fallback to the VM host CLI so the caller degrades gracefully rather than hard-failing when the tunnel itself is down.
+
+**Why it matters:** a component built this way turns a dependency that dies for days at a time into a non-event — it keeps working through the exact outage window that breaks every VM-host-only caller. When a component keeps failing on a shared dependency it doesn't need exclusively, decoupling from that dependency is the durable fix, not another retry/alert layer on top of it.
+
+### Bridge system prompts are baked into the Docker image — must rebuild to deploy changes (2026-07-25)
+
+`docker/CLAUDE.md` (the Claude CLI system prompt) is copied into the image at build time via `COPY CLAUDE.md /home/node/system-prompt.md`. The bridge-server reads this baked-in file, not any `.claude/` directory on the host. **Editing the markdown file on the host has no effect until the image is rebuilt.**
+
+**Safe rebuild (preserves the `claude-auth` named volume and its authenticated session):**
+```bash
+sudo docker compose up -d --build <app>-bridge
+```
+
+**Do NOT use `docker compose down -v`** — the `-v` flag destroys named volumes including `claude-auth`, deleting the bridge's authenticated Claude session and forcing a re-login. The `up --build` form recreates the container while leaving named volumes intact.
+
+**Verify the new prompt is live:** `docker exec <app>-bridge grep '<search term>' /home/node/system-prompt.md`, then poll `GET http://127.0.0.1:<PORT>/health` until `"auth"` flips from `"pending"` to `"ok"` — a fresh container starts pending for ~15s while the first auth probe runs.
+
+Applies to all pezant public-app bridges (shopper/foodie/travel/employ) that share this Dockerfile pattern.
+
+### A named volume silently shadows a `COPY` into the same path — baked files never land (2026-07-29)
+
+A Dockerfile line like `COPY CLAUDE.md /home/node/.claude/CLAUDE.md` looks like it bakes the system prompt into the image, but if `docker-compose.yml` also mounts a **named volume** at `/home/node/.claude` (e.g. `claude-auth`, used to persist the CLI's OAuth session across restarts), the volume mount wins at container start and shadows whatever the image put there. The `COPY` still succeeds and shows clean in the build log — the file just never becomes visible inside the running container, because the volume's own contents (whatever existed the first time the volume was created) sit on top of it.
+
+**Why it's dangerous:** nothing errors. The bridge boots, `/health` reports auth ok, requests succeed — because the app usually also reads a second, unshadowed copy of the same file directly (e.g. `system-prompt.md` outside `.claude/`) and prepends it to the query explicitly. Only the `claude` CLI's own auto-loaded `.claude/CLAUDE.md` is stale, so the failure is invisible until someone diffs the two copies or a stale instruction visibly misbehaves. It can persist across every rebuild since the volume was first created, because rebuilding the image never touches an existing named volume's contents.
+
+**Detection:** don't trust the build log. Compare the two paths inside the running container:
+```bash
+docker exec <container> diff /home/node/system-prompt.md /home/node/.claude/CLAUDE.md
+# or, if there's no unshadowed copy to diff against:
+docker exec <container> stat -c '%s %Y' /home/node/.claude/CLAUDE.md   # size/mtime older than the image's source file = stale
+```
+
+**Fix:** never `COPY` directly into a path that `docker-compose.yml` also mounts a persistent volume over. Bake to an unshadowed path instead (`COPY CLAUDE.md /home/node/system-prompt.md`) and refresh the live path from it at container boot, in `entrypoint.sh`, after the volume is mounted — this keeps credentials in the volume persistent while keeping the prompt itself always current:
+```sh
+cp /home/node/system-prompt.md /home/node/.claude/CLAUDE.md
+```
+
+**Where it's live:** travel-assistant hit this (commit `8ebea9e`, 2026-07-29) and fixed it exactly this way. shopper, foodie, and employ share the identical Dockerfile/docker-compose shape (`COPY CLAUDE.md /home/node/.claude/CLAUDE.md` baked path + a `claude-auth` named volume mounted at `/home/node/.claude`, with no refresh step in `entrypoint.sh`) — same latent bug, unfixed as of this writing. Any app using the shared bridge pattern should get the same entrypoint refresh before its next prompt change is assumed to have deployed.
+
+### Appending context to a bridge query must respect that app's length cap and query-type heuristics (2026-07-22)
+When a Next.js app's route handler concatenates optional context (a saved profile, an effort directive) into the single `query` string it forwards to the bridge, check the target bridge-server.js constraints FIRST, not after — different apps enforce different limits:
+- **shopper**: `MAX_QUERY_LENGTH=1000` AND an `isBroadQuery()` word-count heuristic. A large appended block can overflow the length check (bridge 400s, rejecting the whole request) and inflate the word count so short category queries stop being detected as "broad". Fix: the route appends the block behind a recognizable trailing marker (`\n\n[Shopper profile]\n...`); the bridge strips that tail out of `query` before the length check + `isBroadQuery`, then re-appends it after query-type detection so the model still receives it. This couples the app and bridge — they must deploy together (the strip is a no-op when the marker is absent, so rebuild the bridge first).
+- **foodie**: `MAX_QUERY_LENGTH=2000`, no broad-query heuristic, already prepends a sizable `[Filters]` block — a prepended profile follows the existing pattern, no bridge change needed.
+- **travel**: no restrictive length cap or broad heuristic, so a simple prepend works.
+
+**How to apply:** before wiring a new optional-context block into any bridge query, read that app's `docker/bridge-server.js` for a length cap and any query-classification heuristic keying off word count or content. Prepending/appending is only safe when `(max_len - typical_query_len)` comfortably exceeds the block size AND nothing downstream keys off the raw query text; otherwise strip-before-checks + re-append-after in the bridge, and treat the app+bridge as a coupled deploy unit for that change.

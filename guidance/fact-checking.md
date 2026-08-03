@@ -94,6 +94,12 @@ author relied on a `MEMORY.md` "LIVE example.com/panel" index line and a
 repo-exists `ls`, neither of which proves public liveness. Use curl per
 `knowledgeBase/patterns/url-liveness-detection.md`.
 
+## A 200 Response is Liveness, Not Freshness (2026-07-23)
+
+A URL returning HTTP 200 with a plausible title proves the page is *live*, not that its content is *current*. Job/listing aggregator sites in particular keep expired postings reachable indefinitely — a 4-year-old listing can 200 with a real title next to genuinely fresh ones. Do not conflate the two checks, and never derive a "posted/updated" date from your own discovery timestamp when the source doesn't supply one — that manufactures false freshness for content of unknown age.
+
+**How to apply:** when a pipeline needs to judge whether a piece of external content is current (job postings, product listings, news items), treat "unknown post date" as a distinct, neutral state rather than defaulting to "new" — surface it as such (e.g. an "age unknown" label) and exclude it from freshness-gated views rather than assuming recency. Prefer a real published-date field from the source (schema.org `datePosted`/`dateModified` JSON-LD, an ATS API field) over inference. Applies to any pipeline that aggregates externally-sourced, potentially-stale content: job boards, deal/coupon feeds, marketplace listings.
+
 ## "Known / reputable brand" is a factual claim — verify provenance
 
 Calling a brand "known", "established", "reputable", or "trusted" is an

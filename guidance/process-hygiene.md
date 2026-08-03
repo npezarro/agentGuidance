@@ -177,6 +177,16 @@ BRIDGES="${BRIDGES-foodie shopper travel}"
 
 **Source:** `scripts/claude-auto-relogin.sh` bugfix (commit 3f211e9, 2026-05-28) — setting `BRIDGES=""` to refresh only the host account still restarted all bridges because `:-` treated the empty string as unset.
 
+## Fire-and-Forget Async Jobs Need a Startup Reaper
+
+When a server kicks off long-running work as a fire-and-forget promise (no queue, no worker process — just `doWork().then(...)` while the HTTP response returns immediately) and records progress in a DB row (`status='pending'`), a PM2 restart (deploy, crash, OOM) kills the in-memory promise but leaves the DB row stuck in `pending` forever. Nothing ever transitions it to `completed`/`failed`, so a client polling for status waits indefinitely and no completion email/Discord notification ever fires.
+
+**Real case (employ, commit `e11e58c`, 2026-07-14):** every AI action (role discovery, material generation) ran as an in-process fire-and-forget promise. A restart mid-job stranded a `materials` row in `pending` with no recovery path.
+
+**Fix pattern:** on process startup (first DB open), run a reaper that marks any `pending` row older than your job's expected max duration (with margin — e.g. 2x the typical timeout) as `failed` with a retry-able message. Gate strictly on age so the reaper never touches a job the *current* process just started. This is a startup check, not a cron — it only needs to run once per process boot.
+
+**Applies to:** any PM2-managed app that does background work in-process rather than via a real job queue (job-pipeline-style repos, employ, similar single-process Next.js/Express apps). If the app already uses a durable queue (BullMQ, a DB-backed worker table with its own heartbeat), this doesn't apply — the queue's own recovery mechanism covers it.
+
 ## Cron Registry Reconciliation (WSL jobs registry)
 
 The WSL crontab is GENERATED from `privateContext/jobs/registry.json`
@@ -244,6 +254,15 @@ When two Bash tool calls are issued in the same message (parallel), the working 
 
 How to apply: in every Bash tool call that will run alongside others in a parallel batch, put an explicit `cd <absolute-path> &&` at the start of the command — never depend on a prior tool call's cd persisting when there are concurrent siblings issued this turn. Applies to any agent (fix-checker, autonomousDev, learning-agent, ad hoc sessions) doing multi-repo build/test sweeps in parallel.
 
+### Poll-loop daemons: bound every blocking call, and run an internal heartbeat watchdog for self-restart (2026-07-29)
+A capture daemon's poll loop called an OS screenshot utility (`screencapture`) via a blocking `waitUntilExit()` with no timeout. When that call hung, the entire loop froze silently — no error, no log line, no alert — for multiple hours before anyone noticed (activity-tracker, fixed commit `d950224`, "Reliability: bound blocking calls + self-healing watchdog in the capture daemon"). This is distinct from the external-monitor heartbeat pattern documented above (`operational-safety.md` "Real incident 2026-07-16" and the cron-watchdog section): that pattern detects a stall from OUTSIDE the failing process; this pattern prevents and self-heals the stall from INSIDE it.
+
+**Rule, generalized to any poll-loop daemon/service** that shells out to a subprocess or calls a blocking OS/accessibility API (screenshot capture, AX/accessibility title lookups, `exec` of an external tool, etc.):
+1. **Wrap every blocking call in the loop with a timeout.** Nothing in the loop body should be able to block indefinitely — a hang in one call must not freeze the whole daemon. (Fix here: a `runWithTimeout` helper capping subprocess calls at 5s, plus a 2s `AXUIElementSetMessagingTimeout` on the accessibility title call.)
+2. **Run an internal heartbeat watchdog.** The main loop ticks a counter/timestamp every iteration; a separate watchdog thread/timer checks that the tick is still advancing. If it stalls past a threshold (here: 90s), the daemon calls `exit(1)` itself.
+3. **Let the process supervisor do the restart** — launchd `KeepAlive`, PM2, or systemd — rather than trying to self-recover in-process. This turns a silent multi-hour stall into a ~90-second self-heal.
+
+Applies to any long-running poll loop in the ecosystem that shells out or calls a blocking system API, not just this one daemon — audit for unbounded `waitUntilExit()` / `execSync` / blocking AX calls inside a loop with no surrounding timeout.
 ### Follow-mode log commands piped into head leak a shell process forever (2026-07-30)
 A streaming log command piped into something that exits early leaks a shell process FOREVER. Found on the VM 2026-07-30: `pm2 logs trading-daytrade --lines 100 2>&1 < /dev/null | head -200` had been running for 41 days. `pm2 logs` follows by default and never exits; `head -200` closes the pipe after 200 lines; pm2 does not die on the resulting SIGPIPE, so the wrapping bash waits on it indefinitely. Two sibling orphans (21 days) and an abandoned `claude` session (15 days) were reaped in the same sweep.
 

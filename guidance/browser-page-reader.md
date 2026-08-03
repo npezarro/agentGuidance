@@ -79,6 +79,16 @@ node ~/repos/page-reader/src/index.js --stealth --wait 5000 <url>
 - Uses `domcontentloaded` instead of `networkidle` (avoids hanging on blocked trackers)
 - Sets US locale and timezone
 
+## Datacenter IP Blocks on the VM — Relay, Don't Add Stealth (2026-08-02)
+
+When a fetch works fine from the WSL box but returns a **403 from the GCP VM**, this is IP-reputation scoring by the origin's bot mitigation (Cloudflare in the observed case), not a broken fetcher. GCP ranges get an interstitial while a residential ISP gets the real page — same code, same headers, same headless Chromium build. Confirmed 2026-08-02 on a Mint Mobile product page: VM 403 every time, WSL 200 every time, and the VM's browser engine was otherwise fine (`example.com` returned 200).
+
+**Isolate the variable first:** run the same fetch against a benign URL from the VM. If that returns 200 and the target 403s consistently while WSL succeeds, it's IP reputation, not the engine — don't reach for stealth flags or user-agent rotation, which is both an arms race and the wrong diagnosis for a network-level block.
+
+**Fix is delegation, not stealth:** relay the fetch to a machine that's genuinely allowed to load the page, keeping scheduling/storage/alerting on the VM. Pattern: the VM POSTs the fetch spec to a listener on WSL over `ssh -N -R <vmport>:127.0.0.1:<wslport>` (key-authed), and monitors the capture that comes back. Same split distill.io draws between cloud and local monitoring; Pagewatch's `engine: "local"` implements it. Make the relay's absence loud — if the tunnel or the home box is down, affected checks must record an explicit `relay unreachable` error, never a silent pass.
+
+Applies to any VM-hosted job that fetches third-party pages: job-pipeline, housing-scout, deal-scout, nll-hunter, Pagewatch. If a scraper or monitor on the VM starts getting 403s a WSL-side check doesn't, check this before touching the fetcher.
+
 ## Calling from Docker Containers
 
 The standard CLI (`node ~/repos/page-reader/src/index.js`) is not accessible inside a Docker container. Use the `page-reader-proxy` PM2 service instead.
@@ -116,6 +126,32 @@ page-reader is **rung 2** of a fixed fallback ladder. The full procedure (with c
 5. **WebSearch** — secondhand, LAST resort, always flagged as search-derived. Never launder a search summary into a deliverable as if you read the source.
 
 **Sub-agent rule:** never delegate auth-gated or SPA retrieval to a sub-agent armed only with WebFetch — hand it the waterfall (and the browser-agent command) or retrieve via browser-agent in the main thread and pass the text down. An auth/paywall wall is *climbable*, not terminal.
+
+## When Playwright MCP Is Not Available (Headless/Autonomous Sessions)
+
+Headless autonomous sessions (autonomousDev-private, fix-checker, learnings-pass crons) often do NOT have the Playwright MCP connected — `ToolSearch` returns no `browser_*` tools. This is expected, not a failure. Use the cached Playwright package directly instead:
+
+**Playwright browsers are cached at** `~/.cache/ms-playwright` (e.g. `chromium-1223/chrome-linux64/chrome`). The `playwright` npm package is installed in `~/repos/freeGames`, `~/repos/page-reader`, and `~/repos/scripts`.
+
+**Import gotcha:** The installed `playwright` is CommonJS. Naively doing `import { chromium } from ".../playwright/index.js"` **fails** with "Named export not found". Use the default import instead:
+
+```js
+import pw from "/home/npezarro/repos/page-reader/node_modules/playwright/index.js";
+const { chromium } = pw;
+
+const browser = await chromium.launch({
+  executablePath: "/home/npezarro/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome",
+  headless: true,
+});
+```
+
+Pass `executablePath` to the cached chrome binary so Playwright doesn't demand its own bundled revision.
+
+**localStorage-gated SPAs** (e.g. valueSortify uses `valuesortify-session` key): `goto` the app URL, call `page.evaluate(() => localStorage.setItem(...))`, then `page.reload()` to render the gated screen. A plain `goto` won't show the gated view.
+
+**Start vite with an explicit port** to avoid race conditions: `npm run dev -- --port <p> --strictPort`. A lone `favicon.ico` 404 in the console is expected on vite dev (no favicon ref in `index.html`), not a regression.
+
+Source: autonomousDev-private CLAUDE.md (run #336, 2026-07-20), pattern verified for valueSortify phase-3 browser test.
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
