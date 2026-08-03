@@ -1,3 +1,4 @@
+<!-- Load when: validated instruction layer closing the Opus 4.8 -> Fable 5 behavioral gap; inject into Opus pipelines needing Fable-grade rigor (requires >=45-turn budget) -->
 # Opus → Fable Parity Layer
 
 Instruction layer that closes the measured behavioral gap between Claude Opus 4.8 and

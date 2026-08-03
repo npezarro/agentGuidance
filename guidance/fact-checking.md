@@ -1,3 +1,4 @@
+<!-- Load when: mandatory search-verification of external actionable claims (prices, eligibility rules, offers) before asserting -->
 # Fact-Checking External Claims
 
 ## Why this exists
