@@ -44,9 +44,25 @@ Real costs, stated honestly:
   `/mnt/c/Users/npeza/Documents/repos/browser-agent` is still its own clone and still has
   to be pulled before `ext-reload`.
 
-### Per-repo rollout step, do this FIRST
+### The ignore rule is GLOBAL (2026-08-03), no per-repo step needed
 
-Add to the repo's `.gitignore`:
+```bash
+git config --global core.excludesFile ~/.gitignore_global   # contains .claude/worktrees/
+```
+
+Set on both the WSL host and the VM, mirrored at `privateContext/claude-config/gitignore_global`.
+
+Originally this was a per-repo `.gitignore` line, which does not scale: **118 of 123 repos
+lacked it**, and adding it to each would have meant 118 commits across repos other sessions
+are live in. One global config covers every repo including ones created later. Verified in a
+repo with no local entry: `git status` stayed clean with a worktree open, and
+`check-ignore` attributed the match to the global file.
+
+Caveat: a global excludes file is machine-local and not shared with collaborators. Fine for
+a solo two-machine setup; a repo with outside contributors still wants the committed line.
+The five repos that already carry it locally keep it, harmlessly.
+
+For reference, the line itself:
 
 ```
 .claude/worktrees/
