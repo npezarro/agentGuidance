@@ -192,6 +192,7 @@ jobs:
 - The file is named `test.yml`, not `ci.yml`.
 - Branch trigger must match the repo's actual default branch (`main` vs `master`).
 - When adding first tests to a repo, also add the CI workflow so tests run on every PR.
+- **The automation token used by autonomous sessions has `repo` scope but NOT `workflow` scope**, so a push touching any file under `.github/workflows/` is rejected — no autonomous session can land a CI fix itself. Symptom seen in a YouTube shorts automation repo (CI broken since April 2026, autonomousDev run #344): the one-line fix was correct and verified but had to be left in the PR body for manual application rather than committed. When a fix requires editing a workflow file, don't retry the push — state the exact diff needed in the PR description/commit message and flag it for manual application.
 
 ## Coverage
 
