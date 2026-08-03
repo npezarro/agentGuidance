@@ -53,6 +53,77 @@ Convert markdown to HTML, then upload via Google Drive API with `contentMimeType
 
 **Do NOT use `createGoogleDoc`/`updateGoogleDoc` for long-form docs with tables.** These tools only accept plain text; tables cannot be created through them.
 
+### Verify a pushed GDoc by re-reading the published doc, not the intermediate files (2026-08-01)
+A markdown-to-GDoc render pipeline can report success at every stage and still publish literal markdown, because each script only sees the slice it handles. Intermediate-file checks are not verification: the HTML looked clean while the Doc showed raw '####' markers.
+
+Verify against the PUBLISHED document via the Docs API, counting paragraph styles and scanning the concatenated text for every markdown residue class:
+
+  fields=body(content(paragraph(paragraphStyle(namedStyleType),bullet,elements(textRun(content)))))
+
+Then assert: named-style histogram is non-trivial (not everything NORMAL_TEXT), native bullet count > 0, and ZERO matches for /\*\*/, /^#{1,6} /m, /\|/, backtick, /^>/m, /^[-*] /m.
+
+Two real bugs this caught on 2026-08-01 that all upstream checks passed:
+1. render-app-doc.js handled only #/##/### — '#### ' fell through to the paragraph branch and printed literally.
+2. Heading text used esc() not inline(), so **bold** inside a heading printed its markers. Fixing bug 1 EXPOSED bug 2: promoting those lines to headings moved them onto the esc() path, and the '**' count went 0 -> 38. A fix that changes which code path a line takes can activate a latent bug on the new path, so re-run the full residue scan after every fix rather than only the check that just failed.
+
+Also: grep silently returns nothing on these scripts because they contain a non-UTF-8 byte and grep treats them as binary. Use 'grep -a', or a search that finds nothing will read as 'the code isn't there.'
+
+---
+
+## The headless Drive MCP is CREATE-ONLY: no Doc update tool exists
+
+In Discord/headless runs the only Drive server connected is claude.ai's, and it exposes exactly
+`create_file`, `search_files`, `read_file_content`, `download_file_content`. **There is no update or
+append tool.** The piotr MCP's `updateGoogleDoc` is interactive-only, so a Doc that a prior session
+published **cannot be amended headless.**
+
+Consequences for any "push X to gdocs" request from Discord:
+
+1. **`search_files` for an existing doc on the topic BEFORE creating anything.** If the user is
+   reading a stale doc, saying so is half the answer. (2026-08-02: the user opened a stale summit
+   prep Doc at the same minute he asked for the update, so the real deliverable was "that one is
+   wrong, here is the new one" rather than just a new link.)
+2. Create a **new** Doc whose title states the supersession
+   (`"<Topic> — REVISED <date> — supersedes the <date> version"`). A title differing only by version
+   number will not stop the old one being re-opened from Drive recents.
+3. Tell the user the old Doc is stale and could not be edited, and give its file id so they can
+   archive it.
+
+**`fileSize: "1"` in the `create_file` response is a red herring**, not an empty upload. Verify every
+push with `read_file_content` on the returned fileId; that read-back is the only proof the content
+landed.
+
+For a phone-read doc prefer headings and bullets over markdown tables: table header rows convert
+imperfectly, and numbered headings render as `## 1\.` with `>` escaped as `\>` (cosmetic, but tables
+are the one case where the damage is structural).
+
+
+## Google Sheets — Bulk Update Safety
+
+**Always re-read the target range immediately before any bulk write.** Do not rely on row indices captured earlier in the session.
+
+External processes (other Claude instances, the user, automated cron jobs) may insert or shift rows between your read and your write. If you write with stale indices, you silently stomp the wrong rows with no error.
+
+**Procedure:**
+1. Call `getGoogleSheetContent` on the target range.
+2. Verify column A (or the identifier column) matches your expected data for each row.
+3. If the range has shifted, recalculate row indices before writing.
+4. Then call `updateGoogleSheet` with the corrected range.
+
+**Why:** On 2026-06-01, a new job row was inserted at row 57 between two writes in the same session. The second write stomped the new row's URL and silently shifted every subsequent row's URL to the wrong company. Detected only by spot-checking the result.
+
+This applies equally to Google Calendar bulk edits, Notion bulk mutations, and any multi-row write against shared state in a long session.
+
+
+## Headless / Discord-Invoked Sessions: Piotr MCP Is Absent
+
+The piotr `google-drive` MCP (and other locally-registered MCP servers) is only connected in **interactive** sessions. Discord-dispatched (`#requests`/`#tasks`) and other headless `claude -p` sessions only have the **claude.ai** MCPs (`mcp__claude_ai_Google_Drive__*`, Gmail, Calendar) — any skill step that hardcodes `mcp__google-drive__createGoogleDoc`/`createFolder` will silently fail to route (tool not found) in that context.
+
+**Fallback that works headless:** `mcp__claude_ai_Google_Drive__create_file` with `contentMimeType: "text/markdown"` and the raw markdown inlined in `textContent`. Drive auto-converts markdown → a real formatted Google Doc (headings, bold, bullets render natively) — no HTML conversion step needed. Create folders with `mimeType: "application/vnd.google-apps.folder"`; nest via `parentId`. Content must be inlined in the tool call (this MCP can't read local files) — reproduce the source content faithfully rather than re-summarizing it.
+
+Quirks: markdown table header rows convert imperfectly (first row can blank out) and underscores in inline code get backslash-escaped — cosmetic only. Source: `push-to-gdoc` skill / `interview-prep` hitting this in a Discord-dispatched run, 2026-07-12.
+
+
 ## Google Drive Sharing Limitations (piotr MCP)
 
 **"Anyone with the link" sharing cannot be set via the piotr `google-drive` MCP.** `mcp__google-drive__addPermission` and the `shareFile` wrapper both enforce a non-empty `emailAddress` parameter even when `type=anyone`, returning "Error: Valid email is required." The wrapper validates email format before hitting the Drive API, so the legitimate Drive API path (which accepts `type=anyone` with no email) is unreachable.

@@ -46,3 +46,20 @@ The full wrap-up procedure is `guidance/session-wrapup.md`. This is the mental m
 1. **State is saved** — `context.md` reflects reality, `progress.md` has the entry
 2. **Work is pushed** — committed and pushed to remote, not just staged
 3. **Nothing is orphaned** — no background processes you started, no temp files, no uncommitted changes
+
+### doc-sync prompt template pointed at a nonexistent profile path (2026-07-28)
+The doc-sync-pass cron prompt (~/repos/autonomousDev/doc-sync-pass/prompt.md) told the agent
+to "Read your profile: ~/repos/agentGuidance/profiles/doc-sync/profile.md" — that path never
+existed. The real doc-sync agent definition is at
+~/repos/agentGuidance/claude-agents/doc-sync.md. Confirmed stale across every prior doc-sync
+run found in claude-session-logs going back to April 2026 — every run silently skipped its
+own "read your profile" step. Fixed in run #434 (commit 94a5059 on autonomousDev main,
+following that file's existing direct-to-main convention — doc-sync-pass executes live from
+the public autonomousDev mirror per that repo's CLAUDE.md).
+
+Separate observation from the same run: pushing a `claude/doc-sync-<n>` branch to shopper's
+sibling repos (foodie, travel-assistant) triggers `claude-auto-merger[bot]` to open AND merge
+a PR (titled "Claude Doc Sync <n>") within seconds of the push — there is no actual "staged
+for review" window despite the runner prompt's step 4 ("Stage PRs for review"). Future
+doc-sync runs should not expect the PR to sit open; treat a push to those repos as equivalent
+to a direct merge to main and write commits accordingly.

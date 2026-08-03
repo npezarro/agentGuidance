@@ -20,11 +20,41 @@ Never assert user actions (e.g., "you applied for X") without checking the actua
 2. Paste or log the actual output in the transcript — not your interpretation of it.
 3. Only then write "fixed", "working", "passing", or "online".
 
+**The same gate applies to NEGATIVE claims, and it is the one that gets skipped.**
+"X is not available / not exposed / blocked / empty / returns nothing" is a
+system-state claim. It needs evidence that you actually reached the state where
+X would have appeared — otherwise you are reporting on your own setup, not on
+the source. Before writing a negative:
+1. Name the state the data requires (filter applied, tab selected, logged in, consent accepted).
+2. **Assert that state from the artifact itself**, not from the URL you requested
+   and not from the return value of the action. Read the control back:
+   `input.checked`, `aria-pressed`, the active class, the row count.
+3. Only then interpret an empty result.
+
+Report the assertion alongside the finding. "Toggle confirmed `checked: true`,
+award rows rendered, values blank" is a finding. "I passed the filter param and
+saw nothing" is a setup bug wearing a finding's clothes. Two specific traps:
+a URL/query param is a *request* for state on an SPA, never proof of it; and an
+action reporting success is not proof it acted (`cdp-click` returned
+`clicked: true` on every attempt while the checkbox never toggled — the element
+was outside the rendered viewport).
+
+**And the one that actually caused the wrong answer: several probes of the same
+broken setup are ONE observation, not several.** Three independent-looking
+signals agreed that Hyatt hides award points; all three shared a single root
+cause (award mode was never on), and the real answer was the opposite. If your
+evidence all flows through one setup, corroboration is an illusion — vary the
+setup, or get an outside observation. Never invent a plausible-looking enum
+value; read the real one off the application. Detail:
+`guidance/browser-page-reader.md`.
+
 "The error no longer appears in the code" does NOT pass step 1. "I applied the fix" does not pass it. If the verification tool is unavailable, state that explicitly — do not claim success.
 
 **Email evidence requires full threads, not snippets.** Search-result snippets truncate threads (a 5-message preview can hide later messages that reverse the conclusion) and forwarded mail misattributes ownership. Before classifying an email as the user's action or obligation: (1) fetch the full thread, (2) on forwarded content, check who the original To/From is (a forwarded interview invite may belong to the forwarder, not the user), (3) check the last message's sender and date to see whose move it is. Violation example (2026-06-09): a job-search plan told the user to send a list a contact had already moved past (the full thread showed the contact's later, more specific ask was the real open item) and assigned the user a friend's interview case study from forwarded mail.
 
 **Externally-verifiable facts — never answer from model memory.** Any factual claim a user could act on that lives outside this ecosystem (issuer/card eligibility rules, offer terms, prices, API pricing/limits, product availability, versions, policies, dates) MUST be verified with a current web search before it is asserted — use the `fact-check` skill on the draft answer. Do NOT self-assess whether the domain is "fast-moving"; if the fact is external and actionable, check it. A stale or curated local file does not count as verification for this class of fact, and a local file NEVER overrides the user's own statement about their own accounts/actions (2026-07-03: an agent told the user his Morgan Stanley Platinum didn't exist because card-portfolio.md was stale). Full procedure: `guidance/fact-checking.md`.
+
+**"Missing" is a conclusion, not an observation.** A file absent from your checkout and a file that was deleted look identical to `ls`. Before reporting anything as missing, deleted, broken, or dead, confirm you are looking at a current copy: `git ls-tree origin/main -- <path>` and `git log --all --diff-filter=D -- <path>` settle it in one command each. Same for an installed script, a vendored file, or a cached credential: check the source, not your local snapshot. (2026-08-01: reported `cf-purge.sh` deleted and patched two skills to warn about a dead path; the checkout was 51 commits behind and the script was on main the whole time. The wrong finding reached the user and two skills before it was caught.)
 
 **Mark generated facts and capture sources.** When producing a fact-bearing deliverable (research report, buying guide, bio, resume, cover letter, data table), the facts Claude generates must be distinguishable from what Nick wrote, and every external source must be captured. Internal review docs: inline `[AI·<id>]` tags + a Provenance & Sources appendix. External deliverables (things Nick sends/publishes): clean body, AI-authorship signaled in the title (`… (AI-generated)`) with provenance in frontmatter — never inline markers in the sent text. Capture sources via `source-registry.sh add` into the private `sourceLibrary` repo (cached copy + stable ID). Full procedure: `guidance/provenance.md`.
 
