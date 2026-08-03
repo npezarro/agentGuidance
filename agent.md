@@ -89,6 +89,7 @@ Load on-demand based on the current task:
 - `guidance/research-quality.md` -- curating high-quality references and study resources
 - `guidance/deep-research.md` -- research depth and methodology before producing guides or recommendations
 - `guidance/fact-checking.md` -- mandatory search-verification of external actionable claims (prices, eligibility rules, offers) before asserting
+- `guidance/literature-search.md` -- Valency MCP primary-literature search (44M papers, 91% PubMed) for health/scientific/technical claims; peer-review guard, not for prices or offers
 - `guidance/provenance.md` -- mark Claude-generated facts vs Nick's own writing; capture every source to the private sourceLibrary repo (source-registry.sh)
 - `guidance/wiki-consultation.md` -- when and how to consult knowledgeBase wiki pages
 - `guidance/repo-creation.md` -- checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure
