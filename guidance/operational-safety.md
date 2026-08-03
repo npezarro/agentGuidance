@@ -632,3 +632,17 @@ That trade is backwards: it punches a hole in the OUTER isolation boundary in or
 **Where the real mitigation lives instead.** The exposure that motivated this was `Bash(curl:*)` on untrusted public input. Since the OS-level sandbox is unavailable, the controls that DO apply are: the narrow `--allowedTools` list already in `bridge-server.js`, the alt-account isolation, the Docker boundary itself, and the output scrubber. Harden those rather than reaching for `strictAllowlist`.
 
 **Verify before reopening:** run `docker exec -u root <bridge> bwrap --ro-bind / / --dev /dev echo ok`. If it still prints `Operation not permitted`, this conclusion stands.
+
+### A recovery action that cannot fix the condition must be gated on classifying the condition first (2026-08-03)
+Restart storms come from a health check with fewer states than reality. `bridge-auth-refresh.sh` had two: `ok` and "not ok", where "not ok" meant stale bind-mounted credentials and the remedy was recreating the container. Being out of quota also reads as "not ok", so it inherited a remedy that cannot return quota: 1273 container recreates across six bridge logs, tearing down and rebuilding every 10 minutes for the length of each limit window, plus an alert telling the operator to run `claude /login` for a condition login cannot fix.
+
+The diagnostic that settles it is correlation across independent units. Six bridges have six independent credential files, and the recreates fired in lockstep at the same minute (03:40, 03:50, 04:00) on consecutive nights. Independent files do not go stale in the same second; one shared account runs out of quota in the same second. Lockstep failure across units that share exactly one thing points at the shared thing.
+
+Rules:
+1. Before wiring an automatic remedy to a failure state, ask which conditions land in that state and whether the remedy addresses each. If it addresses only some, classify first and let the others fall through to a wait.
+2. Detect operational strings by wording family, not one literal. The CLI says "your limit", "your session limit", "your weekly limit", and the reset stamp may carry no minutes ("resets 3am (UTC)"). A guard pinned to one literal silently stops matching when the vendor rewords, and the failure is invisible because the wrong branch still runs. Scope loose patterns to short output so real content quoting "limit" is not swallowed.
+3. Put the classifier where the condition is observed (the health endpoint), and keep a wording fallback in the consumer, so the fix applies to already-running processes without a rebuild.
+4. A recovery loop that re-runs on a fixed interval should record what it observed, not just what it did. These logs said "auth=failed, recreating container" and never printed the error text, so the misclassification was invisible for months in plain sight.
+5. Alert text is part of the fix. An alert naming the wrong remedy trains the operator to distrust the alert.
+
+Applies to any watchdog: PM2 restarts, container recreates, auth refreshers, stale-job requeues.
