@@ -263,3 +263,15 @@ A capture daemon's poll loop called an OS screenshot utility (`screencapture`) v
 3. **Let the process supervisor do the restart** — launchd `KeepAlive`, PM2, or systemd — rather than trying to self-recover in-process. This turns a silent multi-hour stall into a ~90-second self-heal.
 
 Applies to any long-running poll loop in the ecosystem that shells out or calls a blocking system API, not just this one daemon — audit for unbounded `waitUntilExit()` / `execSync` / blocking AX calls inside a loop with no surrounding timeout.
+### Follow-mode log commands piped into head leak a shell process forever (2026-07-30)
+A streaming log command piped into something that exits early leaks a shell process FOREVER. Found on the VM 2026-07-30: `pm2 logs trading-daytrade --lines 100 2>&1 < /dev/null | head -200` had been running for 41 days. `pm2 logs` follows by default and never exits; `head -200` closes the pipe after 200 lines; pm2 does not die on the resulting SIGPIPE, so the wrapping bash waits on it indefinitely. Two sibling orphans (21 days) and an abandoned `claude` session (15 days) were reaped in the same sweep.
+
+Rules:
+
+1. **Never run a follow-mode log command from an agent Bash call without disabling follow.** Use `pm2 logs <app> --nostream --lines N`. The same trap applies to `tail -f`, `journalctl -f`, `docker logs -f`, and `kubectl logs -f`: prefer the tool's own non-streaming flag over piping into `head`.
+
+2. **If a non-streaming flag does not exist, bound it externally**: `timeout 10 <cmd> | head -N`. Piping into `head` alone is NOT sufficient, because it relies on the producer handling SIGPIPE.
+
+3. **These leaks are invisible in normal monitoring.** Each orphan held only ~1 MB RSS, so no memory alert ever fired; they were only found by `ps -o pid,etime` during an unrelated audit. Periodically sweep for long-lived `bash -c source .../shell-snapshots/` processes, which are the signature of a leaked agent Bash call.
+
+4. **The `claude` CLI ignores SIGTERM.** Reaping it needs a SIGTERM then SIGKILL escalation, which is the same reason `bridge-server.js` implements its own SIGTERM -> SIGKILL grace period rather than relying on spawn's `timeout` option.

@@ -155,3 +155,112 @@ Source: autonomousDev-private CLAUDE.md (run #336, 2026-07-20), pattern verified
 
 ## Site-Specific Notes
 See `privateContext/guidance/` for known limitations and workarounds with specific sites.
+
+### Tabbed pages hide every tab in static HTML; extract the hidden containers (2026-07-30)
+page-reader --text-only and WebFetch return ONLY the active tab of a tabbed page (conference agendas, docs sites, pricing tables). The other tabs are usually already present in the static HTML inside sibling containers with display:none, so nothing needs a headless browser.
+
+Diagnosis: curl the page, then find the tab handler and its container class:
+  grep -oE '<div class="[a-z-]*tab[^>]*>[^<]*' page.html
+
+Extraction: track div depth from each container's start offset instead of regex-matching nested HTML. A ~15-line Python scan over the raw file recovers every tab:
+  idxs = [m.start() for m in re.finditer(r'<div class="resource-container', h)]
+  # walk forward from each idx counting '<div' / '</div' until depth returns to 0
+
+Hit on 2026-07-30 pulling the Agentic AI Summit 2026 agenda from rdi.berkeley.edu: page-reader returned only the 'Plenary - Saturday' tab, but all 7 stage tracks (Plenary/Atlas/Nexus/Compass across both days) were sitting in the downloaded HTML.
+
+Trap: do NOT use a keyword count as an emptiness test. Grepping 'Atlas' returned 4 hits and looked like the track was missing, because tab CONTENT rarely repeats the tab LABEL.
+
+Rule: before concluding a page needs JS execution, download the raw HTML and check for hidden sibling containers.
+
+### A negative result only means something if you first PROVE you reached the state you are testing; on an SPA a URL param is not a state change (2026-08-02)
+Before reporting 'source X does not expose Y', you must show evidence that the client actually entered the state where Y would appear. Otherwise you are reporting on your own setup, not on the source.
+
+2026-08-02, Hyatt award rates: loaded /shop/rooms/<id>?rateFilter=WORLD_OF_HYATT_AWARD, saw no point values, and concluded across several rounds that Hyatt withholds award pricing. The URL parameter never activated award mode. The page has a real control -- input[type=checkbox][aria-label='Use Points'] -- and only after clicking it did the cards re-render into 'Points/Night' rows. The eventual conclusion happened to hold, but it was unearned for most of the investigation, and the same mistake could as easily have produced a confident WRONG answer.
+
+The knowledge was already written down. travel-assistant's own notes record that direct navigation to Amex FHR /search-results returns 0 results because server-side session state is never established, and that the SPA form must be driven in the same tab. Same class, previously documented, not applied. So the rule is not 'learn this fact', it is 'run this check'.
+
+THE CHECK, before any 'X is not available / not exposed / blocked' claim:
+1. Name the state the data requires (filter on, tab selected, logged in, consent accepted).
+2. ASSERT that state from the DOM, not from the URL and not from the action's return value. Read back the control: input.checked, aria-pressed, aria-selected, the active class.
+3. Only then interpret an empty result.
+
+State the assertion in the report: 'toggle confirmed checked:true, award rows rendered, values blank' is a finding. 'I passed the filter param and saw nothing' is not.
+
+Corollaries from the same session:
+- A URL/query parameter is a REQUEST for state on an SPA, never proof of it. Frameworks routinely ignore params they only emit.
+- An action returning success is not proof it acted. cdp-click returned clicked:true on every attempt while the checkbox stayed unchecked, because a --bg tab put the element outside the rendered viewport and document.elementFromPoint() at its own centre returned null. Verify by re-reading the control's state.
+- Prefer the element's native activation (input.click() on a checkbox) over synthesized coordinate clicks; it is what actually flipped the control here.
+- When several similar controls exist, a generic selector silently hits the first. This page had TWO label.switch>span.slider pairs ('Accessible Room' and 'Use Points'). Scope with :has(), e.g. label.switch:has(input[aria-label='Use Points']) span.slider.
+- Placeholder text mimics data. The only points-like string while loading was '1234 Points', a skeleton. Do not accept the first regex hit as a value.
+
+### To automate a site feature, DRIVE the feature in a real browser first and read the URL it produces - do not assemble candidate URLs (2026-08-02)
+When you need a site's X-mode page (award/points pricing, a filtered search, a specific rate plan), the FIRST action is to use the feature the way a person does and capture the URL/request the application itself lands on. Only then write the automation.
+
+2026-08-02, hotel chain award rates. I spent many rounds assembling candidate URLs, inventing parameter values, and driving widgets by selector. The owner clicked into Choice's own search-with-points flow and pasted one URL:
+
+  .../rates?checkInDate=&checkOutDate=&ratePlanCode=SRD&view=undefined
+
+ratePlanCode=SRD works on a COLD deep link. It deleted an entire driven flow I had just built and verified (load root -> close a native <dialog> -> navigate in the same tab -> trusted click button.points-toggle -> read from main). That flow worked and returned the same value; it was simply unnecessary, and it was fragile in three ways the one-liner is not: it steals window focus, it depends on a class selector that will rot, and it needs a composited tab.
+
+Costs of getting this order wrong, all incurred in one session:
+- Invented an enum value (rateFilter=WORLD_OF_HYATT_AWARD; the real one is woh) and concluded from the empty result that the chain withheld the data. Wrong, and it reached three commits before being overturned.
+- Declared Choice 'blocked by a locale interstitial' after mistaking a native <dialog>'s residual DOM text for a block.
+- Declared IHG 'blocked' before finding qAAR=IVANI.
+
+Procedure for a new site:
+1. Open the site in the real browser. Use the feature by hand: pick the destination, set dates, select the points/award/filter mode.
+2. Capture the URL AND the XHR the page fires (network capture) at the moment results appear.
+3. Reproduce that URL cold in a fresh tab. If it renders, the adapter is a URL builder - the best possible outcome.
+4. Only if a cold deep link genuinely fails do you build a driven flow, and then record WHY (e.g. IHG disabled its deep-link route in April 2026, so its search must be submitted with a trusted click on a foregrounded tab).
+
+SELF-SERVICE ORDER. Asking the owner is the LAST resort, not the first:
+
+1. **Web search the parameter.** This works more often than expected and cost
+   nothing: searching for IHG's award URL surfaced a real link carrying
+   `qAAR=IVANI` + `qRtP=IVANI`, which was the entire IHG unlock. Search the
+   parameter name, the rate code, and `site:<domain>` deep links; award-travel
+   blogs and FlyerTalk routinely paste working URLs.
+2. **Drive the filter yourself and read `location.search`.** Works where the
+   site keeps state in the URL.
+3. **Capture the XHR** the control fires, including REQUEST BODIES. Choice is
+   the case that needs this: clicking its points toggle changes the rendered
+   rates but leaves the URL untouched, and a URL-only network listing of 159
+   requests showed no rate-plan parameter. `ratePlanCode=SRD` is not reachable
+   by (1) or (2) -- web search did not surface it and the URL never changes.
+4. Only then ask.
+
+Do not stop at (1) failing. Each step reaches something the previous one
+cannot.
+
+### Search BROADLY, then VERIFY on the page
+
+Two failure modes, both hit in one session:
+
+**Too narrow a query.** Searching the exact string `"ratePlanCode=SRD"` returned
+nothing and I concluded the parameter was unfindable. Searching the HUMAN
+phrasing -- `rate plan SRD flyertalk` -- surfaced it immediately, in a FlyerTalk
+thread titled "Loyalty Points Guarantee is not valid without rate plan SRD".
+Vary the framing before concluding a parameter is undocumented:
+- the exact `param=value` string
+- the human phrasing ("rate plan SRD", "award rate code")
+- forum/blog scoped (`flyertalk`, `reddit`, `thepointsguy`, `site:<domain>`)
+- the error message a user would post about it
+
+**Trusting a search result without testing it.** Web search gave IHG's
+`qRtP=IVANI`, which is real and DOCUMENTED and no longer works -- IHG disabled
+the deep-link route in April 2026, so it now only populates the dropdown. Only
+loading it in a real browser revealed that. Blog and forum posts are snapshots;
+vendors change these silently.
+
+**So the loop is: search broadly -> collect EVERY candidate -> load each in a
+real browser -> keep what actually renders.** A parameter is "confirmed" only
+after the page shows the data, never because a search result mentioned it.
+
+### Aggregator city-slug URLs can silently resolve to the wrong city (2026-08-03)
+When scripting a travel/price aggregator (Kayak, Priceline, Expedia) via page-reader, a human-readable city slug in the URL can silently resolve to a DIFFERENT city and still return a full, plausible page of results.
+
+Observed 2026-08-03: https://www.kayak.com/cars/West-Covina,CA/2026-08-10/2026-09-07 rendered a complete results page with 207 cars and real prices, but the search form read 'Columbia, South Carolina, United States'. The numbers were entirely valid-looking and entirely wrong. Using the numeric city code form (.../West-Covina,California,United-States-c559/...) resolved correctly.
+
+Rule: after loading any aggregator search page headlessly, ALWAYS grep the rendered output for the echoed location string in the search form and confirm it matches the intended city BEFORE reading any price off the page. If it does not match, discard the numbers rather than adjusting them. A wrong-city page does not error, does not warn, and looks exactly like a right-city page.
+
+Corollary for scraped business directories (cmac.ws, loc8nearme, superpages, yellowpages): treat a branch address or phone found only in a scraped directory as an unconfirmed lead. Verify it against the brand's own location index or location API before repeating it as fact. Same session produced a phantom 'Enterprise at 2016 E Garvey Ave S, (626) 974-7984' from cmac.ws that does not exist; the phone was one digit-group off a real nearby branch, the signature of a scrape transcription error.

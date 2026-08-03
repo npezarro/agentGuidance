@@ -15,7 +15,7 @@ Every operational function has exactly one canonical source. If you need to find
 ## Guidance Files (generated)
 
 <!-- BEGIN GENERATED guidance table (scripts/gen-manifest.sh) -->
-39 guidance files. Descriptions come from each file's "Load when:" header.
+44 guidance files. Descriptions come from each file's "Load when:" header.
 
 | File | Load when |
 |---|---|
@@ -27,21 +27,26 @@ Every operational function has exactly one canonical source. If you need to find
 | `guidance/browser-page-reader.md` | MISSING Load-when header — add one |
 | `guidance/code-review.md` | self-review checklist before committing |
 | `guidance/comprehensive-closeout.md` | detailed session documentation for important conversations |
+| `guidance/concurrent-sessions.md` | several sessions share one checkout; worktrees, resource locks, claim-guard, "it keeps reverting" |
 | `guidance/context-progress.md` | context.md and progress.md specs |
 | `guidance/debugging.md` | diagnosing issues, log analysis |
 | `guidance/deep-research.md` | research depth and methodology before producing guides or recommendations |
 | `guidance/dependencies.md` | evaluating and adding packages |
 | `guidance/deployment.md` | pre-deploy and post-deploy checklists |
 | `guidance/discord-integration.md` | session reporting, posting, threading, file-links |
+| `guidance/fact-checking.md` | MISSING Load-when header — add one |
 | `guidance/git-workflow.md` | branching, PRs, merge procedures, commit messages |
+| `guidance/goal-conditions.md` | MISSING Load-when header — add one |
 | `guidance/learning-agent.md` | hourly learning review: passes, staging, PR workflow |
 | `guidance/learning-capture.md` | when and where to persist operational learnings |
 | `guidance/local-worker-bridge.md` | local worker bridge post-mortem |
 | `guidance/mcp-tools.md` | MCP tool provider selection (Claude AI vs piotr google-drive) |
 | `guidance/multi-session.md` | continuity checklist and `--refresh` command |
 | `guidance/operational-safety.md` | self-deploy loops, restart storms, hook loops |
+| `guidance/opus-fable-parity.md` | MISSING Load-when header — add one |
 | `guidance/prior-work-lookup.md` | finding past conversations and prior work |
 | `guidance/process-hygiene.md` | spawned processes, temp files, port conflicts |
+| `guidance/provenance.md` | producing any deliverable that contains researched/generated facts; capturing sources |
 | `guidance/public-app-isolation.md` | siloed alt account pattern for public-facing apps with untrusted input |
 | `guidance/repo-creation.md` | checklist for new repos: cross-cutting guidance incorporation, CLAUDE.md structure |
 | `guidance/research-quality.md` | curating high-quality references and study resources |

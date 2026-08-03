@@ -10,6 +10,19 @@
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
 ## Log
+
+2026-08-02 | fix | `check-unpushed.sh` sees git worktrees: `.git` may be a FILE (`-e` not `-d`), and a no-upstream branch compares against origin's default (`02c1e13`)
+2026-08-02 | guidance | per-session worktrees enabled by default in `agent.md`; `.gitignore` prerequisite across 5 repos (`5cdf85c`, `aae2b98`)
+2026-08-02 | test | worktree regression cases added, 10 -> 13, negative control verified
+
+2026-08-01 | guidance | `concurrent-sessions.md` + `with-resource-lock.sh`: worktrees for the shared tree, flock for singletons (`4d0c933`, `a19625c`)
+2026-08-01 | test | `hooks/tests/test-guards.sh` — 10 cases for claim-guard + check-unpushed, with a negative control against `eb76be0^` (`4369633`)
+2026-08-01 | guidance | `git-workflow.md` peer-commit push procedure marked superseded by the per-commit gate fix
+2026-08-01 | guidance | git-workflow: new section "A peer's unpushed commit will block *your* stop" — push it to its own branch, never reset it (`54022a0`)
+2026-07-30 | guidance | operational-safety.md, 3 sections on Claude Code version hygiene: audit every host AND container (host version says nothing about containers); pin `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` + WebSearch cap BEFORE upgrading (v2.1.219 raised nested-subagent depth 1→3); set `fallbackModel` on headless runners; match the upstream fix list to the actual invocation path before calling drift urgent (a first-pass claim about the bridges was refuted by reading `bridge-server.js`); unpinned install + Docker layer cache makes a rebuild a silent no-op; `docker exec` runs claude as root and false-alarms `Not logged in`. `77317db`, `601934f`, `4f961b3`.
+2026-07-30 | guidance | process-hygiene.md: follow-mode log commands (`pm2 logs`, `tail -f`, `journalctl -f`) piped into `head` leak a shell process forever, since pm2 ignores SIGPIPE and the wrapper waits indefinitely; use `--nostream` or `timeout`. Found a 41-day-old orphan on the VM; ~1MB RSS each so no memory alert ever fired. `ad1778b`.
+2026-07-29 | infra | Opus 5-vs-Fable bakeoff re-run: base Opus 5 beats Fable on 3/4 dims (verify-claims/autonomy/multi-file), parity (8-8) on code-review; full layer counterproductive on Opus 5 (overshoots budget). Interactive hook switched to `craft-v1` minimal rule; 2-week craft-v1-vs-control A/B (cutover 2026-07-29T23:25Z) + dated review cron (~08-12). Audit in privateContext. `33be5ac`, bakeoff `be72b04`.
+2026-07-29 | infra | Parity substrate re-based Opus 4.8 → Opus 5 (`claude-opus-5`): `bestof-claude.sh` MODEL bumped; `parity-arm-analyzer.py` gained `OPUS_SUBSTRATE` (default opus-5), pooling only current-substrate sessions and excluding pre-cutover 4.8 as a prior cohort; re-baseline note added to `opus-fable-parity.md` (layer text unchanged, still v4). `4c99d23`.
 2026-07-17 | guidance | process-hygiene.md "Cron Registry Reconciliation": never `--install --force` (deletes live-but-unregistered jobs); two-way diff → verify intent from memory → import/disable → verify backup delta. From the token-relay near-miss.
 2026-07-17 | feat | parity-transcript-archiver.sh: hourly cron copying logged A/B session transcripts to ~/.claude/parity-telemetry/transcripts/ before rotation (2 already lost); analyzer falls back to archive. Cron registry reconciled in the same pass (token-relay pair imported; refresh/probe/peloton marked paused per documented intent).
 2026-07-17 | guidance | `agent.md` v4.1.1 (PR #329, merged): Wispr-dictation interpretation rule in Communication section — ignore stray leading `v` artifact, read dictated input for intent, prefer coherent near-homophone, ask only on genuine ambiguity.
@@ -89,3 +102,15 @@
 ## 2026-07-16
 - 2eb0f17 Add goal-conditions.md; /goal evaluator Stop-hook exemption in stop-hook-safety.md; agent.md index line (95/100 lines)
 - 2026-07-17: goal-conditions.md gains "Two traps found in production" (stdin leak, rejection-as-success)
+2026-08-01 | hooks | claim-guard.sh: warn on same-file/same-repo writes by a live peer session, deny `git add -A/--all/.`, `git commit -a/--all` and `rsync --delete` into /var/www while a peer holds the target. Per-session liveness (`/tmp/claude-session-alive-<sid>`), two ledgers so Bash-inferred writes never reach the Stop-time push gate, own-subagent exemption. 21/21 payload tests plus live verification; the live run caught a `$HOME` expansion miss that all 21 literal-path tests had passed. `809a04d`, `fcf2d4e`.
+2026-08-01 | hooks | claim-guard segmentation fix (a commit MESSAGE naming `git add -A` was denied; now judges each command segment after dropping heredoc bodies, unwrapping ssh and stripping string literals) + push gate goes per-commit (intersects each commit's files with the session ledger instead of counting @{u}..HEAD per repo). Both gaps reported by a peer session. Same-command variable assignments now resolve; unresolvable targets are logged, not silent. Suite 29/29. `eb76be0`.
+2026-08-01 | guidance | concurrent-sessions.md is now the single canonical home for this topic (three same-afternoon write-ups consolidated); operational-safety.md reduced to a pointer; hook-health-check.sh gained a weekly settings.json drift check against the new privateContext/claude-config mirror. `f950cc3`.
+2026-08-01 | guidance | operational-safety.md gains "Unattended Jobs That Take Irreversible External Actions": identity gate, magnitude cap, per-period idempotency state file, a `--dry-run` that stops at the irreversible call, and report-every-outcome. Plus the retry-window rule (transient vs real vs already-done, closed by one `--final` alarm) so sweeping a window cannot turn one outage into a dozen emails. Written instead of a skill: the procedure is code-shaped, the rule is not. Reference impl `privateContext/recurring-tasks/scripts/staples-giftcard-buy.py`.
+
+### 2026-08-02 - hooks scan private repos
+- `hooks: scan private repos too, and stop claiming they are public` - pre-commit now scans
+  everywhere with per-visibility wording; visibility cached on disk.
+- `hooks: pre-push also scans private repos` - same fix for the push gate, which still exit 0'd.
+- `hooks: header no longer says these are only for public repos`.
+- Verified: planted identifier blocks on a PRIVATE-marked repo with the private wording; clean
+  commit passes with no false positive. Propagated to 82 repos, cache seeded in 80.

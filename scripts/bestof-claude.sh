@@ -13,7 +13,7 @@
 set -euo pipefail
 
 N=2
-MODEL="claude-opus-4-8"
+MODEL="claude-opus-5"
 JUDGE_MODEL="claude-haiku-4-5"
 WORKDIR=""
 MAX_TURNS=45

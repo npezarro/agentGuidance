@@ -45,6 +45,14 @@ Each run reviews a sliding window of recent activity:
 5. **Existing guidance files** (agentGuidance/guidance/)
    - Check for staleness, contradictions, gaps
 
+6. **Activity brief** (`privateContext/daily-activity/brief-<date>.md`, last 24h)
+   - The activity-tracker advisor's distilled record of what Nick actually did
+     (projects, companies, people, open/stalled threads, entities).
+   - Use it to correlate captured activity with what to learn/propose, and to spot
+     work that happened outside git/Discord. Distilled text only (no raw OCR); it
+     reflects observed activity, not confirmed outcomes — do not assert a state
+     from it without verifying at the real source.
+
 ### What It Produces (Output)
 
 1. **Guidance updates** — Edits to existing `agentGuidance/guidance/*.md` files or new files when a gap is identified

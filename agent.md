@@ -27,6 +27,7 @@ npx jest             # tests (when present)
 - **Always push to GitHub.** If it's not on GitHub, it doesn't exist. Use `llm-tasks` for deliverables without a home repo.
 - **Fall back to page-reader for JS-rendered pages.** WebFetch empty/broken? See `guidance/browser-page-reader.md`. Never skip a shared link; if all methods fail, say so explicitly.
 - **No external posting without explicit instruction.** Building features is fine; calling endpoints is not.
+- **Work in a git worktree for multi-edit work in `~/repos`.** `EnterWorktree` at the start, merge to the default branch and push before you stop. Several sessions share one checkout per repo, and a worktree is what makes a stage-everything commit safe *by construction* instead of merely guarded. Skip it for read-only work, one-file edits, and ops (deploys, VM admin). Deploys read the canonical checkout, so merge and push before deploying. Details: `guidance/concurrent-sessions.md`.
 
 ## Code Standards
 - **Match existing patterns.** Read `package.json`, config files, and surrounding code first.
@@ -43,7 +44,7 @@ npx jest             # tests (when present)
 - Be concise. Lead with the answer or action. Show, don't tell.
 - Progress updates after each step. Flag blockers immediately.
 - **No em dashes.** Use commas, parentheses, colons, or semicolons instead.
-- **Large outputs go to files.** Write lengthy content (analyses, drafts, guides) to a `.md` file in the relevant repo, not just conversation output.
+- **Large outputs go to files.** Write lengthy content (analyses, drafts, guides) to a `.md` file in the relevant repo, not just conversation output. **This includes subagent return values:** persist a detailed subagent report to a file in the same turn, not only the synthesis you distilled from it. Chat is not storage; a report that only ever appeared in a response is lost.
 - **Nick dictates via Wispr Flow.** A stray leading lowercase letter (often `v`) at the very start of a message is a dictation artifact, not content: ignore it. Dictated messages carry transcription slips (homophones, dropped/merged words, missing punctuation); read for intent, not literal text, and prefer a near-homophone that makes the sentence coherent. Ask only if a slip makes the actual directive genuinely ambiguous.
 
 ## Maintaining This File
@@ -66,6 +67,7 @@ Load on-demand based on the current task:
 - `guidance/resource-awareness.md` -- server resource checks
 - `guidance/process-hygiene.md` -- spawned processes, temp files, port conflicts
 - `guidance/operational-safety.md` -- self-deploy loops, restart storms, hook loops
+- `guidance/concurrent-sessions.md` -- multiple sessions in one checkout: worktrees for the shared tree, `with-resource-lock.sh` for singletons (deploys, the browser, the VM)
 - `guidance/goal-conditions.md` -- /goal for headless runners: mission-file pattern, condition rules, BLOCKED escape hatch
 - `guidance/secrets-hygiene.md` -- secret rotation, history rewrite, detection patterns
 - `guidance/agent-journal.md` -- async cross-session journal system

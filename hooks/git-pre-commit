@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-commit hook for PUBLIC repos
+# pre-commit hook: blocks sensitive identifiers in ANY repo (private ones too).
 # Scans staged changes for sensitive identifiers before allowing commit.
 # Uses security-scan.sh from privateContext for pattern matching.
 # Skips enforcement on private repos (checked via gh CLI).
@@ -24,9 +24,14 @@ if [ -n "$REMOTE_URL" ] && command -v gh &>/dev/null; then
     REPO_SLUG="${BASH_REMATCH[1]%.git}"
   fi
   if [ -n "$REPO_SLUG" ]; then
-    VISIBILITY=$(gh repo view "$REPO_SLUG" --json visibility -q '.visibility' 2>/dev/null || echo "UNKNOWN")
-    if [ "$VISIBILITY" = "PRIVATE" ]; then
-      exit 0
+    # Cache visibility: a network call on every commit is too slow, and the
+    # answer changes about once in a repo's lifetime.
+    VIS_CACHE="$(git rev-parse --git-dir)/.repo-visibility"
+    if [ -f "$VIS_CACHE" ]; then
+      VISIBILITY=$(cat "$VIS_CACHE")
+    else
+      VISIBILITY=$(gh repo view "$REPO_SLUG" --json visibility -q '.visibility' 2>/dev/null || echo "UNKNOWN")
+      [ "$VISIBILITY" != "UNKNOWN" ] && echo "$VISIBILITY" > "$VIS_CACHE"
     fi
   fi
 fi
@@ -42,7 +47,13 @@ if echo "$SCAN_OUTPUT" | grep -q "BLOCKED"; then
   echo ""
   echo "$SCAN_OUTPUT"
   echo ""
-  echo "This is a PUBLIC repo. Fix the violations above before committing."
+  if [ "${VISIBILITY:-UNKNOWN}" = "PRIVATE" ]; then
+    echo "Private repo, scanned anyway: repos can go public, and vendored files"
+    echo "carry identifiers into other repos. Fix the violations above."
+    echo "Deliberate exception: git commit --no-verify"
+  else
+    echo "This is a PUBLIC repo. Fix the violations above before committing."
+  fi
   echo "See ~/repos/privateContext/sensitive-identifiers.md for replacement values."
   echo ""
   echo "To bypass (emergency only): git commit --no-verify"

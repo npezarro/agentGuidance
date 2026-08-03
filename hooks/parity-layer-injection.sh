@@ -32,8 +32,12 @@ TELEMETRY_FILE="${PARITY_TELEMETRY_FILE:-$HOME/.claude/parity-telemetry/interact
 TELEMETRY_DIR="$(dirname "$TELEMETRY_FILE")"
 # version is read from the layer file's PARITY-LAYER-VERSION marker so telemetry
 # tracks a future v5 automatically; fallback matches the last known version
-LAYER_VERSION="$(grep -oE 'PARITY-LAYER-VERSION: v[0-9]+' "$LAYER_FILE" 2>/dev/null | head -1 | sed 's/.*: //')"
-[ -n "$LAYER_VERSION" ] || LAYER_VERSION="v4"
+# 2026-07-29: Opus treated arm switched from the full layer (v4) to the lightweight
+# craft rule (craft-v1). The claude-bakeoff Opus 5-vs-Fable re-run showed the full
+# layer is counterproductive on Opus 5 (overshoots turn budgets); see the guidance
+# doc. The 2-week interactive A/B now tests craft-v1 (treated) vs control on Opus 5.
+LAYER_VERSION="$(grep -oE 'OPUS5-CRAFT-VERSION: [a-z0-9-]+' "$LAYER_FILE" 2>/dev/null | head -1 | sed 's/.*: //')"
+[ -n "$LAYER_VERSION" ] || LAYER_VERSION="craft-v1"
 TREAT_PCT=50   # percent of interactive Opus sessions assigned the layer (50/50 since 2026-07-16)
 
 [ -f "$LAYER_FILE" ] || exit 0
@@ -117,8 +121,8 @@ esac
 # --- INJECT: treated arm only ---
 [ "$ARM" = "layer" ] || exit 0
 
-BLOCK="$(sed -n '/<!-- PARITY-LAYER-START -->/,/<!-- PARITY-LAYER-END -->/p' "$LAYER_FILE" | sed '/<!-- PARITY-LAYER-/d')"
+BLOCK="$(sed -n '/<!-- OPUS5-CRAFT-START -->/,/<!-- OPUS5-CRAFT-END -->/p' "$LAYER_FILE" | sed '/<!-- OPUS5-CRAFT-/d')"
 [ -n "$BLOCK" ] || exit 0
 
-printf 'OPERATING PRINCIPLES (Opus->Fable parity layer %s -- interactive session, treated arm):\n%s\n' "$LAYER_VERSION" "$BLOCK"
+printf 'OPERATING PRINCIPLES (Opus 5 craft rule %s -- interactive session, treated arm):\n%s\n' "$LAYER_VERSION" "$BLOCK"
 exit 0

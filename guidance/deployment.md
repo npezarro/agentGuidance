@@ -52,6 +52,26 @@ If you intentionally skip deploying (e.g., batching changes), note it in context
 
 Infer deploy commands from repo config (GitHub Actions, scripts, `context.md`).
 
+## Publishing Artifacts: Verify the Bytes, Not the Status Code
+
+For anything that publishes a downloadable artifact (installers, auto-update manifests, release binaries), a 200/206 proves only that *something* is at the URL. A CDN will happily serve a stale cached object of the right size, so the status check passes while the client's integrity check rejects the download: CI green, user broken.
+
+A publish step ending in `echo "Uploaded v$VERSION"` has asserted success, not measured it. Verify, in order:
+
+1. Fetch the manifest **cache-busted**; assert the published version equals the built one.
+2. For **every** artifact URL the manifest advertises (not one representative), `curl -sL` with a range request and assert a *final* 200/206. **Follow redirects** — a 301 to a path that 404s looks like success until you follow it.
+3. Download the primary artifact and assert its checksum matches the manifest. This is the same check the client performs, and the only one that catches a poisoned cache.
+
+Publish order matters: **binaries first, manifest last** (the manifest advertises the version, so landing it first lets a client 404 mid-upload), and write the manifest to a temp name then `mv` it. Add retention — nothing pruning releases let one directory reach 2.1GB on a disk at 81%.
+
+Three traps that cost three months of silently-broken releases (2026-07-29, claude-tray-notifier):
+
+- **Never discard the stderr of a command that can abort the script.** `ssh-keyscan ... 2>/dev/null` under `bash -e` killed a step instantly with zero output and no packet reaching the server. Tell: a step failing *far too fast* with an empty log is an aborted `set -e` script, not the failure it appears to be.
+- **A CDN-fronted hostname is not an SSH target.** Keep the origin address and the public hostname as separate config values; a CDN migration otherwise breaks deploys with no obvious connection to the change.
+- **`secrets` is unavailable in a step-level `if:`** — using it there makes GitHub reject the entire workflow file, presenting as a run with zero jobs, no logs, and the file path shown where the workflow name should be. Guard inside the script instead (`env:` may reference secrets). Detector: `grep -nE '^\s*if:.*secrets\.' .github/workflows/*.yml`.
+
+Full case study: knowledgeBase `patterns/release-publish-verification.md`.
+
 ## Automated Deploy Enforcement (Hooks)
 
 Two hooks mechanically enforce post-deploy verification, even if the agent skips the manual checklist above:
@@ -526,3 +546,14 @@ The production Apache vhost has a global rewrite rule that 301-redirects any URL
 
 ### Verify the shipped standalone bundle after an rsync-promote, not just health 200 (2026-07-24)
 During the travel-assistant deploy, the staging→prod promote `rsync -a --delete <stg>/.next/ <prod>/.next/` exited 0 and `/api/health` returned 200, but `.next/standalone/` was NOT updated: prod's `app/api/query/route.js` still referenced the OLD content-hashed chunks and none of the new code shipped. A plain `rsync -a` (size+mtime quick-check) silently under-transferred the standalone chunks; re-running with `--checksum` fixed it and the change's marker string appeared. Lesson for the staging skill Step 6 promote: after the artifact rsync, `grep -rl '<a-new-literal-or-symbol-from-the-change>' <prod>/.next/standalone/.next/server/` BEFORE restarting or declaring success. Health 200 and "rsync done" both lie here because the route module isn't executed until a real request renders it. Prefer `rsync -a --checksum --delete` for standalone `.next` promotes.
+
+### Cloudflare cache rules are LAST-match-wins; MCP servers should use token auth not OAuth when headless consumers exist (2026-07-29)
+Two corrections from the 2026-07-29 Cloudflare MCP session.
+
+1. CACHE RULE ORDERING. Cloudflare cache rules are **last**-match-wins, not first. CF docs: 'When multiple rules specify the same setting, the last matching rule wins.' Verified on the production zone: an `/<app>/_next/` bypass at array index 2 overrides the broader `/<app>` caching rule at index 1 (asset serves cf-cache-status: DYNAMIC). To carve an exception out of a broad caching rule, place the exception AFTER it. When debugging 'my bypass is not working', look for a LATER rule re-enabling cache, not an earlier one.
+
+   This claim was previously WRONG in two places: the cloudflare-site-setup skill and the 2026-06-02 migration closeout (which was the origin; it propagated into the skill). Both corrected. Lesson: one topic documented in two places is how a wrong claim survives.
+
+2. MCP AUTH FOR HEADLESS ECOSYSTEMS. Vendors label OAuth 'recommended' for MCP servers, but OAuth-authenticated MCP servers are ABSENT from headless 'claude -p' runs (autonomousDev, learning-agent, VM #requests worker, Docker bridges). Prefer a Bearer API token when the server supports one, even when the setup docs only mention OAuth (check the server's README; the vendor setup page mentioned only OAuth while the server's own README documented a token path). Verify at CONNECT time via a raw JSON-RPC initialize, not at config-write time, and revert the config if it fails rather than leaving a permanently-401ing server in place.
+
+3. SCOPE PROBING. When a vendor rejects a credential for scope, you usually cannot introspect it. Probe by calling endpoints and read RESULT CONTENTS, not the success flag: a zone-scoped Cloudflare token returns success:true with an EMPTY array from /accounts. Permissions are sectioned; adding more of the wrong section never helps (two Zone-scoped tokens failed identically before Account Settings:Read was added).
