@@ -653,3 +653,28 @@ Inserting rows into `_prisma_migrations` (or any migration ledger) by hand to "m
 Use the supported command, which computes the right values: `npx prisma migrate resolve --applied <migration_name>`.
 
 **Diagnosing it:** the failure is `Error in Schema engine ... ConversionError("input contains invalid characters")` — that string is **chrono's date-parse error**, not a corrupt database. It reproduces against *any existing* DB file (including a copy in `/tmp`) and disappears against a fresh one, which sends you hunting a corrupt DB or a bad engine binary. Bisect by creating an empty SQLite file and running the same command against it; if that works, the problem is data in the ledger, not the engine.
+
+## Monitor Freshness Separately From Liveness
+
+The reason the outage above lasted two months is not that the deploy broke. It is that **nothing was watching the axis it broke on.** A half-failed deploy leaves the app *up on old code*, and every liveness monitor is then honestly green:
+
+| monitor | what it asked | answer on a stale build |
+| --- | --- | --- |
+| uptime / HTTP check | does it return 200? | yes — the old build serves fine |
+| process watchdog | is the process online? | yes |
+| static-asset drift | does the in-memory build match disk? | yes — both stale, and consistent |
+| error aggregator | is it throwing? | no — old code that used to work still works |
+
+"Up" and "current" are independent properties, and **liveness monitoring cannot detect a freshness failure by construction.** Adding more uptime checks would never have caught this; the missing check asks a different question: *is the deployed commit the one on the release branch?*
+
+When this check was finally written and run across the fleet, runeval was not the only victim — one online app was **6 commits / 46 days** behind (including two merged bug fixes), another 3 commits / 22 days, and one was serving an autonomous bot's feature branch. None had ever alerted. Assume this class of drift is present and unmeasured until something measures it.
+
+Rules:
+- **Compare each running app's `HEAD` to its upstream branch on a schedule.** Cheap, and it is the only signal that distinguishes "deployed" from "merged".
+- **Age the drift by the OLDEST unshipped commit, not the newest.** A steady stream of merges keeps resetting a newest-commit clock, so a deploy broken for weeks looks perpetually "just merged". The alertable question is "code merged N days ago is still not running".
+- **Only alert for apps that are actually serving.** A stopped app on old code is dormant, not an outage; alerting on it trains people to ignore the channel.
+- **Also flag non-canonical branches and missing upstreams.** An app deployed off a bot's feature branch can be arbitrarily far from the release branch while the commit-count `behind` reads 0 — that drift is invisible to a count alone.
+- **Detect, do not auto-heal.** A cron that redeploys on drift is how the original loud failure became a silent one. Escalate to a human or agent and let them run the app's own deploy script.
+- **Give it a grace window** (~12h) so the normal gap between merge and the next deploy is not noise.
+
+**Generalize past deploys:** any failure that leaves a system serving *stale but valid* output is invisible to health checks — stale caches, a paused replica, a cron that stopped writing, an expired feed still serving its last good payload. Wherever correctness depends on data being *recent*, monitor recency explicitly; "it responded" is not evidence that it responded with *current* data.
