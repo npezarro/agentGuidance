@@ -20,7 +20,7 @@ A CLI utility that loads URLs in a headless Chromium browser with full JavaScrip
 
 ## When NOT to Use It
 - Static HTML pages where WebFetch works fine
-- Pages you need to interact with (click, fill forms, navigate); use the Playwright MCP for those
+- Pages you need to interact with (click, fill forms, navigate). page-reader only *reads* a URL. There is **no Playwright MCP** on this box — write a short Playwright script against `~/repos/page-reader/node_modules/playwright` and see "Driving a form" below
 - APIs that return JSON directly
 
 ## Where It Lives
@@ -82,6 +82,48 @@ node ~/repos/page-reader/src/index.js --stealth --wait 5000 <url>
 - Sets `navigator.webdriver` to false
 - Uses `domcontentloaded` instead of `networkidle` (avoids hanging on blocked trackers)
 - Sets US locale and timezone
+
+**`--stealth` is not enough for enterprise bot vendors.** It only dresses up headless Chromium; DataDome, PerimeterX and Kasada fingerprint the browser build itself.
+
+## Real-Chrome Mode (`--real-chrome`) — for DataDome / PerimeterX walls
+
+```bash
+node ~/repos/page-reader/src/index.js --real-chrome --text-only --wait 12000 <url>
+```
+
+Launches **genuine Google Chrome, headed, with a persistent profile**, and auto-re-execs itself under `xvfb-run` (do not add the wrapper yourself). Measured 2026-08-03 on avis.com / budget.com:
+
+| Browser | DataDome verdict on `POST /webapi/reservation/vehicles` |
+|---|---|
+| Headless Chromium (`--stealth`) | `Challenge type: hard_block` → 403, unsolvable |
+| Real headed Chrome | `device_check_invisible` → interstitial **auto-solves** → **HTTP 200 + real data** |
+
+The same switch fixed `travel.calif.aaa.com`, whose results SPA painted **zero** rate cards headless and rendered fully in real Chrome.
+
+**How to recognise you need it** (do not guess — read the console):
+- `[DataDome Interceptor] ... blocked` in console, or a request to `geo.captcha-delivery.com`
+- Avis-style `"Access is temporarily restricted"` interstitial
+- A results SPA that renders its filter sidebar but no result cards
+
+Notes:
+- **Never override the UA in this mode.** A Windows UA string on a Linux Chrome build is precisely the inconsistency these vendors score against you. `--real-chrome` deliberately drops the UA override.
+- Reuse the profile (`--profile-dir`, default `~/.cache/page-reader/chrome-profile`); trust cookies accrue and later runs clear challenges faster.
+- Needs `google-chrome` and `xvfb-run` on the host (both present on the WSL box).
+- It is slower (~30–60s) and headed — use `--stealth` first, escalate only on a real block.
+
+## Driving a form (booking engines, search widgets, quote flows)
+
+page-reader is read-only. For a multi-step flow, write a throwaway Playwright script importing from `~/repos/page-reader/node_modules/playwright`, and reuse the `--real-chrome` launch recipe (`channel: 'chrome'`, `headless: false`, `launchPersistentContext`, run under `xvfb-run -a`).
+
+These five traps cost a full session on 2026-08-03. Check them **before** concluding a site is unscrapable:
+
+1. **An interstitial modal silently eats every interaction.** Budget's "Sign In To Get Our Best Rates" covered the widget from page load; clicks and keystrokes landed on the overlay, the field values never changed, and nothing errored. Dismiss it first (`span.close-icon-black`, `[aria-label="Close"]`), then assert the modal is gone.
+2. **Screenshot when a step silently no-ops.** The modal was invisible in `innerText` and obvious in one screenshot. Dump a screenshot at every step of a flow that isn't working.
+3. **Datepickers ignore typed text.** jQuery-UI (`#ui-datepicker-div`) and react-day-picker (`.rdp-root`) both discard `input.value` writes. Click the day cell: `td[data-month][data-year] a` for jQuery-UI, `td[data-day="YYYY-MM-DD"] button.rdp-day_button` for rdp, clicking "next month" until the target renders.
+4. **A prefilled location is not a *resolved* location.** Avis's branch page shows "COVINA CALIF" in the box, but submitting yields *"Please revise your search or click here to browse for a location"* — the app needs a location **object**, set only by picking from the autocomplete. Always clear the field and re-select, even when it looks populated.
+5. **Synthetic events are not enough, and duplicate IDs bite.** Native-setter + `dispatchEvent` writes bypass framework validation; prefer real `page.mouse`/`page.keyboard`. Widgets ship desktop *and* mobile copies of the same id, so `#foo` may resolve to a hidden one — select with `#foo:visible` or filter on `offsetParent`.
+
+**Read the console before blaming your selectors.** The decisive evidence was a single console line (`[DataDome Interceptor] ... hard_block`) proving the form drive was already correct and the *API* was blocked. Attach `page.on('console')` and `page.on('response')` early.
 
 ## Calling from Docker Containers
 
