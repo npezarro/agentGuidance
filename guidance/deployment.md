@@ -633,3 +633,23 @@ Two corrections from the 2026-07-29 Cloudflare MCP session.
 2. MCP AUTH FOR HEADLESS ECOSYSTEMS. Vendors label OAuth 'recommended' for MCP servers, but OAuth-authenticated MCP servers are ABSENT from headless 'claude -p' runs (autonomousDev, learning-agent, VM #requests worker, Docker bridges). Prefer a Bearer API token when the server supports one, even when the setup docs only mention OAuth (check the server's README; the vendor setup page mentioned only OAuth while the server's own README documented a token path). Verify at CONNECT time via a raw JSON-RPC initialize, not at config-write time, and revert the config if it fails rather than leaving a permanently-401ing server in place.
 
 3. SCOPE PROBING. When a vendor rejects a credential for scope, you usually cannot introspect it. Probe by calling endpoints and read RESULT CONTENTS, not the success flag: a zone-scoped Cloudflare token returns success:true with an EMPTY array from /accounts. Permissions are sectioned; adding more of the wrong section never helps (two Zone-scoped tokens failed identically before Account Settings:Read was added).
+
+## Order Deploy Steps So Failures Abort Before the Service Is Torn Down
+
+A deploy script that stops/deletes the running service *before* it does anything that can fail turns every such failure into an outage with no rollback — and, worse, a silent one when an auto-heal cron keeps retrying it.
+
+**Observed (runeval, 2026-08-04, two months undetected):** `deploy.sh` deleted the PM2 process at step 4, then ran `prisma migrate deploy` at step 5 under `set -e`. A broken migration table made step 5 fail every time, so each deploy killed the app, died on the migration, and left a half-built `.next`. An asset-heal cron re-ran the same deterministically-broken deploy 10 minutes later, so the app kept reappearing and nobody noticed that **merged code had stopped reaching production entirely**. A feature merged to `main` and reported "done" was absent from the running build and its table absent from the DB.
+
+Rules:
+- **Put every check that can fail before the teardown.** A read-only pre-flight that aborts with the old version still serving beats a teardown that aborts halfway. Cheap checks (DB reachable, migrations parseable, disk free, required env present) cost seconds.
+- **"Merged" is not "deployed."** When a feature is reported complete, verify the *running* artifact: the route exists in the built output, the table exists in the DB, and the endpoint answers. A commit on `main` proves none of that.
+- **An auto-heal cron that retries a deterministically failing deploy converts a loud failure into a silent one.** Healing loops need a consecutive-failure counter that escalates instead of retrying forever.
+- **A deploy script must not dirty its own tree.** The same script's `npm install` rewrote `package-lock.json`, so its own step-1 dirty-tree check aborted the *next* run — it blocked itself after one success. If a build step mutates a tracked file, discard exactly that file before the check, and keep the check narrow so real uncommitted work still aborts loudly.
+
+### Never hand-write migration-bookkeeping rows
+
+Inserting rows into `_prisma_migrations` (or any migration ledger) by hand to "mark a migration as applied" produces rows the tool cannot parse, and the damage surfaces far from the cause. Prisma requires the `checksum` to be the 64-char lowercase hex SHA-256 of that migration's `migration.sql`, and `started_at`/`finished_at` to be **integer epoch-millis**; placeholders (`'manual'`, `'skip'`) and TEXT datetimes both break it.
+
+Use the supported command, which computes the right values: `npx prisma migrate resolve --applied <migration_name>`.
+
+**Diagnosing it:** the failure is `Error in Schema engine ... ConversionError("input contains invalid characters")` — that string is **chrono's date-parse error**, not a corrupt database. It reproduces against *any existing* DB file (including a copy in `/tmp`) and disappears against a fresh one, which sends you hunting a corrupt DB or a bad engine binary. Bisect by creating an empty SQLite file and running the same command against it; if that works, the problem is data in the ledger, not the engine.
