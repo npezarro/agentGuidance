@@ -576,3 +576,21 @@ function detectAllBenefits(transactions, templates) {
 - Browser tests against production (test data leaks into real systems)
 - More than 8-10 browser test scenarios (you're compensating for missing integration tests -- push coverage down the pyramid)
 - Tests without a corresponding past incident (speculative tests have low ROI and high maintenance cost)
+
+### test a statistic at both sample parities or an even-length median bug survives (2026-08-04)
+A housing/deal digest scanner computed a median as `sorted[Math.floor(len / 2)]` at five call sites. That is correct only for ODD-length samples; on an even-length sample it returns the upper-middle element instead of averaging the two middles, so the reported median is systematically **>= the true median and never below it**. Measured over 20k simulated pools: 41% of samples wrong, mean overstatement +0.54%, worst +3.42%, zero understatements.
+
+**Why the existing tests did not catch it — two distinct failures, both worth copying into your own review:**
+
+1. **Every test used an odd-length sample** (5 values), the exact case where the buggy and correct expressions agree. The parity of a sample is part of a statistic's input space, just like empty / single / unsorted. If you only test odd, an even-length off-by-one is invisible.
+
+2. **Three tests DID use even-length samples but asserted the wrong thing.** They checked row counts, an average, and the mere presence of the substring `'median'` in rendered output — never the computed value. They passed against the wrong number and read as coverage. Asserting that a field is *present* is not asserting it is *correct*.
+
+**One-sided error is worse than noisy error.** Because the biased median was also the yardstick a scoring function measured every item against (banded credit for being 'below median'), the inflation did not average out: it made everything look better than it was and pushed items over a selection threshold. A bug that errs in one direction only will bias every downstream decision the same way, so rank it above a symmetric rounding error, not below.
+
+**Checklist when reviewing or writing any summary statistic (median, percentile, quartile, trimmed mean):**
+- Test odd length, even length, single element, empty, and unsorted input.
+- Assert the computed VALUE, not that the field rendered.
+- Confirm the sort is numeric (`(a, b) => a - b`); `Array#sort`'s default is lexicographic, so `[90, 1000, 200]` sorts to `[1000, 200, 90]`.
+- Check whether the helper mutates its input (in-place `.sort()` on a caller's array is a common silent side effect).
+- If the statistic feeds a threshold or band, add a test at the DECISION level (does the item cross the gate?), not only at the helper level. That is the test that shows the bug matters.
