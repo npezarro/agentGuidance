@@ -558,3 +558,18 @@ Two corrections from the 2026-07-29 Cloudflare MCP session.
 2. MCP AUTH FOR HEADLESS ECOSYSTEMS. Vendors label OAuth 'recommended' for MCP servers, but OAuth-authenticated MCP servers are ABSENT from headless 'claude -p' runs (autonomousDev, learning-agent, VM #requests worker, Docker bridges). Prefer a Bearer API token when the server supports one, even when the setup docs only mention OAuth (check the server's README; the vendor setup page mentioned only OAuth while the server's own README documented a token path). Verify at CONNECT time via a raw JSON-RPC initialize, not at config-write time, and revert the config if it fails rather than leaving a permanently-401ing server in place.
 
 3. SCOPE PROBING. When a vendor rejects a credential for scope, you usually cannot introspect it. Probe by calling endpoints and read RESULT CONTENTS, not the success flag: a zone-scoped Cloudflare token returns success:true with an EMPTY array from /accounts. Permissions are sectioned; adding more of the wrong section never helps (two Zone-scoped tokens failed identically before Account Settings:Read was added).
+
+### An Artifact-Rsync Deploy From a Feature Branch Gets Silently Reverted by the Next Main-Based Deploy (2026-08-01)
+
+`travel-assistant`, `foodie`, `shopper`, and `employ` prod dirs are rsync-artifact targets, so it's possible to deploy a build straight from a feature branch without merging first. That deploy is NOT durable.
+
+2026-08-01: a full session of work (profile-aware card engine, a new price-history collector, a `/data` page) was deployed from `claude/price-history` and verified live at 22:40. One minute later, a separate actor's scheduled deploy cloned `origin/main` into the staging dir, built it, and promoted — prod then had no `/data` route, no price-history API, and no `api/profile/import-cards`. The work wasn't broken; it was simply absent from `main`, so the main-based build legitimately overwrote it.
+
+**Diagnosis, in order:**
+```bash
+stat -c %y /var/www/<app>/.next                                    # build timestamp newer than yours?
+ls /var/www/<app>/.next/standalone/.next/server/app/                # is your route even in it?
+git -C /var/www/staging-<app> log --oneline -1                      # which branch did the other actor ship?
+```
+
+**Rule:** merge to the deploy branch BEFORE the artifact rsync, not after. An artifact deploy from a feature branch only survives until the next scheduled/other-session deploy of the default branch runs. If you must ship from a branch to test, treat it as ephemeral and merge in the same session. Related: the "uncommitted work in a shared checkout gets wiped by a concurrent agent" pattern in `concurrent-sessions.md` — if a deploy keeps reverting, suspect a concurrent session before suspecting your own build.

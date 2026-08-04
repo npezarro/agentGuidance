@@ -103,6 +103,12 @@ This leaves ordinary URLs (`host:port/path`, `user@host`, scp targets) byte-iden
 
 **Why:** Found in `activity-tracker`'s shell-history collector (PR #82, 2026-07-22) — its redaction covered every common secret shape except this one, so any `git clone https://user:TOKEN@github.com/...` typed at a shell landed unredacted in the SQLite events DB and the daily Claude memory summary. Any repo with a scrub/sanitize/redact function that touches shell history, logs, or chat exports should be audited for this gap, not just activity-tracker.
 
+## Audit Every Egress Field When a Pipeline Gains a New Reporter (2026-07-30)
+
+When a machine-local pipeline (activity-tracker, ambient capture, any local data store) gains an external reporter (Discord/webhook/email/POST), audit EXACTLY which fields cross the new boundary and whether each is scrubbed — it's easy to protect the obvious surface and miss a quiet one. `activity-tracker`'s OCR text was scrubbed on ingest, but its live Discord window-title feed posted raw titles unscrubbed; personal comms are intentionally not blocklisted there, so titles could carry email subjects or DM previews straight into the channel. Fixed by running titles through the same `scrub()` before posting (commit `5a32198`).
+
+**Rule:** adding any new egress path is not just "wire it up" — re-audit every field that pipeline emits against the existing scrub/redact function, don't assume coverage from the original (single-surface) design. A secret-scrubber only catches secret-shaped strings, not plain-English sensitive content, so for anything genuinely sensitive, prefer excluding it at capture time over relying on a downstream scrub.
+
 ## Automated Security Hooks (Pre-Commit + Pre-Push)
 
 All public repos MUST have both pre-commit and pre-push hooks installed. These scan for sensitive identifiers before code reaches the remote.
@@ -163,6 +169,16 @@ If the sensitive-scan pre-commit hook blocks a commit for a real reason (a genui
 When writing regex-based scrubbers (pre-commit scanners, log redactors, session indexers), do **not** use `\b` (word-boundary anchors) at the start of token patterns. Secrets frequently arrive glued to literal `\n` escape sequences in JSON tool output (e.g. `..."}\nghp_<token>...`), and `\b` treats the preceding word character (`}` / `\n` etc.) as a word boundary failure — the pattern silently misses the token.
 
 **Rule:** Use bare prefix matches without leading anchors: `gh[posru]_[A-Za-z0-9]{36,}` NOT `\bgh[posru]_...`. Over-redaction (matching a word-char-glued token you didn't expect) is always safer than under-redaction. Cover all token prefix variants — the session-recall scrubber initially covered only `ghp_`/`gho_`; `ghu_` (user-to-server), `ghs_` (installation), `ghr_` (refresh), and `github_pat_` (fine-grained PAT) all leaked until explicitly added. **Add a regression test whenever you add a pattern.** Source: session-recall `scrub.py` PR #1 (2026-07-19).
+
+### Validate Precision on a Real Corpus, Not Just a Planted-Secret Fixture (2026-07-29)
+
+A planted-secret fixture (seed a PAT, an API key, a `password=...` string, confirm each gets redacted) only measures **recall** — did the known secret get caught. It says nothing about **precision**, and an over-broad rule silently mangles the deliverable it's supposed to protect. The "over-redaction is always safer" advice above is about anchoring a *fixed-prefix* token pattern; it does not license an unbounded keyword match.
+
+`claude-tray-notifier`'s transcript distiller hit both directions at once. First, its credential-var pattern used `\btoken\b`, which never matches inside `DISCORD_TOKEN` (no word boundary between two word characters) — missing the single commonest real-world shape (`PREFIX_TOKEN`, `DB_PASSWORD`). Fixing that by allowing an arbitrary identifier suffix then let the keyword match *inside ordinary prose* — "webhooks: see the doc" and "credential-management.md: Cross-repo env vars" both got a word redacted. 121 false positives in one 21-turn conversation.
+
+**Fix shape:** allow an identifier *prefix* but require the keyword to *end* the identifier (`(?![A-Za-z])` after it), and require the captured value to be `>=8` non-space characters so short prose fragments like "token: general" survive. Result: 114 → 9 redactions across the same corpus, all legitimate.
+
+**Method, transferable to any scrubber:** run it over a real corpus (real transcripts/logs, not a fixture) and count redactions per document — a per-document count far above single digits is a precision bug, not a security win. Attribute hits pattern-by-pattern (iterate the compiled pattern list, `findall` over the raw text) to find which rule is over-firing, then eyeball the surrounding context of each hit. Also recount any reported redaction total over the *surviving* output, not accumulated mid-processing — content later dropped by a size cap can leave its redaction count behind, producing "14 redacted" on output with zero markers.
 
 ## Pre-Commit Checklist (Manual Fallback)
 

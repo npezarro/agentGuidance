@@ -112,3 +112,13 @@ Discord re-encodes every uploaded image attachment and strips ALL EXIF/TIFF/GPS 
 **Why it matters:** Any feature that reads uploaded-image metadata (location, capture date, camera) from a Discord attachment gets nothing. Google Photos shared albums strip GPS the same way. EXIF-based extraction only works on direct local files that were never routed through Discord or Google Photos.
 
 **How to apply:** Never rely on EXIF from Discord-sourced or Google-Photos-sourced images; always fall back gracefully (e.g. to a configured default location). Also note sharp's re-encode strips EXIF too, so read metadata from the ORIGINAL bytes before any resize/convert step.
+
+## A Report Delivered Only as a File Attachment Is Not Delivered (2026-08-03)
+
+`employ`'s day-over-day discovery report reached Discord from day one, but only inside an uploaded `.md` attachment — reading "what changed today" meant opening a thread and downloading a file. The bytes arrived; the report didn't. When adding a summary to a system that already "notifies" somewhere, check what each surface actually RENDERS: an attachment, a truncated preview, and a collapsed embed are all delivery failures for something meant to be scannable at a glance.
+
+**Fix shape used:** one-line counts in the always-visible channel header, the full listing in the thread body, and the full report still attached for anyone who wants it.
+
+**Two supporting rules:**
+1. Derive every surface's text from ONE helper. `diffCounts()` was split out of `summarizeDiff()`, and `summarizeDiff()` now opens by calling it — the header line and the body can never disagree, and a test asserts the header counts appear verbatim inside the full summary.
+2. When a channel has a hard length cap, trim deliberately with a visible marker rather than relying on an existing `substring(0, N)` — a silent chop mid-item reads as a lost item, not a display limit. Same failure class as the sibling email bug where a flat 500-char preview cut a new/dropped-items list off mid-role.

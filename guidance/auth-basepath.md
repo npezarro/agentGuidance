@@ -600,3 +600,20 @@ When one vhost gates multiple paths behind the same `mod_auth_openidc` config (t
 **Fix:** set `OIDCCookiePath /` — the common ancestor of every current and future gated path, plus the shared callback URL. Do not scope it to a subpath, even the one gated first.
 
 **Recovery:** a browser already holding the stale `Path=/<old>` cookie must clear cookies for the domain (or use a private window) once; the old cookie doesn't get invalidated on its own when the config changes.
+
+## `<Location>`/`<LocationMatch>` Merge LAST-Match-Wins — Opposite of RewriteRule (2026-07-30)
+
+Two Apache behaviours combine into a failure a browser spot-check cannot see.
+
+1. **Ordering is opposite for rewrites vs. auth.** `RewriteRule`/`ProxyPass` are FIRST-match-wins, so specific paths must come *before* a generic one — that's the intuition most configs are written with. `<Location>`/`<LocationMatch>` blocks merge in file order with the LAST match winning, so a public carve-out must come *after* the gated parent block. Writing "specific rules go first" as one blanket rule produces a config that looks right and silently re-gates the carve-out.
+2. **`mod_auth_openidc` hides it from browser testing.** An unauthenticated request gets a 302 to the IdP when it looks like a browser navigation, but a bare 401 when the client sends a non-HTML `Accept`. Opening the URL in a browser shows a normal login page (easy to shrug off as working); every API/CLI consumer is hard-blocked.
+
+**Instance (production VM, 2026-07-30):** `<LocationMatch "^/tools/downloads">` with `AuthType None` sat *before* `<Location /tools>` (openid-connect). The tray app's electron-updater got a bare 401 fetching `/tools/downloads/latest-mac.yml`. Sibling carve-outs (`/tools/health`, `/tools/dashboard/api/metrics`) were unaffected only because they happened to already sit after the OIDC block. Fix: move the carve-out block after the gated parent; no other config change needed.
+
+**How to test a public carve-out — probe as the real consumer, not a browser:**
+```bash
+curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' <url>   # expect 200
+```
+A 302 here means it's still gated. Then confirm you didn't widen the auth surface: every protected sibling should still 401/302, and directory listings should still 403.
+
+**Reload gotcha:** `systemctl reload apache2` is graceful, so old workers keep serving the previous config for a moment — the first probe right after a reload can show the pre-change result and read as "the fix didn't work." Probe several times, and hit the origin directly (`curl -k -H 'Host: ...' https://127.0.0.1/...`) to rule out the CDN. Always back up the vhost first (`sudo cp conf conf.bak-<tag>-<date>`), run `apache2ctl configtest` before reloading, and restore the backup if configtest fails.

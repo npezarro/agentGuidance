@@ -187,6 +187,59 @@ When a server kicks off long-running work as a fire-and-forget promise (no queue
 
 **Applies to:** any PM2-managed app that does background work in-process rather than via a real job queue (job-pipeline-style repos, employ, similar single-process Next.js/Express apps). If the app already uses a durable queue (BullMQ, a DB-backed worker table with its own heartbeat), this doesn't apply — the queue's own recovery mechanism covers it.
 
+## Delegating Persistence to a Remote Write API Loses Data Silently (2026-08-01)
+
+Symptom shape: a feature works perfectly while the page/tab stays open and quietly forgets everything on the next load — reported as "works in a session but isn't reliably there on next fetch." Root cause class: the only record of a mutation lives in memory, and durability is delegated to a fire-and-forget remote API call. Found in `reddit-auto-hide` v2.4:
+
+```js
+batch.forEach(id => pending.delete(id));   // dequeue FIRST
+for (const id of batch) await hidePost(id); // then attempt
+```
+
+Any failure (auth not yet captured, 401, 429, timeout, navigation) dropped the item permanently while the UI still counted it as done. There was also a startup race: the drain timer fired at t=2s but the auth probe ran at t=1s/5s, so early items were dequeued with no credentials at all. This is a different failure shape than "Fire-and-Forget Async Jobs Need a Startup Reaper" above (that one is a server losing its own in-flight promise on restart); this one is a client losing its own intent because nothing durable represents "not yet done."
+
+**Rules:**
+1. Write a durable local record *before* the network call, and let the local record — not the server response — drive the UI. The feature then works offline and survives reload even if sync never succeeds.
+2. Derive the work queue FROM durable state (e.g. "entries where `synced == 0`"), never as a standalone in-memory `Set`. A derived queue reconstructs itself after reload; an in-memory one silently empties.
+3. Set the `synced` flag ONLY inside the success branch. Never dequeue before attempting.
+4. Distinguish failure classes: 429 → pause with backoff; 401/403 → drop the cached token and re-acquire; other → increment a try counter and give up after N, keeping the local record.
+5. Flush durable state on `pagehide`/`visibilitychange`, not just on a timer.
+6. For two-way sync: use tombstones (`{id, deletedAt}`), not deletions — a bare delete lets another device's next push re-add the row. Make adds monotonic (re-adding an existing id must NOT bump its timestamp) or every device's periodic push resurfaces every id everywhere and sync never converges. Send `Cache-Control: no-store` on delta endpoints — behind Cloudflare a cached cursor response hands the client a stale "nextSince" and silently drops everything in between (verify with `cf-cache-status`: expect DYNAMIC/MISS, never HIT).
+
+**Testing rule:** this bug class is invisible to in-page tests, because inside one page life the broken and correct versions look identical. The test must reload the page and assert the state is still there. Assertions must also fail on zero ("0 of 0 ids present" is not a pass).
+
+## `x-forwarded-*` Headers Are Synthesized by Next.js Itself — a Presence Check Rejects Everything (2026-07-29)
+
+Writing a loopback-only guard as "reject if `x-forwarded-for`/`x-forwarded-host` is present" does not work in a Next.js route handler: Next synthesizes those headers from the socket, so they're set even on a direct connection, and the guard rejects every request including legitimate direct ones. This is distinct from the `X-Forwarded-Host`/`AUTH_URL` proxy-forwarding entry in `auth-basepath.md` — that's about a value not reaching the app through an SSH tunnel; this is about the header existing when nothing forwarded it.
+
+Observed 2026-07-29 on finance-tracker's `/api/integrations/travel-cards`: every request 404'd, including a bare `curl -v` sending no `x-forwarded-*` headers at all — proof it wasn't the client.
+
+**Check the VALUE, not presence:** treat an absent header as loopback, and otherwise require the leftmost `X-Forwarded-For` entry to be `127.0.0.1`/`::1`/`::ffff:127.0.0.1`:
+```js
+function looksLoopback(req) {
+  const xff = req.headers.get("x-forwarded-for");
+  if (!xff) return true;
+  const first = xff.split(",")[0].trim().toLowerCase();
+  return first === "::1" || first.startsWith("127.") || first === "::ffff:127.0.0.1";
+}
+```
+
+**Do not treat this as a security boundary** — Apache's `mod_proxy` *appends* the real client IP to any inbound `X-Forwarded-For`, so an external caller can seed a loopback address on the left and pass the check. It's defence-in-depth only; the real boundary must be a fail-closed shared secret compared with `timingSafeEqual` (for hard network enforcement, add `Require local` to an Apache `<Location>` block). Related trap in the same family: a fail-open secret check (`if (SECRET && header !== SECRET) reject`) disables auth entirely when the secret is unset, as `travel-assistant`'s `docker/bridge-server.js` did — refuse instead when the secret is missing or under 32 chars. General lesson: any request-metadata guard must be tested against both the allow and deny path before it ships; this one failed safe (deny-all), but the same error class in the other direction is a silent bypass.
+
+## A "New Since Last Run" Digest Derived From a Seen-File Mutation Can't Be Re-Run Same-Day (2026-08-03)
+
+Symptom: re-running a daily scanner (housing-scout, and by the same shape deal-scout/doc-digest) with `--force` posts a report with 0 new items and 0 changes even though the morning run found dozens — looks like the data source went quiet, but the source is fine.
+
+Cause: "new" is derived as a *side effect of a write*. `trackListings()` marks each id in `data/housing-seen.json` the first time it's seen and reports exactly those ids as new — so the first run of the day CONSUMES the signal and the second run sees every id as already-known. Same shape hits price cuts (the seen-file price gets overwritten), day-over-day trend (today's snapshot is appended, so "previous" becomes today's earlier run), and off-market counts (`lastActive` is overwritten with today's active set, so nothing appears to have left).
+
+**Fix shape:** keep recorded TIMESTAMPS as the source of truth instead of the mutation itself.
+- `new` = "firstSeen within the last N hours" (N < the run interval), not `!seen[id]`
+- price cuts = history entries dated within the same window, when the seen-file price already matches
+- trend = compare against the last snapshot whose date != today; REPLACE today's snapshot instead of appending
+- keep the prior period's id map (`prevActive`) so a re-run still has a baseline; fall back to the count identity (`prevActive + new - active`) when no prior-day map exists
+
+**Test it:** run the job twice in a row and assert the second run's report matches the first. Any scanner whose "what's new" output depends on a file it also writes has this bug latent — audit for it the same way you'd audit for a non-idempotent migration.
+
 ## Cron Registry Reconciliation (WSL jobs registry)
 
 The WSL crontab is GENERATED from `privateContext/jobs/registry.json`
