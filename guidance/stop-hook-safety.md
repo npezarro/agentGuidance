@@ -77,6 +77,8 @@ exit 0
 
 7. **Subprocess timeout** — Always wrap `claude -p` in `timeout 60` (or similar). A hung Claude session should not persist indefinitely.
 
+8. **Feed evidence, not narration.** If the hook's job is to *score* or *evaluate* the session (not just fingerprint it), don't feed the LLM `last_assistant_message` alone — that's a summary of the work, and it cannot evidence rules that require proof of a tool call (`verify_before_asserting`, `test_before_reporting`, any propagation rule). `score-session.sh` did this and produced a bimodal 0/100 score distribution (200 sessions at 100%, 59 at 0%, of 403) with `verify_before_asserting` as the top "violation" — exactly the rule a summary can never evidence. Fixed by building an evidence digest first (tool-call counts, files written, commands run) via `hooks/lib/transcript-digest.py` and putting it *before* the narration, since the scorer prompt truncates with `head -c`. Full incident: `knowledgeBase/patterns/stop-hook-safety.md`.
+
 ## Template: Tier 3 Hook
 
 ```bash

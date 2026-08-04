@@ -430,6 +430,9 @@ When the bot recovers persisted jobs on startup:
 2. **Stale threshold must exceed the primary executor's own timeout.** If the main path times out a job at 20 minutes, the recovery cron's stale-pending threshold must be set higher (e.g. 25 minutes) — otherwise recovery grabs a job the main path is still legitimately working on. Keep the two values in sync whenever either changes.
 
 **Why:** hit identically in three separate apps (shopper, foodie, travel-assistant) — same `run-recovery.js` pattern, same missing CAS guard, same too-tight stale threshold, same user-visible symptom (a completed search silently flips to failed minutes later). Any writer that can run concurrently with a primary job path needs this same pair of guards.
+
+**A different question — "is this job orphaned at all?" — should be answered with an owner token + heartbeat, not a `created_at` age threshold.** Age only proves the row is old, not that its owning process is dead, which is what forces the stale-threshold tuning above in the first place: a job orphaned 1 minute in still sits visibly broken until the threshold elapses. Record `worker_id` (a per-boot UUID) + `heartbeat_at` (refreshed every ~30s while the job runs) instead — a pending row carrying a different or absent `worker_id` is unambiguously orphaned, no age heuristic needed. Implemented in `travel-assistant/src/lib/job-tracker.ts`; shopper/foodie still use pure age-based recovery and would benefit from the same schema. Full pattern: `knowledgeBase/patterns/age-is-not-liveness.md`.
+
 ## Unattended Jobs That Take Irreversible External Actions
 
 A cron job that spends money, sends a message, cancels a subscription, or files

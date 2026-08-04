@@ -43,6 +43,7 @@ If you intentionally skip deploying (e.g., batching changes), note it in context
 
 1. `pm2 show <process>` to confirm status is `online`, uptime is climbing, restart count hasn't spiked.
 2. `curl -s -o /dev/null -w "%{http_code}" <url>` to confirm HTTP 200 from the live URL.
+   - **A login page is a healthy 200, not a failure.** An OIDC/SSO auth wall answers with HTTP 200 and none of the usual failure markers (`Internal Server Error`, `MODULE_NOT_FOUND`, `Application error`), so a check that only asserts status code + absence of error strings PASSES against it. Hit 2026-08-03: an Apache `<Location>` block had silently reassigned a public path to a different app; the deploy was reported live-and-good (200, 877KB, zero error patterns) against a body that was actually `accounts.google.com` markup. Assert on a positive marker unique to your own app's rendered page, not just the absence of known failure strings.
 3. `pm2 logs <process> --lines 20` to scan for errors, uncaught exceptions, or crash loops in the first 30 seconds.
 4. If the app has authentication, verify the sign-in flow works end-to-end.
 5. **Test the actual user-facing behavior yourself** before asking the user to verify. Use the browser agent for interactive pages, `curl` for APIs, or direct tool invocation. Never declare "done, try it out" without verifying it works.
