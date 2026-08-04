@@ -342,3 +342,16 @@ sessions with `/tmp/claude-session-alive-*`.
 
 **Do not kill a live session to win a race.** It is usually Nick's own. Check whether its
 tree is clean and pushed, then ask.
+
+### gitignore node_modules/ with a trailing slash does not ignore a node_modules symlink (2026-08-04)
+When you follow the WORKTREE RULE and create a worktree to run a repo's tests, the worktree has no `node_modules`. The quick fix is to symlink the main checkout's: `ln -s /path/to/repo/node_modules node_modules`.
+
+That symlink is NOT covered by the near-universal `.gitignore` entry `node_modules/`. A pattern with a trailing slash matches directories only, and to git a symlink is a *blob* (mode 120000), not a directory. So `git add -A` silently stages the symlink, and it lands in the commit and the PR as a one-line file whose contents are an absolute path from your home directory.
+
+Two consequences, both bad: the diff leaks a local absolute path (an infrastructure identifier), and anyone checking the branch out gets a dangling symlink where their dependencies should be.
+
+Detection: `git diff --staged --stat` before every commit, and treat a `node_modules` row in the stat output as a stop sign. `git status` will also show it as an untracked *file*, not swallow it the way it swallows a real node_modules directory.
+
+Fix: `git rm --cached node_modules` before committing. To prevent it repo-wide, use the slash-less form `node_modules` in `.gitignore`, which matches a directory OR a file OR a symlink of that name.
+
+Generalizes past node_modules: any `.gitignore` entry written as `name/` will miss a symlink called `name` (`dist/`, `build/`, `.next/`, `coverage/`, `venv/`). Symlinking a heavy build/dependency directory into a worktree is exactly the workflow that trips it, so this is a standing hazard of the worktree pattern rather than a one-off.
