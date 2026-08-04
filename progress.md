@@ -9,6 +9,8 @@
 > - Never include secrets, credentials, or .env contents
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
+- 2026-08-03 | guidance | browser-page-reader.md: add `--real-chrome` escalation (DataDome `hard_block` on headless Chromium vs auto-solving `device_check_invisible` on real headed Chrome), correct the stale "use the Playwright MCP" pointer (no such MCP exists here), and add a "Driving a form" section with the five silent-failure traps: blocking interstitials, no-op steps needing a screenshot, datepickers that ignore typed text, prefilled-but-unresolved location fields, and duplicate desktop/mobile ids (aeba4e8)
+
 - 2026-08-03: merged PRs #282, #319, #305 (union merges on guidance/mcp-tools.md and 6 other guidance files); sanitized 3 identifier leaks in branch content.
 
 ## Log
