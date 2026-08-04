@@ -506,6 +506,8 @@ When bulk-deleting content on external platforms (YouTube, social media, cloud s
 
 **Why:** Platform deletions are irreversible. A wrong date range or missing filter can wipe out manually curated content. The confirmation step and content-type restriction ensure only disposable items are at risk.
 
+**Same principle for unattended age-based prune/retention scripts (backups, logs, caches): write them as an ALLOWLIST of patterns eligible for deletion, never a DENYLIST of patterns to exclude.** A denylist ("delete anything past N days except these patterns") opts every future/unanticipated file type into deletion by default. An offsite WordPress backup script did exactly this — `rclone delete --min-age 45d --exclude "*-uploads.zip" --exclude "*-themes.zip" ...` — and its first run deleted the only offsite copy of a one-time full-content backup, because that file was simply never added to the exclude list. Inverted to `--include` patterns matching only known rotating artifacts (nightly `*.db.gz`/`*.sql.gz` dumps); anything unrecognized is now retained by default. The failure mode becomes "the remote grows and disk-guard notices" instead of "a restore path silently disappears" — always prefer the prune bug that fails loud (wasted space) over the one that fails silent (lost data).
+
 ## Verify Before Asserting
 
 Don't claim the user did something (submitted an application, sent an email, published a post) unless you can verify it through an authoritative source. The existence of prep materials, drafts, or related files does NOT confirm the action was completed.

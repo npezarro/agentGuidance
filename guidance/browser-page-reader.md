@@ -264,3 +264,17 @@ Observed 2026-08-03: https://www.kayak.com/cars/West-Covina,CA/2026-08-10/2026-0
 Rule: after loading any aggregator search page headlessly, ALWAYS grep the rendered output for the echoed location string in the search form and confirm it matches the intended city BEFORE reading any price off the page. If it does not match, discard the numbers rather than adjusting them. A wrong-city page does not error, does not warn, and looks exactly like a right-city page.
 
 Corollary for scraped business directories (cmac.ws, loc8nearme, superpages, yellowpages): treat a branch address or phone found only in a scraped directory as an unconfirmed lead. Verify it against the brand's own location index or location API before repeating it as fact. Same session produced a phantom 'Enterprise at 2016 E Garvey Ave S, (626) 974-7984' from cmac.ws that does not exist; the phone was one digit-group off a real nearby branch, the signature of a scrape transcription error.
+
+### A whole-document text scan finds ad/review prose and reports it as real data (2nd occurrence, 2026-08-03)
+Any page carrying marketing copy or user-generated content (hotel/product/restaurant listings) will satisfy a naive regex over `document.body.innerText` with text that is not the field being extracted, silently, and the false match is often plausible enough to pass downstream validation.
+
+First occurrence (2026-08-02, Hyatt): a `/sold out|not available/i` scan over `body.innerText` matched a guest review — "it was sold out and opening day" — and a currency scan on the same page pulled `$400`/`$5,000` out of review/amenity prose, none of them a rate.
+
+Second occurrence (2026-08-03, IHG chain-award collector): the extractor reported an ADVERTISEMENT as the award rate — `10,000 pts / available / VALIDATION PASS`, evidence `"...starting at just 10,000 points. Book now VIEW ALL OFFERS"` — because it regexed `document.body.innerText` instead of scoping to the rate card's own container. The container guard that prevents exactly this already existed in a sibling extractor (Marriott, in the same codebase) and was never carried across when the IHG adapter was written — the fix existed one file away and the bug still shipped, because the rule lived only in that file's code, not in guidance either extractor's author would read.
+
+Rules:
+1. Prefer capturing the JSON the page's own SPA fetches (CDP network capture) over reading the rendered DOM — it survives redesigns and contains no prose.
+2. If you must read the DOM, scope the query to the specific container (a rate card, a price node), never `document.body.innerText` / whole-page text.
+3. Carry an independent cross-check that can invalidate the number (a known chart/band, a second source).
+4. Store an evidence excerpt beside every extracted value so a wrong number is diagnosable without re-scraping.
+5. When porting an extraction pattern to a new site/adapter in the same codebase, port its guards too — a fix that lives only in one file's code doesn't protect the next file.
