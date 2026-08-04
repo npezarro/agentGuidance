@@ -212,3 +212,14 @@ When a Next.js app's route handler concatenates optional context (a saved profil
 - **travel**: no restrictive length cap or broad heuristic, so a simple prepend works.
 
 **How to apply:** before wiring a new optional-context block into any bridge query, read that app's `docker/bridge-server.js` for a length cap and any query-classification heuristic keying off word count or content. Prepending/appending is only safe when `(max_len - typical_query_len)` comfortably exceeds the block size AND nothing downstream keys off the raw query text; otherwise strip-before-checks + re-append-after in the bridge, and treat the app+bridge as a coupled deploy unit for that change.
+
+### The bridge < client < recovery timeout ladder drifts independently per sibling app — auditing one does not fix the others (2026-08-03)
+
+The invariant just above this section ("keep a bridge's TOTAL work budget strictly under its client's timeout") already existed since 2026-07-17. On 2026-08-03, tracing whether the timeout windows were necessary or arbitrary (`public-claude-apps/docs/research-timeout-analysis.md`) found it silently violated in **two of the four sibling apps at once**, each broken a different way:
+- **foodie:** bridge 20min > client 15min — **inverted**. Any 15-20min job was *guaranteed* to fail: the client aborted 5 minutes before the bridge finished, the bridge kept working on a response nobody was listening for, and the user got an undiagnosable client-side error instead of the bridge's diagnosable 504.
+- **travel-assistant:** bridge 15min == client 15min — **tied**. "Strictly under" excludes equality for a reason: tied is not a safe degenerate case of the ordering, it is a coin-flip race the bridge's `SIGTERM` → grace-period → error-write sequence structurally cannot win.
+- **shopper** (the app that originally documented the invariant) and **employ** were correctly ordered — employ and collab go further, using a per-request *negotiated* budget instead of a static ladder, which sidesteps this whole class of drift (see `employ/src/lib/bridge-client.ts`).
+
+**Why this matters beyond the two fixes:** the rule already lived in this file for 2.5 weeks and two independently-scaffolded siblings still violated it — documentation alone does not keep a value ladder spread across 3+ repos in sync. **When you touch any rung of a bridge/client/recovery timeout ladder in ONE pezant public app, re-check the same three numbers in every sibling that shares the `bridge-server.js`/`query-executor.ts` shape (shopper/foodie/travel-assistant/employ/collab) — do not assume a fix in one app implies the others are fine.** Prefer a per-request negotiated budget (employ/collab's approach) over a static ladder for any new bridge, since it can't drift out of order by definition.
+
+Source: foodie commit `a8c6fae`, travel-assistant commit `d16552f` (2026-08-03), full cross-app audit in `public-claude-apps/docs/research-timeout-analysis.md`.
