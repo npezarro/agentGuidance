@@ -18,6 +18,30 @@ When reading credential files (privateContext, .env, etc.), confirm you found th
 
 **Why:** Credentials should stay in files and env vars. Chat output gets logged, exported, and sometimes shared. A real incident prompted this rule — it's a habit violation, not a theoretical concern.
 
+### The leak usually arrives sideways, not from a deliberate `echo`
+
+Nobody sets out to print a credential. The rule above is easy to follow for *intentional* output
+and useless against the indirect paths. **Never run any of these against a script that sources an
+env file** (`. ~/.env`, `source .env`, `set -a; . <file>`):
+
+| Never | Why it leaks | Instead |
+|---|---|---|
+| `bash -x script.sh` / `set -x` | xtrace prints **every expansion**, so `. ~/.env` dumps the whole file, variable by variable, with values | `bash -n` for syntax; add explicit `echo` checkpoints; trace only the section after unsetting secrets |
+| `set -v` | Prints each line as read, including the sourced file | same |
+| `env` / `printenv` / `declare -p` / `set` with no args | Dumps the entire environment after sourcing | `printenv VAR_NAME >/dev/null; echo "VAR_NAME set: $?"` |
+| `caller \|& tee log` on a sourcing script | Trace lands in a file that later gets read back into context | Redirect trace to a file you never `cat` |
+
+**A real incident (2026-08-03) prompted this section.** A debug run of `bash -x` on a script whose
+second line was `set -a; . ~/.env; set +a` printed ~20 credentials (Discord webhook URLs, a
+WordPress application password) straight into a session transcript. The script was not even
+broken; the failure being debugged was elsewhere. Cost: a rotation cycle, plus secrets sitting in
+a session JSONL that a recall indexer would otherwise ingest on its next run.
+
+**If it happens anyway:** stop the process, do NOT repeat the values in any response, tell the
+user immediately with the *names* of what leaked, do not rotate unilaterally (it breaks live
+services and is the user's call), and **hold off on any indexer/exporter that would ingest the
+transcript** (`session-recall/reindex.sh`, chat-log exports, WordPress posts) until they decide.
+
 ## Where Secrets Go
 
 Secrets live in **external .env files** outside the repository:
