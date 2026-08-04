@@ -683,3 +683,18 @@ That trade is backwards: it punches a hole in the OUTER isolation boundary in or
 **Where the real mitigation lives instead.** The exposure that motivated this was `Bash(curl:*)` on untrusted public input. Since the OS-level sandbox is unavailable, the controls that DO apply are: the narrow `--allowedTools` list already in `bridge-server.js`, the alt-account isolation, the Docker boundary itself, and the output scrubber. Harden those rather than reaching for `strictAllowlist`.
 
 **Verify before reopening:** run `docker exec -u root <bridge> bwrap --ro-bind / / --dev /dev echo ok`. If it still prints `Operation not permitted`, this conclusion stands.
+
+### Alert on repeat evidence, not the first failure — scale the threshold to whether the fault can self-heal (2026-08-03)
+
+A monitor whose probe path crosses a home network, a WSL vNIC, and an SSH tunnel will fail transiently on a schedule you do not control. Alerting on the first failure treats every transient blip as an outage: a 29-minute WSL network drop that recovered unattended paged Discord on the very first failed check (`consecutive_failures === 1`).
+
+**Scale the threshold to whether the fault can fix itself:**
+- **Transport faults** (relay timeout/unreachable, `ERR_NAME_NOT_RESOLVED`, `ERR_NETWORK_CHANGED`, `ECONNREFUSED`, 5xx from the relay) heal on their own. Require ~4 consecutive failures before notifying.
+- **Page-level faults** (selector matched nothing, empty capture, HTTP 404 from the target page) will not fix themselves. Notify after ~2 consecutive failures.
+- **Recovery notices** should fire only if the error actually alerted. A blip that never crossed the threshold must be silent in both directions — otherwise you have replaced one noisy message with two.
+
+**Two diagnosis traps when a service relays through a home box:**
+- The VM logs in UTC; the WSL box logs in local time. A VM error at 10:23 and a WSL error at 03:23 are the same instant during PDT. Run `date -u` on both sides before concluding they disagree.
+- A dead reverse tunnel fails in two stages: while `sshd` still holds the forwarded port open, connections are accepted and go nowhere (full client timeout, "relay timeout after 90000ms"); then fail fast once the stale listener is reaped ("relay unreachable: fetch failed"). Both messages in sequence is ONE outage, not two problems.
+
+**PM2 corollary:** a flat `restart_delay` against a genuinely unreachable host produced 48 restarts and several hundred log lines for one outage. Use `exp_backoff_restart_delay` instead. Source: page-watch relay outage, 2026-08-03.

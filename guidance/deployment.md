@@ -548,6 +548,8 @@ The production Apache vhost has a global rewrite rule that 301-redirects any URL
 ### Verify the shipped standalone bundle after an rsync-promote, not just health 200 (2026-07-24)
 During the travel-assistant deploy, the staging→prod promote `rsync -a --delete <stg>/.next/ <prod>/.next/` exited 0 and `/api/health` returned 200, but `.next/standalone/` was NOT updated: prod's `app/api/query/route.js` still referenced the OLD content-hashed chunks and none of the new code shipped. A plain `rsync -a` (size+mtime quick-check) silently under-transferred the standalone chunks; re-running with `--checksum` fixed it and the change's marker string appeared. Lesson for the staging skill Step 6 promote: after the artifact rsync, `grep -rl '<a-new-literal-or-symbol-from-the-change>' <prod>/.next/standalone/.next/server/` BEFORE restarting or declaring success. Health 200 and "rsync done" both lie here because the route module isn't executed until a real request renders it. Prefer `rsync -a --checksum --delete` for standalone `.next` promotes.
 
+**Minification trap:** when grepping the bundle for a numeric constant from the changed source, the bundler rewrites large integer literals to exponential form (`1_320_000` → `132e4`, `900_000` → `9e5`). A literal grep of the source-form constant silently finds nothing and reads as "not deployed". Search for a unique STRING constant instead, or adapt the grep to the bundler's minified form. Source: foodie/travel-assistant staging skill fix, 2026-08-03.
+
 ### Cloudflare cache rules are LAST-match-wins; MCP servers should use token auth not OAuth when headless consumers exist (2026-07-29)
 Two corrections from the 2026-07-29 Cloudflare MCP session.
 
