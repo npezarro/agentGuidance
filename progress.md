@@ -141,3 +141,20 @@
 - `experiments/` added: shadow-mode rig for xp-001 (memory lazy tier). Measures
   whether demoting never-read reference memories would cost recall, without
   demoting anything.
+
+## 2026-08-05 — links-to-click rule added to discord-integration.md
+- Commit eb8c442. A URL the owner must open in a browser (OAuth consent, verification pages,
+  one-time approvals, CAPTCHA-gated logins) now goes to the `#links-to-click` Discord channel via
+  `privateContext/send-link-to-click.sh`, not into a chat response. A link that only ever appeared
+  in a response dies with the session and whatever it was blocking stalls silently.
+- The rule specifies what every posted link must state: which account to use, what success looks
+  like (including expected-looking failures, e.g. an OAuth redirect to localhost shows a browser
+  error but the code is in the address bar), what to send back, and the likely failure plus its fix
+  so a blocked link does not cost a second round trip.
+- Also records the trap found the same day: Discord/Cloudflare 403s the default `Python-urllib`
+  User-Agent, so any script posting to a webhook via urllib must set a real one and must not
+  swallow the failure.
+- The pre-commit sensitive-identifier hook caught an internal path in the first draft; genericized
+  rather than bypassed, since this repo is public.
+
+Full closeout: privateContext/deliverables/closeouts/2026-08-05-vm-disk-reclamation-runeval-outage-pnpm-migration.md
