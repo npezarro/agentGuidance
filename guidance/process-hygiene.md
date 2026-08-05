@@ -344,3 +344,17 @@ Rules:
 4. **Prefer a structural boundary plus a semantic signal over pure phrase matching.** The `extractFixReport` fix splits on the document's own first markdown heading (structure) once the text before it matches the narration family (semantics). This is robust to any rewording that preserves document shape.
 
 Note: `operational-safety.md` carries the same principle scoped to CLI usage-limit strings specifically. This rule generalises it to any guard on model/vendor output.
+
+### Scrape URLs from CLI output with a control-byte-excluding class, not `[^ ]+` (2026-08-05)
+
+Modern CLIs emit URLs as **OSC-8 terminal hyperlinks**, whose raw pty bytes are:
+```
+ESC ] 8 ; ; <URL> BEL <URL> ESC ] 8 ; ; BEL
+```
+The URL appears **twice** — once as the escape target, once as the visible label — with control bytes (`BEL` = `\x07`, `ESC` = `\x1b`) between them and no space anywhere. A `grep -oP 'https://...[^ ]+'` matches straight through both copies, yielding a doubled URL with every query parameter appearing twice plus a trailing value polluted with `\ahttps://...`.
+
+**Use `[^\s\x00-\x1f\x7f]+`** instead of `[^ ]+`. Excluding whitespace AND all control bytes terminates the match at the BEL before the second copy.
+
+**Assert the shape of a parsed token immediately at the parse site.** The doubled-URL bug was silent for six nights because the script only logged the first 10 characters of the OAuth state (which looked correct), while the full value was `<state>\ahttps://claude.com/cai/...`. An OAuth state is `^[A-Za-z0-9_-]+$`; asserting that pattern right after extraction turns a 25-second misattributed downstream failure ("consent tab not found") into a one-second honest failure at the parse site.
+
+Source: `claude-auto-relogin-container.sh` fix in scripts commit `b81676a` (2026-08-05); regression test at `test/relogin-url-parse-tests.sh` (14 TAP assertions including a proof the old pattern fails).

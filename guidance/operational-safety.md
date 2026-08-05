@@ -284,6 +284,35 @@ fi
 
 **Rule:** Never do unbounded retries on a consent button. If two attempts both produce no callback, escalate via Discord alert — the problem is something other than a hydration race (rate limit, broken page, wrong selector).
 
+### Consent Buttons Are Visibility-Gated: Focus the Tab Before Clicking (2026-08-05)
+
+**A distinct failure from the hydration race above.** `claude.ai`'s OAuth consent page gates its Authorize button on `document.visibilityState`. In a backgrounded tab the button renders with `disabled=true` (Decline stays enabled); a click lands on a disabled control and is a silent no-op. The hydration race (above) is a timing issue — you wait and retry. This is a structural gate — until the tab is focused, no amount of waiting will enable the button.
+
+**Why automation trips this:** `browser-cli open` creates tabs in the background by default. Any OAuth flow that opens a consent URL and immediately clicks Authorize will hit this gate every time the browser is not in the foreground.
+
+**Verified live (2026-08-05):** same tab read `Authorize:disabled` while backgrounded and `Authorize:false` (enabled) within one second of calling `browser-cli focus`. Six nights of "callback tab not found" alerts blamed the wrong cause (browser sign-in) for a silent no-op click.
+
+**Correct pattern:**
+```bash
+# 1. Open the consent tab (in background by default)
+browser-cli open "$AUTH_URL"
+
+# 2. FOCUS the tab before anything else
+browser-cli focus "$AUTH_URL"
+
+# 3. Poll until Authorize is enabled (handles both visibility-gate and hydration delay)
+for i in $(seq 1 8); do
+  sleep 1
+  enabled=$(browser-cli cdp-eval "$AUTH_URL" 'document.querySelector("#authorize-button")?.disabled === false')
+  [ "$enabled" = *"true"* ] && break
+done
+
+# 4. Click only after the button is confirmed enabled
+browser-cli cdp-click "$AUTH_URL" "#authorize-button"
+```
+
+**Rule:** Any browser-agent automation that clicks a button on a consent or confirmation page must focus the tab first and poll for the button to be enabled before clicking. Never assume a visible button is interactive.
+
 ### Claude CLI Binary Path on VM
 
 The Claude CLI binary is at `/usr/bin/claude` on the VM — **not** `/usr/local/bin/claude`. Using the wrong fallback path causes silent `[Errno 2] No such file or directory` failures that drop all AI processing without any obvious error in service logs.
