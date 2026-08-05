@@ -447,7 +447,7 @@ Rules:
 3. A sudden cluster of `no-unused-vars` (or equivalent) errors on imports right after an edit is evidence that CONSUMERS were deleted, not that the imports went stale on their own.
 4. Recovery is cheap while the file is committed: `git show HEAD:<path>` to re-read the pre-edit original, splice into THAT, then reapply the intended small edit — rather than trying to reconstruct the deleted regions by hand.
 
-Source: deal-scout test-file edit, 2026-08-05.
+Source: a JS test-suite range edit, 2026-08-05.
 
 ## What NOT to Build
 

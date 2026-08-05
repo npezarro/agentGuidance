@@ -371,4 +371,4 @@ Rules:
 1. In any `set -euo pipefail` script, a `git` subcommand that can legitimately fail on some checkouts (`symbolic-ref refs/remotes/origin/HEAD`, `rev-parse --abbrev-ref @{u}` on a branch with no upstream, etc.) needs `|| true` on the command that can fail — not on a later line. A fallback written one line too late never runs.
 2. A log file's mtime proves the process STARTED this cycle, not that it finished or did anything past its first few lines. Don't build "is this cron alive" on log mtime alone for a script with meaningful logic after its early lines — check the actual exit code, the log's last line, or a run ledger that records per-run outcome explicitly.
 
-Source: `scripts` commit `500272c` (2026-08-05).
+Source: a WSL cron watchdog script fix, 2026-08-05 (see `privateContext/completed-work.md` for the commit pointer).

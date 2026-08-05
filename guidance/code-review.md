@@ -365,7 +365,7 @@ Related: this is the same family as pattern-like-escape-char-must-self-escape (m
 
 ### Fix an Unwanted Output Distribution in the Selector, Not by Re-Weighting the Score (2026-08-05)
 
-A reworked ranking score can be individually correct per item and still produce a bad DISTRIBUTION — e.g. a housing "Top Picks" score rework left 16 of 16 picks concentrated in two of many covered regions and zero in the home market, even though the per-listing scores were right. The tempting fix is to nudge weights until the desired regions reappear. That corrupts the score itself: every future reader inherits a number that no longer means what its name says, and the correction is invisible in the code — nothing documents that a weight was tuned to hit a distribution rather than to measure quality.
+A reworked ranking score can be individually correct per item and still produce a bad DISTRIBUTION — e.g. a listing-ranking score rework left 16 of 16 "Top Picks" concentrated in two of many covered regions and zero in the home region, even though the per-item scores were right. The tempting fix is to nudge weights until the desired regions reappear. That corrupts the score itself: every future reader inherits a number that no longer means what its name says, and the correction is invisible in the code — nothing documents that a weight was tuned to hit a distribution rather than to measure quality.
 
 **The right split:** a SCORE answers "how good is this item" and should be tunable only against that question. A SELECTOR answers "what do we show" and is where distribution requirements — geographic coverage, category balance, diversity, freshness — belong.
 
@@ -380,4 +380,4 @@ Three properties worth copying into any similar selector:
 
 **Reviewer diagnostic:** a change is about to become this bug when someone is tuning a weight or threshold and the justification is about WHICH items should appear, rather than about what the number itself should mean. That's the selector's job, not the score's.
 
-Source: deal-scout `housing-scout.js` Top Picks rework, 2026-08-05.
+Source: a listing-ranking "Top Picks" selector rework, 2026-08-05.
