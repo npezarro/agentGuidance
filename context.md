@@ -158,3 +158,9 @@ commit and push.
   visibility cache, so a fresh repo pays one `gh` call on its first commit.
 
 Full closeout: `privateContext/deliverables/closeouts/2026-08-02-three-followups-and-a-retraction.md`
+
+## 2026-08-05 — `guidance/debugging.md`: the `set -e` + `git symbolic-ref` trap
+- Added after `wsl-watchdog.sh` was found dead for 24 days (~6,900 runs), dying at line 213 of 312. `git symbolic-ref refs/remotes/origin/HEAD` exits 128 when `origin/HEAD` is unset (only `git clone` populates it, and it is never refreshed). Under `set -euo pipefail`, pipefail promotes that exit past a `sed` and `set -e` terminates the script. A trailing `2>/dev/null` hides the message but not the exit code, which makes the line look handled.
+- Generalisable diagnostic: when a long script has an unexplained silent partial effect, suspect a mid-script non-zero exit before suspecting logic, and use a frozen end-of-script state file as the cheapest proof of where it died.
+- Committed `3a33fe9` via `propagate-learning.sh`. Paired memory: `pattern_set_e_kills_script_at_git_symbolic_ref`.
+- State: guidance current. Full closeout: privateContext/deliverables/closeouts/2026-08-05-run-ledger-and-temporal-ab.md
