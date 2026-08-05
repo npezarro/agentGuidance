@@ -25,6 +25,7 @@ HOME = os.path.expanduser("~")
 ap = argparse.ArgumentParser()
 ap.add_argument("--log", default=f"{HOME}/.claude/memory-lazy-shadow.jsonl")
 ap.add_argument("--candidates", default=f"{HOME}/.claude/memory-lazy-candidates.txt")
+ap.add_argument("--index", default=f"{HOME}/.claude/memory-lazy-index.txt")
 ap.add_argument("--since", default=None, help="YYYY-MM-DD")
 args = ap.parse_args()
 
@@ -40,6 +41,15 @@ if os.path.exists(args.candidates):
     for line in open(args.candidates, encoding="utf-8"):
         if line.strip() and not line.startswith("#"):
             candidates.add(line.split(":")[0].strip())
+
+# The scoring set is frozen at test start. A memory created DURING the window is
+# not in it, so the retriever never had a chance at it; counting such an open as
+# a miss would bias recall downward and could wrongly condemn the retriever.
+scoring_set = set()
+if os.path.exists(args.index):
+    for line in open(args.index, encoding="utf-8"):
+        if line.strip() and not line.startswith("#"):
+            scoring_set.add(line.split(":")[0].strip())
 
 HEADLESS = ("fix-checker", "autonomousDev", "learning", "job-pipeline", "scripts")
 
@@ -107,10 +117,13 @@ print()
 print("=" * 66)
 print("RECALL — when a memory was opened, was it in the retriever's top-k?")
 print("=" * 66)
-opp = hit = 0
+opp = hit = out_of_set = 0
 missed = []
 for sid, names in opened.items():
     for n in names:
+        if scoring_set and n not in scoring_set:
+            out_of_set += 1      # created after the set was frozen; not scoreable
+            continue
         opp += 1
         if n in would.get(sid, ()):
             hit += 1
@@ -122,6 +135,8 @@ if opp == 0:
     print("  roughly 1 opportunity per 27 sessions observed.")
 else:
     print(f"  opportunities (a memory was opened) : {opp}")
+    if out_of_set:
+        print(f"  excluded (created after freeze)     : {out_of_set}")
     print(f"  retriever had it in top-k           : {hit}  ({hit/opp*100:.0f}% RECALL)")
     if missed:
         print("\n  misses:")
