@@ -1732,7 +1732,7 @@ With `_require`: crash becomes `ValueError: Scenario entity #3 is missing requir
 
 **When this applies:** Any parser that reads user-authored config/YAML where field absence is a user error (not a code bug). All required fields should be validated via context-aware helpers, not trusted to raise `KeyError` through raw indexing.
 
-Source: waymo-sim `scenarios/loader.py` (commit `a8c0791`, 2026-06-23) — ScenarioLoader._parse raised cryptic `KeyError` on any missing required key across entities, goals, roads, and waypoints; fixed with `_require()` + 6 regression tests in TestParseErrorHandling.
+Source: a 2D driving simulator's `scenarios/loader.py` (commit `a8c0791`, 2026-06-23) — ScenarioLoader._parse raised cryptic `KeyError` on any missing required key across entities, goals, roads, and waypoints; fixed with `_require()` + 6 regression tests in TestParseErrorHandling.
 
 ## Autonomous Agent Repos: Gitignore Runtime State Files
 
