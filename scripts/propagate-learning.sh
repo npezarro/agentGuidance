@@ -140,8 +140,12 @@ MEMEOF
     # warns if the index ever exceeds its hard limit.
     MEMORY_INDEX="$PRIMARY_MEMORY/MEMORY.md"
     if [ -f "$MEMORY_INDEX" ] && ! grep -q "$MEM_FILE" "$MEMORY_INDEX" 2>/dev/null; then
-      HOOK_MAX=$(( 128 - ${#MEM_FILE} - ${#MEM_FILE} - 8 ))   # 8 = len("- [](\) — ")
-      [ "$HOOK_MAX" -lt 24 ] && HOOK_MAX=24
+      # Index format is "name: hook", NOT a markdown link. Writing the filename
+      # twice inside link punctuation cost 70% of the index in pure syntax; see
+      # hooks/compact-memory-index.sh. That hook re-normalises any drift, but
+      # emitting the right format here avoids the churn in the first place.
+      MEM_NAME="${MEM_FILE%.md}"
+      HOOK_MAX=88          # hook budget is now independent of filename length
       HOOK="$SUMMARY"
       if [ "${#HOOK}" -gt "$HOOK_MAX" ]; then
         HOOK="$(printf '%s' "$SUMMARY" | cut -c1-"$HOOK_MAX" | sed 's/[[:space:],;:.—-]*$//')…"
@@ -151,7 +155,7 @@ MEMEOF
       # compact-memory-index.sh takes the same locks around its rewrite.
       if command -v flock >/dev/null 2>&1; then
         ( flock -w 5 9 2>/dev/null || true
-          echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
+          echo "${MEM_NAME}: ${HOOK}" >> "$MEMORY_INDEX"
         ) 9>"$MEMORY_INDEX.lock" 2>/dev/null
       else
         LOCK_D="$MEMORY_INDEX.lock.d" LOCK_HELD=false WAITED=0
@@ -160,7 +164,7 @@ MEMEOF
           [ "$WAITED" -ge 5 ] && break   # timed out: proceed anyway (matches flock -w 5 || true)
           sleep 1; WAITED=$((WAITED + 1))
         done
-        echo "- [${MEM_FILE}](${MEM_FILE}) — ${HOOK}" >> "$MEMORY_INDEX"
+        echo "${MEM_NAME}: ${HOOK}" >> "$MEMORY_INDEX"
         [ "$LOCK_HELD" = true ] && rmdir "$LOCK_D" 2>/dev/null || true
       fi
     fi
