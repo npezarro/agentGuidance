@@ -31,10 +31,14 @@ set -uo pipefail
 
 LOG="${MEMORY_LAZY_SHADOW_LOG:-$HOME/.claude/memory-lazy-shadow.jsonl}"
 CANDIDATES="${MEMORY_LAZY_CANDIDATES:-$HOME/.claude/memory-lazy-candidates.txt}"
+# Scored against EVERY index entry; the candidates file only tags which hits
+# belong to the demote tier, so cost and recall can be read off separately.
+INDEX_SET="${MEMORY_LAZY_INDEX:-$HOME/.claude/memory-lazy-index.txt}"
 TOP_K="${MEMORY_LAZY_TOP_K:-2}"   # tightened from 3: a third-best guess was rarely the wanted one
 MIN_SCORE="${MEMORY_LAZY_MIN_SCORE:-2}"
 
 [ -f "$CANDIDATES" ] || exit 0
+[ -f "$INDEX_SET" ] || INDEX_SET="$CANDIDATES"
 
 input="$(cat)" || exit 0
 [ -n "$input" ] || exit 0
@@ -42,12 +46,13 @@ input="$(cat)" || exit 0
 # The payload goes in by ENV, not stdin: stdin is already carrying the python
 # script via the heredoc, and a second redirection would silently feed the JSON
 # in as the program text.
-HOOK_INPUT="$input" LOG="$LOG" CANDIDATES="$CANDIDATES" TOP_K="$TOP_K" MIN_SCORE="$MIN_SCORE" \
+HOOK_INPUT="$input" LOG="$LOG" CANDIDATES="$CANDIDATES" INDEX_SET="$INDEX_SET" TOP_K="$TOP_K" MIN_SCORE="$MIN_SCORE" \
 python3 - <<'PY' 2>/dev/null || exit 0
 import json, os, re, sys, time
 
 log_path = os.environ["LOG"]
 cand_path = os.environ["CANDIDATES"]
+index_path = os.environ.get("INDEX_SET") or cand_path
 top_k = int(os.environ["TOP_K"])
 min_score = float(os.environ["MIN_SCORE"])  # scores are now IDF-weighted floats
 
@@ -98,8 +103,13 @@ def strip_prefix(name):
 # relevant, so it is down-weighted, and dropped outright past a quarter of the
 # set. This re-derives from whatever the candidate set happens to be, instead
 # of a hand-kept stoplist that rots as memories are added.
-cands = []
+cand_names = set()
 for line in open(cand_path, encoding="utf-8"):
+    if line.strip() and not line.startswith("#"):
+        cand_names.add(line.split(":")[0].strip())
+
+cands = []
+for line in open(index_path, encoding="utf-8"):
     line = line.rstrip("\n")
     if not line or line.startswith("#"):
         continue
@@ -145,14 +155,15 @@ scored.sort(reverse=True)
 if scored:
     top = scored[0][0]
     scored = [x for x in scored if x[0] >= 0.4 * top]
-hits = [{"name": n, "score": s} for s, n in scored[:top_k]]
+hits = [{"name": n, "score": s, "cand": n in cand_names} for s, n in scored[:top_k]]
 
 rec = {
     "ts": int(time.time()),
     "session": session,
     "cwd": cwd,
     "prompt_len": len(prompt),
-    "candidates_scanned": sum(1 for _ in open(cand_path, encoding="utf-8")),
+    "scored_against": len(cands),
+    "candidate_set": len(cand_names),
     "would_inject": hits,
 }
 try:

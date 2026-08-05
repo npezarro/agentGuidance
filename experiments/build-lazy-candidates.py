@@ -18,10 +18,12 @@ LAZY_PREFIXES = ("project_", "reference_")
 HOME = os.path.expanduser("~")
 DEFAULT_INDEX = f"{HOME}/.claude/projects/-mnt-c-Users-npeza/memory/MEMORY.md"
 DEFAULT_OUT = f"{HOME}/.claude/memory-lazy-candidates.txt"
+DEFAULT_INDEX_OUT = f"{HOME}/.claude/memory-lazy-index.txt"
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--index", default=DEFAULT_INDEX)
 ap.add_argument("--out", default=DEFAULT_OUT)
+ap.add_argument("--index-out", default=DEFAULT_INDEX_OUT)
 args = ap.parse_args()
 
 # 1. Every entry in the always-loaded index, in compact "name: hook" format.
@@ -60,9 +62,23 @@ with open(args.out, "w", encoding="utf-8") as fh:
     for n in sorted(candidates):
         fh.write(f"{n}: {candidates[n]}\n")
 
+# The retriever SCORES against every index entry, not just the demote candidates.
+# Scoring only the candidates made the primary metric unmeasurable by construction:
+# candidates are selected for having zero reads, so "was a candidate opened?" is an
+# event with an observed rate of 0 in 4,225 sessions. Scoring the full index lets
+# recall be measured on the memories that DO get opened (~3.7% of sessions), which
+# is the transferable question: does keyword retrieval find a wanted memory at all?
+with open(args.index_out, "w", encoding="utf-8") as fh:
+    fh.write("# xp-001 scoring set: EVERY index entry.\n")
+    fh.write("# Recall is measured here; lazy-tier injection COST is measured on the\n")
+    fh.write("# candidate subset only (see memory-lazy-candidates.txt).\n")
+    for n in sorted(entries):
+        fh.write(f"{n}: {entries[n]}\n")
+
 kept = len(entries) - len(candidates)
 print(f"index entries          : {len(entries)}")
 print(f"lazy candidates        : {len(candidates)}  -> {args.out}")
 print(f"stays always-loaded    : {kept}")
+print(f"scoring set (full index): {len(entries)}  -> {args.index_out}")
 print(f"transcripts scanned    : {len(glob.glob(f'{HOME}/.claude/projects/*/*.jsonl'))}")
 print(f"memories with reads    : {len(reads)}")
