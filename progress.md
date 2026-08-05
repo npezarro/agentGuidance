@@ -126,3 +126,18 @@
 - `hooks: header no longer says these are only for public repos`.
 - Verified: planted identifier blocks on a PRIVATE-marked repo with the private wording; clean
   commit passes with no false positive. Propagated to 82 repos, cache seeded in 80.
+
+## 2026-08-05 — memory index format normalisation + experiment registry
+
+- `hooks/compact-memory-index.sh` rewritten: normalises index entries to `name: hook`
+  instead of only capping line length. The harness-instructed link format wrote each
+  filename twice inside markdown punctuation; measured 70% of the index was syntax.
+  Idempotent, so it absorbs the drift the harness keeps reintroducing. Demotion
+  records now evicted to `INDEX-LAZY.md` (not loaded into context).
+- `scripts/propagate-learning.sh` emits the same compact format.
+- Result across the three large indexes: 39,762 -> 22,940 bytes. Primary index
+  5,266 -> 2,635 tokens (50% off), 168 entries in, 168 out, no information lost.
+- Recovered 2 orphaned index entries pointing at files that did not exist.
+- `experiments/` added: shadow-mode rig for xp-001 (memory lazy tier). Measures
+  whether demoting never-read reference memories would cost recall, without
+  demoting anything.

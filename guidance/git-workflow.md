@@ -383,3 +383,14 @@ branch, resolve the combined set once, and land that.
 **Auto-resolve only what is provably safe.** A union resolver should refuse any hunk where the
 two sides share a line, rather than deduplicating by guess — and never union a YAML frontmatter
 hunk, which produces duplicate keys.
+
+### Merge a worktree branch from the primary checkout, and never hardcode the commit email (2026-08-05)
+Two failures hit in one command while landing a worktree branch:
+
+1. `git checkout main` INSIDE a worktree fails with "fatal: 'main' is already used by worktree at ..." because the primary checkout holds it. Then `git worktree remove` ran while cwd was inside that worktree, leaving the shell with no working directory. Merge from the PRIMARY checkout instead: commit in the worktree, capture the SHA, then `cd` to the primary checkout and `git merge --ff-only <sha>`.
+
+2. Committing with an explicit personal email via `-c user.email=...` got the push rejected: "push declined due to email privacy restrictions". The repos are already configured with the correct GitHub noreply identity. Never pass an explicit email; let git use the repo's configured identity, or the commit has to be amended with --reset-author and redone.
+
+**Why:** both failed after the work was already correct, turning a clean landing into recovery.
+
+**How to apply:** commit in the worktree -> `COMMIT=$(git rev-parse HEAD)` -> `cd` primary -> `git merge --ff-only $COMMIT` -> push -> `git worktree remove` from the primary checkout. Omit -c user.email entirely.
