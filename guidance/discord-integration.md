@@ -106,6 +106,18 @@ Discord-dispatched jobs run `claude -p` **on the VM**, reading `~/.claude/skills
 
 **Why:** A skill added locally silently never reaches Discord-dispatched jobs until the VM sync runs. Discovered when the `write-as-nick` skill was absent on the VM, causing `#requests` resumes to render without formatting or referral blurbs.
 
+## Call-Prep Channel Routing
+
+Any deliverable that prepares the owner for a live conversation -- interview prep, investor/partner call prep, negotiation prep, coaching-session prep, a "help me get ready for X" brief -- is posted **in full to `#call-prep`**, regardless of which channel the request came from.
+
+**The two-step is mandatory; doing only one of them loses the work:**
+1. Post the complete brief to `#call-prep` (webhook `call-prep-webhook`; channel ID in `privateContext/accounts.md`). Split across messages if it exceeds Discord's 2000-char limit; lead with who/when/what-this-is so it is scannable at a glance the morning of the call.
+2. Leave a **one-line pointer in the originating thread or channel** linking to `#call-prep` with the channel-mention syntax `<#CHANNEL_ID>`, so the person reading the request thread can find where the answer went.
+
+Also persist the brief as a dated markdown file (`privateContext/deliverables/YYYY-MM-DD-<who>-call-prep.md`) and commit it. Discord is the delivery surface, not the archive.
+
+**Why:** prep docs are time-critical and get read on a phone minutes before a call. Buried in a request thread among unrelated work, they are unfindable exactly when they matter. One channel, chronologically ordered, is the whole point. The pointer back is what keeps the origin thread from looking abandoned.
+
 ## Self-Service Channel & Webhook Creation
 
 Create Discord channels and webhooks yourself using the bot API — don't ask the user to do it. The bot token and guild ID are available in the Discord bot's `.env` on the VM.
