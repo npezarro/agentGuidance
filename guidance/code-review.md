@@ -362,3 +362,22 @@ Two process lessons, both cheap:
   - For any matching change, mechanically diff old vs new over a few hundred strings drawn from BOTH classes, rather than reasoning about which cases changed. The 22 losses were invisible to inspection and obvious to a diff.
 
 Related: this is the same family as pattern-like-escape-char-must-self-escape (matching-layer helper that looks right in isolation but is wrong against the real matcher semantics).
+
+### Fix an Unwanted Output Distribution in the Selector, Not by Re-Weighting the Score (2026-08-05)
+
+A reworked ranking score can be individually correct per item and still produce a bad DISTRIBUTION — e.g. a housing "Top Picks" score rework left 16 of 16 picks concentrated in two of many covered regions and zero in the home market, even though the per-listing scores were right. The tempting fix is to nudge weights until the desired regions reappear. That corrupts the score itself: every future reader inherits a number that no longer means what its name says, and the correction is invisible in the code — nothing documents that a weight was tuned to hit a distribution rather than to measure quality.
+
+**The right split:** a SCORE answers "how good is this item" and should be tunable only against that question. A SELECTOR answers "what do we show" and is where distribution requirements — geographic coverage, category balance, diversity, freshness — belong.
+
+**Two-pass allocation shape that keeps both honest:**
+1. RESERVE — each bucket (region, category, etc.) takes its best N items by score, judged only within that bucket.
+2. MERIT — every remaining slot goes to the globally highest score left, with no bucket weighting.
+
+Three properties worth copying into any similar selector:
+- No bucket ceiling: a bucket that genuinely dominates should still win most of the merit pass.
+- Never reserve below the global quality bar — an empty bucket stays empty and is named as such in the output ("Nothing cleared the bar in X today") rather than padded with a low-quality item or silently dropped.
+- Reserved items are claimed before the merit pass runs; re-sort each display bucket by score afterward, or a merit-pass addition can leave a bucket's display order not best-first.
+
+**Reviewer diagnostic:** a change is about to become this bug when someone is tuning a weight or threshold and the justification is about WHICH items should appear, rather than about what the number itself should mean. That's the selector's job, not the score's.
+
+Source: deal-scout `housing-scout.js` Top Picks rework, 2026-08-05.

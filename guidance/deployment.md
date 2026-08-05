@@ -575,3 +575,24 @@ git -C /var/www/staging-<app> log --oneline -1                      # which bran
 ```
 
 **Rule:** merge to the deploy branch BEFORE the artifact rsync, not after. An artifact deploy from a feature branch only survives until the next scheduled/other-session deploy of the default branch runs. If you must ship from a branch to test, treat it as ephemeral and merge in the same session. Related: the "uncommitted work in a shared checkout gets wiped by a concurrent agent" pattern in `concurrent-sessions.md` — if a deploy keeps reverting, suspect a concurrent session before suspecting your own build.
+
+### Migrating a VM App to pnpm: Pin the Version, Migrate the Deploy Script, and Runtime Risk Depends on Standalone Output (2026-08-05)
+
+Migrating VM apps from npm to pnpm's content-addressed store cuts disk sharply because packages hardlink from one shared store instead of each app keeping a private tree. Measured across five migrations: foodie 549MB tree → 5MB new store, health-hub 1024MB → 31MB, runeval 653MB → 277MB shared, botlink 947MB → 400MB shared, promptlibrary 735MB → 281MB shared.
+
+**Pin pnpm to 10.x on the VM; do not run `npm i -g pnpm@latest`.** pnpm 10 blocks native dependency build scripts by default and requires an explicit `pnpm.onlyBuiltDependencies` allowlist (in `package.json` or `pnpm-workspace.yaml`) — set it and native modules (Prisma, better-sqlite3) build correctly. pnpm 11.20.0 silently ignores that field entirely (it warns "the pnpm field in package.json is no longer read"), even when the same allowlist is moved to `pnpm-workspace.yaml`, so the native module installs with no compiled binding. **The install still exits 0** — the failure only appears the first time the module is `require`d at runtime. After any pnpm version change, verify a native module actually loads, not just that install succeeded:
+```bash
+node -e "require('better-sqlite3'); console.log('ok')"
+```
+
+**Migrate the deploy script in the same commit**, or the next scheduled deploy silently reverts the migration: a deploy script still running `npm install` rebuilds a private tree and rewrites `package-lock.json` on every run, which then fails that SAME deploy script's own dirty-tree check next time. Use `pnpm install --frozen-lockfile` — it never rewrites the lockfile, so real drift fails loudly at install time instead of self-blocking silently one deploy later.
+
+**Native build tooling still needs an explicit generate step.** The `onlyBuiltDependencies` allowlist unblocks the build script but does not itself run Prisma's codegen — keep `pnpm exec prisma generate` explicit in deploy. Verification has to match the app too: Prisma 7 emits TypeScript to a custom output path, so `require('@prisma/client')` is the wrong check there; exercise a route that actually uses the client.
+
+**Runtime risk depends on whether the app builds standalone.** A Next.js `output: 'standalone'` app doesn't read the top-level `node_modules` at runtime (the standalone bundle vendors its own copy), so migrating the top-level tree is *deferred* risk — it can only break the next build, never the currently running process. An app that runs `next start` directly with no standalone output is different: `node_modules` **is** the runtime (PM2 executes `node_modules/.bin/next` from it directly), so the migration is *live* risk the moment the tree changes. Stop the process before migrating those, then verify by starting it and probing the origin port directly. If the route sits behind an OIDC/auth gate, a 302 redirect there proves nothing — it never reached the app; confirm a real 200 (or an app-specific signal) past the gate instead.
+
+Other traps from these migrations:
+- `node-linker=hoisted` (committed `.npmrc`) keeps a flat, npm-compatible layout — avoids Next.js standalone file-tracing edge cases with symlinked deps, without losing the hardlink disk saving.
+- Convert lockfiles with `pnpm import` (`package-lock.json` → `pnpm-lock.yaml`, identical resolved versions). Never migrate an app with no committed lockfile — a fresh resolve can drift versions and confounds any breakage that follows.
+- Existing `.npmrc` settings like `legacy-peer-deps=true` need an explicit pnpm equivalent (`strict-peer-dependencies=false`) rather than relying on a pnpm default a future release could flip.
+- Keep any node_modules rollback backup OUTSIDE the project directory — left inside, build/validate scripts walk it and fail on it.

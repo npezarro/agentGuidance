@@ -437,6 +437,18 @@ Source: claude-tray-notifier `.github/workflows/build-and-publish.yml` (2026-08-
 
 **Fixture corollary:** a discriminating fixture usually needs a *decoy* — an input the buggy code mishandles in the opposite direction from the case you're testing. Testing only the straightforward positive case often passes under both implementations.
 
+## A Range-Delete Keyed on "the Next Section Header" Can Silently Consume Unrelated Content (2026-08-05)
+
+Rewriting one `describe` block in an 1800-line test file with a scripted splice from `s.index("describe('scoreListing'")` to `s.index('// -- selectTopPicks --')` deleted 8 unrelated `describe` blocks (860 lines) — the chosen end anchor sat 860 lines further down the file than the target block's actual end. `npm test` still reported **PASS (211/0 fail)**, because the deleted tests simply no longer existed to fail. The only visible signals were the test count dropping from 277 to 211 and a burst of `no-unused-vars` lint errors for now-unused imports.
+
+Rules:
+1. When splicing a text range by locating a start/end anchor, anchor the END on the target block's own terminator (its matching closing brace, or a marker immediately after it) — not on "the next thing that looks like a boundary" further down the file. If precise anchoring isn't possible, assert the spliced span's line count or byte size against what you expect BEFORE writing the result.
+2. "Tests pass" is not a regression check after editing a test file — a deleted test never fails. Compare the test COUNT and suite/describe COUNT before and after any edit that touches test file structure, not just the pass/fail summary.
+3. A sudden cluster of `no-unused-vars` (or equivalent) errors on imports right after an edit is evidence that CONSUMERS were deleted, not that the imports went stale on their own.
+4. Recovery is cheap while the file is committed: `git show HEAD:<path>` to re-read the pre-edit original, splice into THAT, then reapply the intended small edit — rather than trying to reconstruct the deleted regions by hand.
+
+Source: deal-scout test-file edit, 2026-08-05.
+
 ## What NOT to Build
 
 - Browser tests against production (test data leaks into real systems)

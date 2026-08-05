@@ -358,3 +358,17 @@ The URL appears **twice** — once as the escape target, once as the visible lab
 **Assert the shape of a parsed token immediately at the parse site.** The doubled-URL bug was silent for six nights because the script only logged the first 10 characters of the OAuth state (which looked correct), while the full value was `<state>\ahttps://claude.com/cai/...`. An OAuth state is `^[A-Za-z0-9_-]+$`; asserting that pattern right after extraction turns a 25-second misattributed downstream failure ("consent tab not found") into a one-second honest failure at the parse site.
 
 Source: `claude-auto-relogin-container.sh` fix in scripts commit `b81676a` (2026-08-05); regression test at `test/relogin-url-parse-tests.sh` (14 TAP assertions including a proof the old pattern fails).
+
+### `git symbolic-ref refs/remotes/origin/HEAD` exits 128 when unset — silently kills a `set -euo pipefail` script past that line (2026-08-05)
+
+`origin/HEAD` is only populated by `git clone` (or an explicit `git remote set-head`); a checkout that came from anywhere else doesn't have it, so `git symbolic-ref refs/remotes/origin/HEAD` exits 128. Piped into `sed` under `set -euo pipefail`, `pipefail` promotes that 128 past the `sed`, and `set -e` kills the script at that exact line — nothing after it runs, for that invocation or any future one, until the line itself is fixed.
+
+`wsl-watchdog.sh`'s stranded-branch check hit this on 2026-07-12 and stayed broken for 24 days (~6,900 runs): the VM reachability check and the entire alert-sending block sat below the broken line and never executed again. The very next line already had the correct fallback (`[[ -z "$default_branch" ]] && default_branch="main"`) — it just never got the chance to run, because `set -e` killed the script one line earlier, inside the command substitution that fed it. `2>/dev/null` on the `symbolic-ref` call hid the error message but not the exit code that `set -e` was watching.
+
+**Nothing detected this from outside.** The script's log kept getting touched by its own `>>` redirect on every cron invocation — the script DID run, it just died partway through every time — so any mtime-based "is this cron still alive" check read it as healthy for all 24 days. The state file it should have updated was frozen at 2026-07-12, the day the check was added, and nothing was comparing that timestamp against "now." It was only caught by a purpose-built run ledger recording each run's actual exit code and expected output shape, not just whether the process touched its log.
+
+Rules:
+1. In any `set -euo pipefail` script, a `git` subcommand that can legitimately fail on some checkouts (`symbolic-ref refs/remotes/origin/HEAD`, `rev-parse --abbrev-ref @{u}` on a branch with no upstream, etc.) needs `|| true` on the command that can fail — not on a later line. A fallback written one line too late never runs.
+2. A log file's mtime proves the process STARTED this cycle, not that it finished or did anything past its first few lines. Don't build "is this cron alive" on log mtime alone for a script with meaningful logic after its early lines — check the actual exit code, the log's last line, or a run ledger that records per-run outcome explicitly.
+
+Source: `scripts` commit `500272c` (2026-08-05).
