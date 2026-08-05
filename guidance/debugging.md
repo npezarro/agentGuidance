@@ -261,3 +261,12 @@ Source: 2026-07-16 Discord/cloud review — threadJanitor error-logged a Discord
 1. CWD HYGIENE. When the subprocess runs with its working directory inside a repo, the spawned sub-agent can explore that repo and inject meta-commentary into its output (observed: a generated free-text brief narrated the relative source path it was invoked from, e.g. "sourcing/brief.py"). FIX: for free-text generation calls, set the subprocess cwd to an empty/neutral directory (e.g. a tempfile.mkdtemp()) so there is no repo to explore. For calls whose output is strictly parsed (e.g. JSON extraction) the risk is lower, but the same cwd hygiene is cheap insurance.
 
 2. RETRY BREADTH. Retry logic for `claude -p` must retry on ANY non-zero exit code AND on empty stdout, not only when stderr matches "rate"/"limit". Nested `claude -p` invocations intermittently exit 1 with an EMPTY stderr (a transient); code that only retries on rate/limit strings hard-fails on the first blip. FIX: retry on any non-zero return or empty output, with exponential backoff, up to N attempts.
+
+### git symbolic-ref origin/HEAD exits 128 when unset; under set -euo pipefail it silently kills the rest of the script (2026-08-05)
+origin/HEAD is populated by 'git clone' and by nothing else - not by 'git remote add' + fetch, and never refreshed afterwards. On a checkout that lacks it, 'git symbolic-ref refs/remotes/origin/HEAD' exits 128.
+
+Under 'set -euo pipefail', piping that into sed does NOT save you: pipefail promotes the 128 past the sed, and set -e terminates the script. A trailing 2>/dev/null hides the MESSAGE but not the exit code, which makes the line look handled when it is not.
+
+Found 2026-08-05: wsl-watchdog.sh died at line 213 of 312 on every run from 2026-07-12 onward (~6,900 runs). Everything below never ran, including the VM reachability check and the entire alert-sending block. The proof was its state file, written on the last line, frozen at the exact date the check was added.
+
+**Why:** exit-code propagation through pipefail is invisible when stderr is suppressed. **How to apply:** any command substitution that can legitimately fail needs an explicit '|| true' under set -e, especially git plumbing. When a long script has an unexplained silent partial-effect, check for a mid-script non-zero exit before suspecting logic. A frozen end-of-script state file is the cheapest proof. Related: [[pattern_cron_redirect_fails_before_command]], [[learning_monitoring_must_be_monitored]].
