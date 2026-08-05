@@ -365,3 +365,18 @@ Rules:
 1. After linking node_modules into a worktree, ALWAYS 'rm' the symlink before committing, and prefer 'git add <explicit paths>' over 'git add -A' in a worktree.
 2. Read 'git status --short' before every commit in a worktree and treat any unexpected '??' entry as a stop, not noise. This is the same class as shopper's existing '.env.bak*' warning: an ignore rule that looks like it covers a path may not cover the FORM the path takes.
 3. If you want the link to be ignored, the pattern must be 'node_modules' (no trailing slash).
+
+### A Next.js standalone build inside a worktree nests its output, so the artifacts must never be deployed (2026-08-05)
+Next's standalone output mirrors the project directory *relative to the repo root*. Built from the primary checkout it lands at `.next/standalone/.next/`; built from a worktree it lands at `.next/standalone/<worktree-path>/.next/`. The shared build script line used verbatim by shopper, foodie, travel-assistant, employ and runeval then fails:
+
+```
+next build && rm -rf .next/standalone/.next/static && cp -r .next/static .next/standalone/.next/static
+# cp: cannot create directory '.next/standalone/.next/static': No such file or directory
+```
+
+The compile itself SUCCEEDS and every route is listed, so the run reads as passing right up to the `cp` error on the final line. Verified in a shopper worktree on 2026-08-05: output landed at `.next/standalone/.claude/worktrees/billing-entitlements/.next/`.
+
+Rules:
+1. **Never deploy artifacts from a worktree build.** The static assets sit where the standalone server will not serve them, which reproduces exactly the unstyled-page failure the `fix-static-asset-drift` skill exists to repair.
+2. Treat that `cp` failure as a hard stop, not a cosmetic warning. It is the signal that the output tree is not the shape the deploy expects.
+3. A worktree build is still the right way to *typecheck and validate* a change. Merge to the default branch, then build from the primary checkout to produce anything deployable.
