@@ -3,6 +3,55 @@
 
 Preventing the AUTH_URL/basePath mismatch that breaks OAuth on subpath deployments.
 
+## Domain-wide SSO: three auth tiers, one identity (2026-08-05)
+
+The site runs **three unrelated auth systems**, and most "why am I logging in
+again?" reports are a *tier crossing*, not a broken gate. Know which tier a
+surface is on before debugging it:
+
+| Tier | Mechanism | Cookie | Surfaces |
+|---|---|---|---|
+| **A** | Apache `mod_auth_openidc` | `visuals_session`, `Path=/` | /index, /visuals, /tools, /data, /dashboard, /watch, /botlink, /prompts, /interview, /backups, /auto-shorts, /tm-scripts, /claudenet, /netflix |
+| **B** | Auth.js v5 behind auth-proxy | `__Secure-<app>.session-token`, path-scoped | shopper, foodie, travel, employ, runeval, health-hub, finance, student, humans, collab |
+| **C** | passport + express-session | `connect.sid` | pezant-tools internals |
+
+**Tier A is the root identity.** It is the only one already domain-wide
+(`OIDCCookiePath /`), so B and C derive from it rather than each running their
+own login:
+
+- **C trusts A.** The vhost does `RequestHeader unset X-Forwarded-User` at the
+  top level, then re-sets it from `%{OIDC_CLAIM_email}e` inside each gated
+  Location. The tools app's `createTrustedHeaderAuth` accepts that identity, so
+  it never runs a second Google login. Safe only because of both halves: the
+  unconditional `unset` (a client cannot forge the header) **and** the backend
+  binding to 127.0.0.1 (Apache is the sole route in). **If you ever expose one of
+  these backends on a public interface, this trust becomes an auth bypass.**
+- **B derives from A** via `GET /api/auth/sso` on auth-proxy, gated with
+  `OIDCUnAuthAction pass`. Authenticated callers arrive with the verified header
+  and get an Auth.js cookie minted for every app lacking one; anonymous callers
+  pass through and get a no-op. **`pass` is load-bearing** -- a hard gate here
+  would bounce every visitor of the public apps into an owner-only Google login.
+  `/index` and `/hub` call it on load, so one login seeds the whole domain.
+- **B to B** is `POST /api/auth/spread`, which copies the identity out of an app
+  cookie that is already present. It cannot work from a cold start; that is
+  exactly the gap `/sso` fills.
+
+### Rules when touching this
+
+- **Adding an Auth.js app? Add it to `SESSION_APPS` in auth-proxy/server.js**
+  (cookie name, `path`, secret) as well as `ALLOWED_TARGETS`. The `path` must
+  match the app's own NextAuth cookie `path` *exactly*, or the browser keeps two
+  same-named cookies at different paths and the app reads whichever it gets.
+- **Verify minted cookies decode with each app's OWN secret**, read from that
+  app's `.env`, not the proxy's copy. A cookie encoded with the wrong
+  secret/salt still produces a perfectly valid-looking `Set-Cookie` and fails
+  silently at the app. Salt is always the cookie name.
+- **Provisioning gap:** minting makes the *session* valid, but an app resolves
+  its user row by email and only INSERTs during a real OAuth `signIn`. An app an
+  email has never natively logged into can still report "not provisioned".
+- Nine of the ten apps share one `AUTH_SECRET`; travel is the outlier. Do not
+  assume either way -- fingerprint them (`sha256sum`) before relying on it.
+
 ## The Problem
 
 When a Next.js app runs under a basePath (e.g., `/runeval`), Auth.js v5 (next-auth) has conflicting needs:
