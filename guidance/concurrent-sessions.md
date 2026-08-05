@@ -355,3 +355,13 @@ Detection: `git diff --staged --stat` before every commit, and treat a `node_mod
 Fix: `git rm --cached node_modules` before committing. To prevent it repo-wide, use the slash-less form `node_modules` in `.gitignore`, which matches a directory OR a file OR a symlink of that name.
 
 Generalizes past node_modules: any `.gitignore` entry written as `name/` will miss a symlink called `name` (`dist/`, `build/`, `.next/`, `coverage/`, `venv/`). Symlinking a heavy build/dependency directory into a worktree is exactly the workflow that trips it, so this is a standing hazard of the worktree pattern rather than a one-off.
+
+### A node_modules SYMLINK is not matched by a 'node_modules/' gitignore rule, so linking deps into a worktree makes it stageable by git add -A (2026-08-04)
+Git worktrees created with 'git worktree add' have no node_modules, so tsc/build need one linked or installed. Linking it (ln -s ../../node_modules) then makes 'git status' show '?? node_modules' -- UNTRACKED, not ignored -- because a gitignore pattern with a trailing slash ('node_modules/') matches only a directory, and a symlink is a file. A 'git add -A' in that worktree would commit a symlink pointing at an absolute path on one machine.
+
+Seen 2026-08-04 across shopper, foodie and travel-assistant simultaneously; all three .gitignore files use the trailing-slash form, so all three were exposed.
+
+Rules:
+1. After linking node_modules into a worktree, ALWAYS 'rm' the symlink before committing, and prefer 'git add <explicit paths>' over 'git add -A' in a worktree.
+2. Read 'git status --short' before every commit in a worktree and treat any unexpected '??' entry as a stop, not noise. This is the same class as shopper's existing '.env.bak*' warning: an ignore rule that looks like it covers a path may not cover the FORM the path takes.
+3. If you want the link to be ignored, the pattern must be 'node_modules' (no trailing slash).
