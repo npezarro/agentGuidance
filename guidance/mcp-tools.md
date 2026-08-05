@@ -135,3 +135,16 @@ Quirks: markdown table header rows convert imperfectly (first row can blank out)
 Do not waste cycles trying to coerce the MCP with empty strings or dummy emails — neither work.
 
 Source: piotr google-drive MCP limitation discovered 2026-06-09 during resume-variant skill share step.
+
+### Google Drive MCP read_file_content returns only the FIRST tab of a multi-tab Sheet; use the Sheets v4 API for the rest (2026-08-04)
+The claude.ai Google Drive MCP tool `read_file_content` silently returns only the first tab of a multi-tab Google Sheet, and `get_file_metadata`'s contentSnippet truncates mid-document. It does not error and it does not say the result is partial, so the output reads like the whole spreadsheet.
+
+**Why it matters:** a summary built off tab 1 looks complete and is wrong. A prior deliverable (privateContext/deliverables/analyses/book-club-scifi-recommendations.md) recommended three books the club had already read, because it was written from a partial view of the same sheet.
+
+**How to apply:** when a Google Sheet may have multiple tabs, do not trust `read_file_content`. Pull every tab through the Sheets v4 API instead, refreshing an access token from the local OAuth material:
+- refresh token: $HOME/.config/google-drive-mcp/tokens.json (v2 schema is multi-account, camelCase `accessToken`/`refreshToken`)
+- client id/secret: $HOME/.config/mcp-gdrive/gcp-oauth.keys.json (`installed` or `web`)
+- POST https://oauth2.googleapis.com/token with grant_type=refresh_token, then GET
+  https://sheets.googleapis.com/v4/spreadsheets/<id>?includeGridData=true&fields=sheets(properties(title),data(rowData(values(formattedValue))))
+
+Sanity check before trusting any sheet read: confirm the tab count you got matches `sheets.properties` length. A working example lives at privateContext/deliverables/analyses/sffunf-book-club-state-2026-08.md (documents the method at the top).
