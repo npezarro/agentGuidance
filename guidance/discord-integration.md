@@ -170,3 +170,12 @@ Always include: which account to use if several could apply; what success looks 
 The webhook resolves at runtime and is never committed; the helper handles lookup itself (exact locations: see privateContext).
 
 Related trap found the same day: Discord/Cloudflare returns 403 to the default 'Python-urllib/x.y' User-Agent. Any script posting to a Discord webhook via urllib MUST set a real User-Agent, and must NOT swallow the failure — db-guardian.sh had been silently failing every alert.
+
+### Discord webhook POSTs need a DiscordBot User-Agent or Cloudflare returns 403 error 1010 (2026-08-04)
+Posting to a Discord webhook from a plain HTTP client (python urllib, bare curl without headers) fails with HTTP 403 and JSON body {"code": 1010}. That is a Cloudflare bot-protection rejection at the edge, not a Discord auth or permission error, so the webhook URL and the bot token are both fine and retrying unchanged never succeeds.
+
+The fix is a single header: User-Agent: DiscordBot (<url>, <version>) — Discord's documented UA format. The same header is required on DELETE /webhooks/{id}/{token}/messages/{id} and on bot-token calls to /api/v10/channels/{id}/messages.
+
+Diagnostic tell: a 403 whose body is {"code": 1010} rather than a Discord error object with a "message" field. Discord's own permission failures come back as 403 with code 50001/50013 and a human-readable message. Code 1010 with no message means the request never reached Discord.
+
+Encountered 2026-08-05 while chunk-posting a prep brief to a newly created #call-prep channel via webhook.
