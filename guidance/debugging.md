@@ -270,3 +270,12 @@ Under 'set -euo pipefail', piping that into sed does NOT save you: pipefail prom
 Found 2026-08-05: wsl-watchdog.sh died at line 213 of 312 on every run from 2026-07-12 onward (~6,900 runs). Everything below never ran, including the VM reachability check and the entire alert-sending block. The proof was its state file, written on the last line, frozen at the exact date the check was added.
 
 **Why:** exit-code propagation through pipefail is invisible when stderr is suppressed. **How to apply:** any command substitution that can legitimately fail needs an explicit '|| true' under set -e, especially git plumbing. When a long script has an unexplained silent partial-effect, check for a mid-script non-zero exit before suspecting logic. A frozen end-of-script state file is the cheapest proof. Related: [[pattern_cron_redirect_fails_before_command]], [[learning_monitoring_must_be_monitored]].
+
+### cron PATH excludes /usr/local/bin; with set -e that kills a script silently, and a silent job's log mtime never moves (2026-08-05)
+cron runs with PATH=/usr/bin:/bin. Anything in /usr/local/bin (pm2, node, npm, and most globally-installed tooling on the VM) is NOT found. Combined with 'set -euo pipefail', the first such call kills the script before it does anything.
+
+Found 2026-08-05: pm2-watchdog.sh had been dying on every */5 run because 'pm2 jlist' was not on cron's PATH. It is a MONITOR, so its death meant nothing was watching PM2 at all.
+
+The compounding nuance, which is the reusable part: '>>' updates a log file's mtime only on an actual WRITE, not on open. A job that fails before producing output leaves its log 0 bytes with the mtime frozen at whenever it last wrote. pm2-watchdog's log sat at 0 bytes dated 2026-07-17. So a freshness checker watching that file sees nothing move and cannot distinguish 'silently dead for weeks' from 'never had anything to say'.
+
+**Why:** cron deliberately uses a minimal environment; set -e turns a missing binary into a silent full stop. **How to apply:** put 'export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"' at the top of any script cron will run, or declare PATH= in the crontab. When a script works interactively but fails under cron, reproduce with 'env -i HOME=$HOME PATH=/usr/bin:/bin bash -c ...' before theorising. Never conclude a job is healthy from log mtime. Related: [[pattern_set_e_kills_script_at_git_symbolic_ref]], [[pattern_cron_redirect_fails_before_command]], [[project_run_ledger]].
