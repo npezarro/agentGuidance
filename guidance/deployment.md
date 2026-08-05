@@ -694,3 +694,16 @@ Rules:
 - Do not read the cp failure as a broken build and start debugging next.config.ts. Check where server.js actually landed first: find .next/standalone -maxdepth 6 -name server.js
 - The /staging skill is unaffected because it clones fresh into /var/www/staging-<app> on the VM, which is a normal checkout.
 - rm -rf the worktree's .next when done, so a half-built tree is not mistaken for a deployable artifact.
+
+### A failed build reaching PM2 crash-loops on an error that names the artifact, not the build (2026-08-05)
+A deploy that runs `npm run build` and `pm2 start` as separate statements starts PM2 even when the build failed: without an explicit check, a non-zero build exit does not stop the sequence. A partially-built Next.js .next/ has server/, static/ and build-manifest.json but no standalone/, so the process crash-loops on "Error: Cannot find module '<dir>/.next/standalone/server.js' code: 'MODULE_NOT_FOUND'".
+
+Why it costs so much: that signature names the MISSING ARTIFACT, not the failed build. It reads like a bad rsync or an incomplete deploy, so the obvious response is a restart - which cannot possibly help. An auto-fix bot burned 15 restarts on it (staging-travel-assistant, 2026-08-05, 30 restarts total) before escalating, and the escalation still pointed at PM2 rather than at TypeScript.
+
+How to apply:
+1. Gate the process start on the entrypoint file existing, not on the build command having been issued. `[ -f .next/standalone/server.js ] || { echo 'BUILD FAILED'; exit 1; }`
+2. Put the same guard inside the start script so that if it ever does get started, the log says the build did not complete and that restarting will not fix it.
+3. Pass `--max-restarts N` to pm2. Verified empirically on pm2 6.0.14: a script exiting 1 immediately, started with --max-restarts 3, stopped at 2 restarts and went 'errored' instead of accumulating 30.
+4. Diagnose a partial Next.js build with `cat .next/diagnostics/*` - it records {"buildStage": "..."} for the last stage entered, so it names where the build stopped (type-checking, static-generation, ...) without re-running anything.
+
+Root cause in this instance: buildStage was 'type-checking'. The root tsconfig.json included **/*.ts and excluded only node_modules and scripts, so it typechecked a nested subproject (experiments/temporal-ab) that has its own package.json and its own @temporalio/* deps. That passes in a dev checkout whose node_modules was warmed by an install inside the subproject, and fails on every clean clone - which is exactly what a staging deploy is. Generalized rule: any directory with its own package.json must be in the root tsconfig's exclude, and needs its own tsconfig so it is not left untypechecked. A local build is not evidence a clean clone builds; clone to /tmp (NOT a worktree nested under the repo - Next.js infers the workspace root from the outermost lockfile and writes standalone to .next/standalone/<path>/<to>/<worktree>/server.js) and run npm ci + npm run build.
