@@ -679,3 +679,18 @@ Rules:
 - **Make the monitor fail closed.** The first version of this check resolved `pm2` from an inherited `PATH`. Under a reduced environment `pm2` was not found, every app fell through to "not serving", and the script exited **0 having checked nothing** — a monitor that reads green while covering zero apps, which is the exact failure class it was built to catch. Set `PATH` explicitly, verify each required binary up front, and treat "cannot enumerate targets" as a loud alert and a non-zero exit, never as an empty result set. Test this by running the monitor under `env -i`: if it exits 0 and reports nothing wrong, it is lying.
 
 **Generalize past deploys:** any failure that leaves a system serving *stale but valid* output is invisible to health checks — stale caches, a paused replica, a cron that stopped writing, an expired feed still serving its last good payload. Wherever correctness depends on data being *recent*, monitor recency explicitly; "it responded" is not evidence that it responded with *current* data.
+
+### Next.js standalone builds break inside a nested git worktree -- build deploy artifacts from the canonical checkout (2026-08-04)
+Observed 2026-08-04 in shopper. Working in a git worktree at .claude/worktrees/<name> (inside the repo, per the agent.md multi-edit rule), 'npm run build' compiled cleanly but its post-build step failed:
+
+  cp: cannot create directory '.next/standalone/.next/static': No such file or directory
+
+Cause: Next.js resolves its file-tracing root to the directory that owns node_modules -- the main repo checkout, not the worktree. So the standalone output is emitted at .next/standalone/.claude/worktrees/<name>/server.js instead of .next/standalone/server.js, and the build script's 'cp -r .next/static .next/standalone/.next/static' has no target directory.
+
+This is a layout artifact, not a code defect: the compile, typecheck and lint all pass, and the same commit builds cleanly (exit 0, static copy included) from the canonical checkout.
+
+Rules:
+- Use the worktree to EDIT and to run unit tests; do the deploy build from the canonical checkout after merging.
+- Do not read the cp failure as a broken build and start debugging next.config.ts. Check where server.js actually landed first: find .next/standalone -maxdepth 6 -name server.js
+- The /staging skill is unaffected because it clones fresh into /var/www/staging-<app> on the VM, which is a normal checkout.
+- rm -rf the worktree's .next when done, so a half-built tree is not mistaken for a deployable artifact.
