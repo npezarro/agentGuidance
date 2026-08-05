@@ -698,3 +698,17 @@ A monitor whose probe path crosses a home network, a WSL vNIC, and an SSH tunnel
 - A dead reverse tunnel fails in two stages: while `sshd` still holds the forwarded port open, connections are accepted and go nowhere (full client timeout, "relay timeout after 90000ms"); then fail fast once the stale listener is reaped ("relay unreachable: fetch failed"). Both messages in sequence is ONE outage, not two problems.
 
 **PM2 corollary:** a flat `restart_delay` against a genuinely unreachable host produced 48 restarts and several hundred log lines for one outage. Use `exp_backoff_restart_delay` instead. Source: page-watch relay outage, 2026-08-03.
+
+### Rate-limit gates must cover EVERY code path that triggers the limited resource (2026-08-04)
+
+A rate-limit/pacing budget that only guards the scheduled or primary code path is not a budget. Diagnostic commands, probe scripts, and debugging loops run in bursts — they hit the rate-limited resource hardest, at exactly the moments when the scheduled path should be conserved.
+
+Observed in travel-assistant chain-award collection: `pace.json` recorded only `run` calls. `probe` and hand-driven diagnostic loops bypassed the ledger. On two consecutive debug sessions, ~8 hyatt.com loads went through in minutes while the ledger showed 4. hyatt.com returns ZERO-LENGTH bodies after ~6 requests/hour — indistinguishable from "no availability", not an error. The data looked plausible while being wrong.
+
+Rules:
+1. **All code paths through a rate-limited resource must go through the same gate.** `run`, `probe`, interactive debugging loops, one-off fix scripts — route them all through `claimRequest()` / the shared gate. If it can hit the API, it must ask for a token first.
+2. **`--force` overrides the gate but STILL RECORDS.** An override must not also blind the ledger, or the next caller inherits a false picture of the request count.
+3. **Re-read the ledger on each iteration, never cache it.** A probe in another shell is invisible to a run that cached the count at startup.
+4. **A budget only one code path respects is not a budget.** Debugging is the path that most needs the gate — it is when one domain gets hit hardest and least evenly.
+
+Applies to any scraper, API client, or browser-automation tool with per-domain/per-hour/per-day request caps.

@@ -328,3 +328,19 @@ Rules:
 3. **These leaks are invisible in normal monitoring.** Each orphan held only ~1 MB RSS, so no memory alert ever fired; they were only found by `ps -o pid,etime` during an unrelated audit. Periodically sweep for long-lived `bash -c source .../shell-snapshots/` processes, which are the signature of a leaked agent Bash call.
 
 4. **The `claude` CLI ignores SIGTERM.** Reaping it needs a SIGTERM then SIGKILL escalation, which is the same reason `bridge-server.js` implements its own SIGTERM -> SIGKILL grace period rather than relying on spawn's `timeout` option.
+
+### Guards on model or vendor prose must match the wording family, not one literal (2026-08-05)
+
+When a guard parses text produced by a model, CLI, or vendor API (error messages, narration preambles, status strings), pinning it to one exact phrasing is a guard that silently expires the next time the vendor rewords.
+
+Observed twice in two days in different shopper subsystems:
+- **2026-08-03 (bridge):** Claude CLI usage-limit detection pinned to `/you've hit your limit/i`. CLI reworded to "your session limit"; the error sentence shipped as a completed guide.
+- **2026-08-04 (render layer):** `extractFixReport` matched two literals ("Here's the corrected guide:", "issues to fix"). The model said "Here are the issues I found:" and "Let me output the complete improved guide now." — same content, reworded — so the narration rendered at the top of the user's buying guide. Measuring the full corpus revealed this was never one bad job: 108 of 118 stored guides (92%) began with narration that slipped past the guard since it was written.
+
+Rules:
+1. **Match the wording FAMILY.** For model/vendor prose, enumerate the family of phrasings (optional qualifiers, synonyms, tense, first vs third person). Group patterns by family so a reword lands on a neighboring variant. A guard covering one literal is a guard that expires on the next model release.
+2. **Prompt instructions are a hint, not a control.** A prompt rule saying "do not start with narration" was ignored in 92% of cases. The deterministic post-processing guard is the load-bearing control; the prompt instruction is documentation of intent at best.
+3. **Measure the corpus before believing a guard works.** A guard with no counter looks correct forever. When you fix or add a guard, run it over all real production data (not just fixtures) and assert both recall and that no legitimate content was incorrectly caught.
+4. **Prefer a structural boundary plus a semantic signal over pure phrase matching.** The `extractFixReport` fix splits on the document's own first markdown heading (structure) once the text before it matches the narration family (semantics). This is robust to any rewording that preserves document shape.
+
+Note: `operational-safety.md` carries the same principle scoped to CLI usage-limit strings specifically. This rule generalises it to any guard on model/vendor output.
