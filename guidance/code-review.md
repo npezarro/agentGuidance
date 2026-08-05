@@ -319,3 +319,12 @@ Two process lessons, both cheap:
   - For any matching change, mechanically diff old vs new over a few hundred strings drawn from BOTH classes, rather than reasoning about which cases changed. The 22 losses were invisible to inspection and obvious to a diff.
 
 Related: this is the same family as pattern-like-escape-char-must-self-escape (matching-layer helper that looks right in isolation but is wrong against the real matcher semantics).
+
+### Enumerate every caller before claiming a configured limit is unreachable or dead config (2026-08-05)
+When you find that an interface cannot command some configured limit (a max, a cap, a timeout), the FIX is usually right, but the JUSTIFICATION "this parameter is dead, it can never bind" is a far stronger claim than the evidence normally supports. It holds only if every caller of the underlying model goes through the interface you happened to be looking at.
+
+Check it: grep for the parameter name AND for the model's entry point, then read each caller. A second path often reaches the limit already, typically an internal, scripted or replay path that passes RAW physical units while the public path passes normalized values. Scope the claim to the interface you actually verified ("unreachable through the public/normalized interface") rather than to the parameter.
+
+Seen 2026-08-05 in an RL environment: the normalized action space scaled a symmetric [-1,1] action by the acceleration limit on both signs, so the separately-modeled (larger) braking limit was unreachable for the agent-controlled entity. The commit message claimed the brake limit "could never bind"; a verifier found scripted non-agent entities reach the same kinematic model through a different, unnormalized code path and clamp against that limit several times per episode. The defect was real, the sweeping claim was not. A reviewer who knows about the other caller reads the overreach as evidence you did not look.
+
+Related numpy/array corollary: collapsing an elementwise expression to a Python scalar (float(x), int(x), .item()) purely to make a branch read nicely moves error detection UPSTREAM of the callee that validates shape, and replaces that callee's specific message with a generic conversion TypeError. Prefer a shape-agnostic elementwise form (np.where(cond, a, b)) so malformed input still reaches the validating callee and gets its real error.
