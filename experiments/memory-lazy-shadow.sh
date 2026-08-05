@@ -31,7 +31,7 @@ set -uo pipefail
 
 LOG="${MEMORY_LAZY_SHADOW_LOG:-$HOME/.claude/memory-lazy-shadow.jsonl}"
 CANDIDATES="${MEMORY_LAZY_CANDIDATES:-$HOME/.claude/memory-lazy-candidates.txt}"
-TOP_K="${MEMORY_LAZY_TOP_K:-3}"
+TOP_K="${MEMORY_LAZY_TOP_K:-2}"   # tightened from 3: a third-best guess was rarely the wanted one
 MIN_SCORE="${MEMORY_LAZY_MIN_SCORE:-2}"
 
 [ -f "$CANDIDATES" ] || exit 0
@@ -49,7 +49,7 @@ import json, os, re, sys, time
 log_path = os.environ["LOG"]
 cand_path = os.environ["CANDIDATES"]
 top_k = int(os.environ["TOP_K"])
-min_score = int(os.environ["MIN_SCORE"])
+min_score = float(os.environ["MIN_SCORE"])  # scores are now IDF-weighted floats
 
 raw = os.environ.get("HOOK_INPUT", "")
 try:
@@ -71,8 +71,54 @@ STOP = {
     "memory","md","claude",
 }
 
+TYPE_PREFIXES = ("project", "reference", "pattern", "feedback", "learning",
+                 "rule", "infra", "rollup", "user", "custom")
+
+
 def toks(s):
     return {t for t in re.split(r"[^a-z0-9]+", s.lower()) if len(t) > 3 and t not in STOP}
+
+
+def strip_prefix(name):
+    """Drop the memory-type prefix before tokenising.
+
+    Without this, `project` is a name token on 39 of the 45 candidates, so any
+    prompt containing the word 'project' scored +2 on nearly the whole set at
+    once. That one defect produced 15 of the first 24 shadow injections. The
+    prefix is a filing convention, never a topic.
+    """
+    for p in TYPE_PREFIXES:
+        if name.startswith(p + "_"):
+            return name[len(p) + 1:]
+    return name
+
+
+# Load candidates once and measure how many of them each token appears in. A
+# token common across the set says almost nothing about WHICH candidate is
+# relevant, so it is down-weighted, and dropped outright past a quarter of the
+# set. This re-derives from whatever the candidate set happens to be, instead
+# of a hand-kept stoplist that rots as memories are added.
+cands = []
+for line in open(cand_path, encoding="utf-8"):
+    line = line.rstrip("\n")
+    if not line or line.startswith("#"):
+        continue
+    name, _, hook = line.partition(": ")
+    bare = strip_prefix(name)
+    cands.append((name, toks(bare.replace("_", " ").replace("-", " ")), toks(hook), bare))
+
+df = {}
+for _, nt, ht, _ in cands:
+    for t in nt | ht:
+        df[t] = df.get(t, 0) + 1
+
+noise_ceiling = max(2, len(cands) // 4)   # in >25% of candidates = filing vocabulary
+
+
+def weight(t, base):
+    d = df.get(t, 1)
+    return 0.0 if d > noise_ceiling else base / (d ** 0.5)
+
 
 pt = toks(prompt)
 # Collapsed form catches names that fuse words the prompt separates
@@ -80,26 +126,25 @@ pt = toks(prompt)
 p_collapsed = re.sub(r"[^a-z0-9]", "", prompt.lower())
 
 scored = []
-for line in open(cand_path, encoding="utf-8"):
-    line = line.rstrip("\n")
-    if not line or line.startswith("#"):
-        continue
-    name, _, hook = line.partition(": ")
-    name_t = toks(name.replace("_", " ").replace("-", " "))
-    hook_t = toks(hook)
+for name, name_t, hook_t, bare in cands:
     # Name tokens are the strong signal; hook tokens are corroborating.
-    score = 2 * len(name_t & pt) + len(hook_t & pt)
-    stem = re.sub(r"[^a-z0-9]", "", name.lower())
-    for prefix in ("project", "reference", "pattern", "feedback", "learning", "rule", "infra", "rollup"):
-        if stem.startswith(prefix):
-            stem = stem[len(prefix):]
-            break
+    score = (sum(weight(t, 2.0) for t in name_t & pt)
+             + sum(weight(t, 1.0) for t in hook_t & pt))
+    stem = re.sub(r"[^a-z0-9]", "", bare)
     if len(stem) > 5 and stem in p_collapsed:
-        score += 3
+        score += 3.0                      # whole-name substring: high precision
     if score >= min_score:
-        scored.append((score, name))
+        scored.append((round(score, 2), name))
 
 scored.sort(reverse=True)
+# Relative-margin cut: when one candidate clearly wins, a much weaker runner-up
+# is a guess, not a second answer, and it costs tokens plus context noise to
+# show it. Self-tuning, unlike a hand-set stoplist of generic verbs, which is
+# what would otherwise be needed to stop "update the housing scout" from
+# dragging in reference_cc_wsl_update behind the obvious winner.
+if scored:
+    top = scored[0][0]
+    scored = [x for x in scored if x[0] >= 0.4 * top]
 hits = [{"name": n, "score": s} for s, n in scored[:top_k]]
 
 rec = {
