@@ -594,3 +594,33 @@ A housing/deal digest scanner computed a median as `sorted[Math.floor(len / 2)]`
 - Confirm the sort is numeric (`(a, b) => a - b`); `Array#sort`'s default is lexicographic, so `[90, 1000, 200]` sorts to `[1000, 200, 90]`.
 - Check whether the helper mutates its input (in-place `.sort()` on a caller's array is a common silent side effect).
 - If the statistic feeds a threshold or band, add a test at the DECISION level (does the item cross the gate?), not only at the helper level. That is the test that shows the bug matters.
+
+## A fix proven on one app's corpus is NOT proven for a sibling app
+
+Before sharing a module across sibling apps built from the same template, run it
+over the sibling's OWN stored production rows and read the diff by hand. "Same
+defect" does not mean "same data shape."
+
+2026-08-04, porting shopper's guide-preamble stripper to foodie/travel: the module
+was verified against shopper's full corpus (118 guides, 104 split, 0 content lost)
+and both siblings had the identical defect, so a verbatim copy looked obvious.
+Measured against their corpora it would have been actively harmful twice over.
+Recall: shopper's pattern list split only 20 of foodie's 46 guides, because
+"Here's the rundown" / "Got what I need" were never in shopper's wording.
+Precision, the worse half: shopper's preamble is pure editor monologue so peeling
+everything above the first heading is safe there, but foodie mixes narration and
+real content in ONE paragraph — the same peel buried a restaurant's permanent
+closure, the current time, stated assumptions, and travel's top-line
+recommendation.
+
+- **Audit precision, not just recall.** Recall is easy to eyeball ("did it fire?").
+  Precision means reading what got REMOVED. Here the split-rate went up while the
+  output got worse.
+- **Change the shared module and re-verify the original to parity**, rather than
+  forking it per app. shopper was held to byte-identical output, proven by
+  rendering all 61 shareable production guides on the old and new builds and
+  diffing them (61/61 identical).
+- **A guard that hides rather than deletes still needs this scrutiny.** "Nothing is
+  discarded, it just moves to a collapsed disclosure" is what made the coarse
+  version feel safe, and is exactly why the damage would have been invisible: the
+  page still renders, the tests still pass, nothing logs an error.
