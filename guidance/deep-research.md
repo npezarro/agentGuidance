@@ -143,3 +143,14 @@ Do NOT extrapolate, assume, or invent features that "seem like they should exist
 **Why this matters:** Fabricated features read as authoritative claims to a hiring panel, client, or stakeholder. When challenged, the error is harder to recover from than a knowledge gap. Real case: Netflix final-panel prep required a full ground-up rebuild after agents invented watch parties (not a Netflix feature), a 50% TV access target (no such target exists), and kids-profiles-with-games (false) — costing a full session.
 
 **Self-check before submitting any company-specific deliverable:** For each product claim, ask "where is the public source for this?" If you can't point to one, mark it as assumed or cut it. Reference the user's own words as the floor for what's in scope. Source: Netflix panel prep correction (2026-07-01), S199.
+
+### A successful WebFetch is not a faithful read: open the document when the answer is a specific limit (2026-08-05)
+WebFetch retrieves a page/PDF and then answers your prompt against it with a small fast model. That summarization step can fail SILENTLY and CONFIDENTLY on a document it read correctly - the retrieval succeeding tells you nothing about the answer being right.
+
+2026-08-05, car rental research: WebFetch on Amex's own Premium Car Rental Protection T&C PDF reported a 31-day coverage cap (the document says 42) and stated 'the document does not contain distinct California-specific pricing' (the document prints two explicit California price tiers). Both errors were material - the correct 42 days and the CA $17.95 price were the session's headline finding. Trusting the summary would have understated coverage by 11 days and lost the best number in the research.
+
+WHAT CAUGHT IT: the same vendor's FAQ, fetched two minutes earlier, said 42 days. **When two fetches of the same vendor's own material disagree, the likely explanation is a bad read, not an inconsistent vendor.** Do not average them or pick the more plausible one.
+
+THE RULE: when the answer you need is a specific number, cap, limit, price, date, or eligibility threshold, and the source is authoritative (a vendor's own terms, policy PDF, spec, or contract), do not stop at the WebFetch summary. WebFetch persists binary content to a local path - Read it directly (the `pages` param handles PDFs). One extra tool call.
+
+Distinct from the existing anti-patterns in this file: those cover WebFetch FAILING on blocked/SPA pages and sub-agents laundering search snippets. This is the harder case - a clean, plausible, wrong answer from a document that was genuinely fetched. There is no error signal to notice.
