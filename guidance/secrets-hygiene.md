@@ -311,3 +311,36 @@ Disconnecting but keeping the remote name is not sufficient — a remote still l
 6. **Restore gitignored files** — `.env` files, caches, and state files are wiped by history rewrites and hard resets; re-deploy them to all machines
 7. **Re-verify functionality** — run every affected script on every machine (local + VM); don't trust syntax checks alone
 8. **Check GitHub cache** — PRs, issues, and cached pages may still show the secret
+
+## Never interpolate a credential into a log line, even to report presence
+
+`${VAR:+yes}${VAR:-no}` looks like a boolean and is not:
+
+- `${VAR:+yes}` → `yes` when set
+- `${VAR:-no}` → **the value of VAR** when set; `no` only when UNSET
+
+So when the variable IS set, the pair prints `yes<THE ACTUAL VALUE>`. Written to
+report "is this configured?", it prints the secret.
+
+Bit on 2026-08-05 in a cron wrapper: it echoed `BROWSER_AGENT_KEY` and
+`CRON_SECRET` into a transcript, and the same line would have written both into
+a persistent log file on any partial-config run. Both required rotation.
+
+```bash
+# WRONG -- prints the value when set
+log "key: ${API_KEY:+yes}${API_KEY:-no}"
+
+# RIGHT -- compute the boolean first
+have() { [ -n "${1:-}" ] && echo yes || echo no; }
+log "key: $(have "${API_KEY:-}")"
+```
+
+**Verify with a sentinel, not by eye.** The bug is invisible on a line that
+reads correctly:
+
+```bash
+API_KEY="SENTINEL123" ; <the log line> | grep -q SENTINEL123 && echo "LEAKS"
+```
+
+This generalises: presence is a boolean, so compute the boolean and log that.
+A credential variable should never appear inside a format string at all.
