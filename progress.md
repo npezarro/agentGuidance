@@ -15,6 +15,8 @@
 
 ## Log
 
+2026-08-05 | guidance | `deep-research.md`: a successful WebFetch is not a faithful read — its summarization step failed silently on Amex's own PCRP T&C PDF (reported 31-day cap vs the actual 42; claimed no CA pricing when two CA tiers are printed). Caught by contradiction with the same vendor's FAQ. Rule: for a specific number/cap/price/threshold from an authoritative source, `Read` the document rather than trusting the summary (`f7ace29`)
+
 2026-08-03 | refactor | `agent.md` 99 -> 44 lines: guidance index externalized to a generated `guidance/INDEX.md` + own SessionStart hook; 9 zero-read files demoted via a `COLD` set (`9912986`)
 2026-08-03 | fix | `gen-manifest.sh` scanned only line 1 for the `Load when:` header, misreporting `browser-page-reader.md` as MISSING; now scans 5 lines and emits both artifacts (`9912986`)
 2026-08-03 | guidance | `prior-work-lookup.md` section 7 "Usage Mining": measuring real file reads from session logs, and the self-contamination trap that makes the naive grep lie
