@@ -82,11 +82,20 @@ for line in open(args.log, encoding="utf-8"):
         would[sid].add(h["name"])
 
 # --- what sessions actually opened ----------------------------------------
+# NOTE (2026-08-05): a previous pass tried to add "the harness auto-recalled it
+# into a system-reminder" as a second usage channel. That was an ARTIFACT and is
+# deliberately not here. 91 of 99 matching reminder blocks were inside
+# "type":"tool_result" — they are the staleness notice appended to a Read, and
+# the memory names inside them are the read file's own [[wikilinks]], not
+# independent evidence that another memory was wanted. Acting on it wrongly
+# excluded 7 entries from the candidate set. A Read is the usage signal.
 opened = collections.defaultdict(set)
+resolved = 0
 for path in glob.glob(f"{HOME}/.claude/projects/*/*.jsonl"):
     sid = os.path.basename(path)[:-6]
     if sid not in would:
         continue                     # only sessions the shadow log observed
+    resolved += 1
     try:
         with open(path, errors="ignore") as fh:
             for line in fh:
@@ -129,6 +138,13 @@ for sid, names in opened.items():
             hit += 1
         else:
             missed.append((sid[:8], n, sess_cwd.get(sid, "")[:40]))
+# A broken join and genuine no-demand both render as "0 opportunities" and imply
+# OPPOSITE decisions, so join health is reported rather than assumed.
+join_rate = resolved / len(would) if would else 0
+print(f"  sessions observed: {len(would)}, transcripts resolved: {resolved}"
+      f" ({join_rate*100:.0f}%)"
+      + ("   *** JOIN LOOKS BROKEN — the 0 below is NOT evidence of no demand ***"
+         if would and join_rate < 0.5 else ""))
 if opp == 0:
     print("  0 opportunities: no observed session opened any memory file yet.")
     print("  Keep collecting. ~3.7% of sessions historically open one, so expect")
