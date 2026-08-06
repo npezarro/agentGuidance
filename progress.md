@@ -159,3 +159,23 @@
   rather than bypassed, since this repo is public.
 
 Full closeout: privateContext/deliverables/closeouts/2026-08-05-vm-disk-reclamation-runeval-outage-pnpm-migration.md
+
+## 2026-08-05 — public-readiness checklist in repo-creation.md
+
+`a395770` added a public-readiness section to `guidance/repo-creation.md`: before calling a repo
+shareable, audit the DEPENDENCY CLOSURE, not just for secrets.
+
+- Prompted by claude-tray-notifier, which was public, history-clean, fully tested and CI-green,
+  and still unusable by a stranger: it hard-required a relay server that only exists in a private
+  repo, and the README's setup steps never named the config file selecting it.
+- Seven checks: dependency closure, docs-vs-code (validate snippets against a known-working live
+  example, not memory), LICENSE (absent on a public repo = all rights reserved), secrets in tree
+  AND history, fork CI (skip on no secrets, error on partial), distribution/signing, internal docs
+  (untrack context.md/progress.md but add a tracked public-safe CLAUDE.md, or the repo loses its
+  only orientation doc).
+- Test the unconfigured default path with HOME/env isolated, or the owner's dotfiles supply the
+  private config and it passes for the wrong reason.
+
+Full procedure lives in the `public-readiness-audit` skill.
+
+Full closeout: privateContext/deliverables/closeouts/2026-08-05-claude-tray-notifier-public-readiness.md
