@@ -707,3 +707,22 @@ How to apply:
 4. Diagnose a partial Next.js build with `cat .next/diagnostics/*` - it records {"buildStage": "..."} for the last stage entered, so it names where the build stopped (type-checking, static-generation, ...) without re-running anything.
 
 Root cause in this instance: buildStage was 'type-checking'. The root tsconfig.json included **/*.ts and excluded only node_modules and scripts, so it typechecked a nested subproject (experiments/temporal-ab) that has its own package.json and its own @temporalio/* deps. That passes in a dev checkout whose node_modules was warmed by an install inside the subproject, and fails on every clean clone - which is exactly what a staging deploy is. Generalized rule: any directory with its own package.json must be in the root tsconfig's exclude, and needs its own tsconfig so it is not left untypechecked. A local build is not evidence a clean clone builds; clone to /tmp (NOT a worktree nested under the repo - Next.js infers the workspace root from the outermost lockfile and writes standalone to .next/standalone/<path>/<to>/<worktree>/server.js) and run npm ci + npm run build.
+
+## PM2 cannot load an ESM `ecosystem.config.js` (2026-08-05)
+
+A repo with `"type": "module"` makes `ecosystem.config.js` an ES module, which PM2's config
+loader cannot parse. It fails as:
+
+```
+[PM2][ERROR] Error: No script path - aborting
+```
+
+That reads like a malformed config (a missing `script` key), so the obvious response is to
+check the `script` field, which is present and correct. Fix: name the file
+`ecosystem.config.cjs` with `module.exports`, forcing CommonJS regardless of package type.
+
+Note `auth-proxy` carries the same broken ESM file on the VM and has never been affected,
+because it was started by explicit script path (`pm2 start server.js`). Its ecosystem file
+has therefore never been exercised: **an ecosystem file that is never loaded looks
+identical to one that works.** Do not treat "the other service has this same file" as
+evidence the format is fine.

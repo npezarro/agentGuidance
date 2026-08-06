@@ -624,3 +624,22 @@ recommendation.
   discarded, it just moves to a collapsed disclosure" is what made the coarse
   version feel safe, and is exactly why the damage would have been invisible: the
   page still renders, the tests still pass, nothing logs an error.
+
+## A hand-built fixture never tests the loader (2026-08-05)
+
+When a config file gains a field, add at least one test that goes through the **real
+loader**: write a temp config, load it, assert the consumer sees the value. Testing the
+consumer with a hand-built object leaves the plumbing completely uncovered.
+
+billing's `plans.json` gained a top-level `upgradePlan`. `validatePlans()` destructured it,
+validated it, then returned `{plans, defaultPlan}` **without it**. Every app therefore saw
+`undefined` and no upgrade button rendered anywhere in production. All four unit tests for
+the feature were green throughout, because each constructed the catalog object literally
+and handed it to the pure resolver, so nothing ever called the loader. The defect lived
+exactly in the seam the tests skipped, and it was found by curling the live endpoint after
+deploying.
+
+This generalises to any parse/validate/transform layer. A dropped field is invisible to
+both the unit suite (which never runs the transform) and the type checker (the object is
+still structurally valid, just missing an optional property). At least one test must cross
+the boundary.
