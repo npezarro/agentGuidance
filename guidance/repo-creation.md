@@ -60,3 +60,21 @@ Add repo-specific patterns on top (e.g., `*.db`, `*.sqlite`, build outputs, log 
 After creating the repo:
 1. Add it to `~/repos/autonomousDev/config.json` repos list (if it should be scanned by learning-agent and auto-dev)
 2. Ensure `context.md` and `progress.md` exist (use templates from `agentGuidance/templates/`)
+
+### Public-readiness is two questions: safe to be public, and usable by a stranger (2026-08-05)
+Before calling a repo shareable, audit the DEPENDENCY CLOSURE, not just for secrets. A repo can be free of secrets, fully tested, CI-green, and still unusable by anyone but its author because a required piece of its runtime lives in a private repo or on a private host.
+
+Found 2026-08-05 on claude-tray-notifier (public since creation, history clean): a fresh clone installed and then did nothing forever, because the app required a relay server that only exists in a private repo, and the README's setup steps never mentioned the config file selecting it. The README's hook snippet also used a schema the consumer rejects, so the documented path had never worked.
+
+Checklist when asked 'is this ready to share':
+1. Dependency closure — what does a fresh clone talk to at runtime? Is each thing's implementation in this repo? A half-built local/offline path often already exists ('for testing') and making it the DEFAULT is smaller than extracting the private component.
+2. Docs vs code — follow the README literally. Does every config the code reads appear in setup? Validate snippets against a known-working live example, not memory.
+3. LICENSE — absent on a public repo means all rights reserved, which makes every other fix moot.
+4. Secrets in tree AND history.
+5. Fork CI — publish/deploy steps should skip with a warning when ALL their secrets are absent, but still error when SOME are set.
+6. Distribution — unsigned binaries are quarantined everywhere but the build machine.
+7. Internal docs — untrack context.md/progress.md, but add a tracked public-safe CLAUDE.md or you remove the repo's only orientation doc.
+
+Test the unconfigured default path with HOME/env isolated, or the owner's dotfiles supply the private config and it passes for the wrong reason.
+
+Full procedure: public-readiness-audit skill.
