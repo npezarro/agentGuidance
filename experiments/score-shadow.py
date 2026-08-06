@@ -59,6 +59,7 @@ def is_headless(cwd):
 
 
 # --- what the retriever would have surfaced -------------------------------
+rigs = collections.Counter()
 would = collections.defaultdict(set)          # session -> {names}
 seg = {"interactive": collections.Counter(), "headless": collections.Counter()}
 sess_cwd = {}
@@ -69,6 +70,7 @@ for line in open(args.log, encoding="utf-8"):
         continue
     if r.get("ts", 0) < since_ts:
         continue
+    rigs[r.get("rig", "unstamped")] += 1
     k = "headless" if is_headless(r.get("cwd")) else "interactive"
     sid = r.get("session", "")
     sess_cwd[sid] = r.get("cwd", "")
@@ -108,6 +110,16 @@ for path in glob.glob(f"{HOME}/.claude/projects/*/*.jsonl"):
         continue
 
 # --- report ----------------------------------------------------------------
+if len(rigs) > 1:
+    print("!" * 66)
+    print("MIXED RIG VERSIONS IN THIS LOG — the numbers below average across")
+    print("configurations that are not comparable. Do not decide from them.")
+    for r_, n_ in rigs.most_common():
+        print(f"   {r_}: {n_} records")
+    print("Reset the log (archive it) and collect under one frozen rig.")
+    print("!" * 66)
+    print()
+
 print("=" * 66)
 print("COST — what the lazy tier would inject (candidate subset only)")
 print("=" * 66)

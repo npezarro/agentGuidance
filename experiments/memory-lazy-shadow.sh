@@ -46,7 +46,7 @@ input="$(cat)" || exit 0
 # The payload goes in by ENV, not stdin: stdin is already carrying the python
 # script via the heredoc, and a second redirection would silently feed the JSON
 # in as the program text.
-HOOK_INPUT="$input" LOG="$LOG" CANDIDATES="$CANDIDATES" INDEX_SET="$INDEX_SET" TOP_K="$TOP_K" MIN_SCORE="$MIN_SCORE" \
+RIG_SRC="${BASH_SOURCE[0]:-$0}" HOOK_INPUT="$input" LOG="$LOG" CANDIDATES="$CANDIDATES" INDEX_SET="$INDEX_SET" TOP_K="$TOP_K" MIN_SCORE="$MIN_SCORE" \
 python3 - <<'PY' 2>/dev/null || exit 0
 import json, os, re, sys, time
 
@@ -157,7 +157,29 @@ if scored:
     scored = [x for x in scored if x[0] >= 0.4 * top]
 hits = [{"name": n, "score": s, "cand": n in cand_names} for s, n in scored[:top_k]]
 
+# RIG VERSION STAMP. Every record carries a fingerprint of the configuration
+# that produced it: matcher source, scoring set, candidate set, and thresholds.
+# Without this, changing the rig silently mixes incompatible records into one
+# log and the scorer averages across them. That is not hypothetical: on
+# 2026-08-05 this log accumulated records under four configurations in a single
+# day and produced a 0% recall figure that was an artifact of the mixing, not a
+# property of the retriever. A stamp makes that visible instead of invisible.
+import hashlib
+_h = hashlib.sha256()
+try:
+    _h.update(open(os.environ["RIG_SRC"], "rb").read())   # the matcher itself
+except (OSError, KeyError):
+    pass
+for _p in (index_path, cand_path):
+    try:
+        _h.update(open(_p, "rb").read())
+    except OSError:
+        pass
+_h.update(f"{top_k}|{min_score}".encode())
+rig = _h.hexdigest()[:12]
+
 rec = {
+    "rig": rig,
     "ts": int(time.time()),
     "session": session,
     "cwd": cwd,
