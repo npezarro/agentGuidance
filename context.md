@@ -167,3 +167,39 @@ Full closeout: `privateContext/deliverables/closeouts/2026-08-02-three-followups
 - Generalisable diagnostic: when a long script has an unexplained silent partial effect, suspect a mid-script non-zero exit before suspecting logic, and use a frozen end-of-script state file as the cheapest proof of where it died.
 - Committed `3a33fe9` via `propagate-learning.sh`. Paired memory: `pattern_set_e_kills_script_at_git_symbolic_ref`.
 - State: guidance current. Full closeout: privateContext/deliverables/closeouts/2026-08-05-run-ledger-and-temporal-ab.md
+
+## 2026-08-05 — Memory index format normalisation + the xp-001 shadow rig
+- **Shipped, free win.** `hooks/compact-memory-index.sh` now normalises index format rather than only
+  capping line length: `- [name.md](name.md) — hook` becomes `name: hook`. The link syntax paid for
+  every filename twice and bought nothing (the harness reads the index, it never renders it).
+  Primary index **5,266 -> 2,635 tokens**; three indexes 39,762 -> 22,940 bytes. Zero entries lost,
+  two orphaned entries recovered. `scripts/propagate-learning.sh` writes the compact format at both
+  append sites, closing the write path. The normalizer is idempotent, so it absorbs drift the
+  harness reintroduces.
+- **The trap in that change:** the first draft took the markdown link *text*. Two entries had a prose
+  title as text and the real filename only in the target, so taking text would have pointed those
+  index lines at files that do not exist — a memory that silently stops working, not one that
+  errors. **Always resolve names against the filesystem before rewriting an index.**
+- **Hook scoping is deliberate.** Hook mode heals only the current session's project index so one
+  session is not spammed with an unrelated project's prune warning; other indexes self-heal on their
+  next session there. `--check` audits every index on the machine, read-only.
+- **Not shipped, under test.** Demoting the 46 never-read `project_`/`reference_` entries to an
+  on-demand tier is a recall bet, so it sits behind xp-001 (readout 2026-08-19). The rig lives in
+  `experiments/`: a silent `UserPromptSubmit` hook that logs what it *would* have injected and never
+  logs prompt text.
+- **RIG FROZEN at `54893c36fdbd`. Do not modify anything in `experiments/` before the readout.** Every
+  record carries a sha256 of the matcher source + scoring set + candidate set + thresholds, and
+  `score-shadow.py` refuses to average across versions. This was forced: the rig changed four times
+  in one day and silently mixed incompatible records, producing a "0% recall" reading that was an
+  artifact. If a change is genuinely needed, archive the log and restart the window.
+- **Two rig-design lessons worth reusing:** (1) a metric can be unmeasurable *by construction* —
+  candidates selected for zero reads, then scored on reads, gives 0.00 expected observations;
+  (2) the rig is a system too and fails the same ways the thing it measures does. A mid-audit
+  "discovery" of a second demand signal turned out to be a read file's own `[[wikilinks]]` echoed
+  back inside `tool_result` staleness notices, i.e. a correlation with my own reads.
+- **Known unresolved:** long sessions log fewer prompts than they contain; short sessions log all of
+  them. Four controls each came back clean or confounded. Accepted rather than fixed, because the
+  effort had already exceeded the ~524 tokens under test.
+- **State: compaction working and self-maintaining; experiment running, 153 records, 0.69
+  injections/prompt against a 1.0 ceiling.** Full closeout:
+  `privateContext/deliverables/closeouts/2026-08-07-memory-index-compaction-and-experiment-registry.md`

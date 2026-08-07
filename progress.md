@@ -9,6 +9,12 @@
 > - Never include secrets, credentials, or .env contents
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
+- 2026-08-07 | experiment | xp-001 verification pass: confirmed nothing regenerates the rig's input files (no cron, no hook on `build-lazy-candidates.py`), all 153 shadow records carry one rig hash, and scoring-set drift is already excluded from the recall denominator. Matcher stable across a 7x larger sample: 0.67 -> 0.69 injections/prompt against a 1.0 ceiling. No rig changes. Full closeout: privateContext/deliverables/closeouts/2026-08-07-memory-index-compaction-and-experiment-registry.md
+
+- 2026-08-05 | hooks | `compact-memory-index.sh` rewritten to normalise index format (`- [name.md](name.md) — hook` -> `name: hook`) instead of only capping line length; evicts demotion comments to `INDEX-LAZY.md`, emits a format header, idempotent against harness drift. Primary index 5,266 -> 2,635 tokens; three indexes 39,762 -> 22,940 bytes, zero entries lost, two orphaned entries recovered. `propagate-learning.sh` updated at both append sites to close the write path (8778d0f)
+
+- 2026-08-05 | experiment | xp-001 shadow rig for the memory lazy-tier decision: `experiments/{build-lazy-candidates.py,memory-lazy-shadow.sh,score-shadow.py,xp001-progress.sh}`. Silent `UserPromptSubmit` hook, never logs prompt text. Corrections: type-prefix scoring defect + IDF weighting (dbc5e6e, 1.26 -> 0.67 injections/prompt), metric redesign after the original proved unmeasurable by construction (22fb170), post-freeze entries excluded from the denominator (b2bea6e), join-health reporting (a34294f), rig version stamping (ca005ed). RIG FROZEN at 54893c36fdbd; readout 2026-08-19
+
 - 2026-08-03 | guidance | browser-page-reader.md: add `--real-chrome` escalation (DataDome `hard_block` on headless Chromium vs auto-solving `device_check_invisible` on real headed Chrome), correct the stale "use the Playwright MCP" pointer (no such MCP exists here), and add a "Driving a form" section with the five silent-failure traps: blocking interstitials, no-op steps needing a screenshot, datepickers that ignore typed text, prefilled-but-unresolved location fields, and duplicate desktop/mobile ids (aeba4e8)
 
 - 2026-08-03: merged PRs #282, #319, #305 (union merges on guidance/mcp-tools.md and 6 other guidance files); sanitized 3 identifier leaks in branch content.
