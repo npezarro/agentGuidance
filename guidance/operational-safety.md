@@ -646,3 +646,15 @@ Rules:
 5. Alert text is part of the fix. An alert naming the wrong remedy trains the operator to distrust the alert.
 
 Applies to any watchdog: PM2 restarts, container recreates, auth refreshers, stale-job requeues.
+
+### A retry cap must not be spent on an infrastructure outage (2026-08-07)
+A bounded-retry recovery loop (MAX_ATTEMPTS, cron every N minutes) permanently kills every in-flight job when the dependency is down longer than cap x interval. The attempts are consumed against a dead socket, and once a row is at the cap the recovery SELECTs exclude it forever - so the work stays dead long after the dependency recovers, and nothing ever retries it.
+
+Hit 2026-08-07: the pezant Docker bridge fleet was down ~18:15-19:14 UTC. foodie recovery runs every 5 min with MAX_ATTEMPTS=2, so both attempts were spent inside the first ten minutes of a ~60-minute outage. Search #50 was dead for 5 hours with a useless error until a human reported it.
+
+The distinction that fixes it: a CONNECTION-level failure (ECONNREFUSED/ENOTFOUND/ECONNRESET/socket hang up) is a statement about the infrastructure, not a verdict on the job. A failure returned BY the dependency (bad response, timeout while it was answering) is a verdict on the job and must still count.
+
+How to apply:
+1. Preflight the dependency (GET /health) before the run counts an attempt, resets a status, or posts an alert. During an outage the whole run becomes a silent no-op - which also stops the every-5-minutes alert spam that trains people to ignore it.
+2. In the catch, refund the attempt on a connection-level error and restore the row prior status, so the next run retries it. Bound it with the existing age window (e.g. 24h) rather than the attempt cap.
+3. Test the decisive property directly: run N consecutive recovery passes against a CLOSED PORT and assert the row is still retryable afterwards. A single-pass test passes on the broken version too.
