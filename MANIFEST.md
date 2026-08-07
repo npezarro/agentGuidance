@@ -15,7 +15,7 @@ Every operational function has exactly one canonical source. If you need to find
 ## Guidance Files (generated)
 
 <!-- BEGIN GENERATED guidance table (scripts/gen-manifest.sh) -->
-45 guidance files (36 indexed at SessionStart via `guidance/INDEX.md`, 9 cold). Descriptions come from each file's "Load when:" header.
+46 guidance files (37 indexed at SessionStart via `guidance/INDEX.md`, 9 cold). Descriptions come from each file's "Load when:" header.
 
 | File | Load when |
 |---|---|
@@ -42,6 +42,7 @@ Every operational function has exactly one canonical source. If you need to find
 | `guidance/literature-search.md` | a claim is scientific/medical/technical and primary literature would settle it better than web search |
 | `guidance/local-worker-bridge.md` | local worker bridge post-mortem |
 | `guidance/mcp-tools.md` | MCP tool provider selection (Claude AI vs piotr google-drive) |
+| `guidance/measurement-windows.md` | auditing a logger/collector's coverage, or a metric whose denominator comes from a different source than its numerator |
 | `guidance/multi-session.md` | continuity checklist and `--refresh` command _(cold: not indexed at SessionStart)_ |
 | `guidance/operational-safety.md` | self-deploy loops, restart storms, hook loops |
 | `guidance/opus-fable-parity.md` | validated instruction layer closing the Opus 4.8 -> Fable 5 behavioral gap; inject into Opus pipelines needing Fable-grade rigor (requires >=45-turn budget) |
