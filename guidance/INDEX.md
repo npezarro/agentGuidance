@@ -21,6 +21,7 @@ Load on-demand based on the current task:
 - `guidance/literature-search.md` -- a claim is scientific/medical/technical and primary literature would settle it better than web search
 - `guidance/local-worker-bridge.md` -- local worker bridge post-mortem
 - `guidance/mcp-tools.md` -- MCP tool provider selection (Claude AI vs piotr google-drive)
+- `guidance/measurement-windows.md` -- auditing a logger/collector's coverage, or a metric whose denominator comes from a different source than its numerator
 - `guidance/operational-safety.md` -- self-deploy loops, restart storms, hook loops
 - `guidance/opus-fable-parity.md` -- validated instruction layer closing the Opus 4.8 -> Fable 5 behavioral gap; inject into Opus pipelines needing Fable-grade rigor (requires >=45-turn budget)
 - `guidance/prior-work-lookup.md` -- finding past conversations and prior work
