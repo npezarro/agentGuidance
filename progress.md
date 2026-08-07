@@ -9,6 +9,8 @@
 > - Never include secrets, credentials, or .env contents
 > - Format: `YYYY-MM-DD | <type> | <description>`
 
+- 2026-08-07 | guidance | `guidance/testing.md`: shell alert paths need a real bound listener, not a `curl` stubbed on PATH (every cron-safe script prepends `/usr/bin`, so the system binary wins and the suite records zero alerts, reading as "suppression works" — the first `claude-auth-probe.sh` harness passed 5/5 while observing nothing). Adds the port-0 sink pattern, the `env -i` cron-PATH case, the state-file upgrade-path case, and why `curl ... || true` is untestable and unsafe (72b789e)
+
 - 2026-08-07 | experiment | xp-001 verification pass: confirmed nothing regenerates the rig's input files (no cron, no hook on `build-lazy-candidates.py`), all 153 shadow records carry one rig hash, and scoring-set drift is already excluded from the recall denominator. Matcher stable across a 7x larger sample: 0.67 -> 0.69 injections/prompt against a 1.0 ceiling. No rig changes. Full closeout: privateContext/deliverables/closeouts/2026-08-07-memory-index-compaction-and-experiment-registry.md
 
 - 2026-08-05 | hooks | `compact-memory-index.sh` rewritten to normalise index format (`- [name.md](name.md) — hook` -> `name: hook`) instead of only capping line length; evicts demotion comments to `INDEX-LAZY.md`, emits a format header, idempotent against harness drift. Primary index 5,266 -> 2,635 tokens; three indexes 39,762 -> 22,940 bytes, zero entries lost, two orphaned entries recovered. `propagate-learning.sh` updated at both append sites to close the write path (8778d0f)
