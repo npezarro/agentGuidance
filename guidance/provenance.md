@@ -168,13 +168,13 @@ On 2026-08-07 two independent Claude jobs both registered for a Riverside County
 
 and both wrote 'No Riverside account exists' into a committed deliverable. Both were wrong. RCLS emailed the card that evening: barcode PACREG3113995.
 
-WHY: Polaris self-registration () issues a **PACREG-prefixed barcode** as the account credential. The username field on the form is optional/deferred — the Polaris logon page carries a separate 'Create Username' link right next to the input, which is the tell. So the username may simply never exist, and a username login failing says nothing at all about whether the patron record was created.
+WHY: Polaris self-registration (/polaris/patronaccount/selfregister.aspx) issues a **PACREG-prefixed barcode** as the account credential. The username field on the form is optional/deferred — the Polaris logon page carries a separate 'Create Username' link right next to the input, which is the tell. So the username may simply never exist, and a username login failing says nothing at all about whether the patron record was created.
 
-WHAT MADE IT WORSE: the same environment's own notes from the previous day already had the correct recipe — the San Bernardino County card (same Polaris vendor) was login-verified with barcode , not a username. The pattern was on file and was not applied.
+WHAT MADE IT WORSE: the same environment's own notes from the previous day already had the correct recipe — the San Bernardino County card (same Polaris vendor) was login-verified with barcode PACREG3051369, not a username. The pattern was on file and was not applied.
 
 RULES:
 1. After a Polaris self-registration, verify with the BARCODE. If you do not have the barcode, the outcome is UNKNOWN — write UNKNOWN, not FAILED.
-2. Navigation to  after submit is a positive signal; do not override it with a username-login failure.
+2. Navigation to /polaris/message.aspx after submit is a positive signal; do not override it with a username-login failure.
 3. The confirmation barcode often arrives by EMAIL minutes-to-hours later. Register with an inbox you can actually read, or the outcome stays unverifiable. (Here Riverside was registered under an alt address that this environment cannot read, so even the PIN reset had to be handed back to the user.)
 4. Generic 'invalid username or card # and PIN' messages are deliberately ambiguous between 'no such account', 'wrong identifier type' and 'wrong PIN'. Never resolve that ambiguity in the direction of a strong negative claim.
 
