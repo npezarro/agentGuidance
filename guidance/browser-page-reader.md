@@ -332,3 +332,14 @@ Observed 2026-08-03: https://www.kayak.com/cars/West-Covina,CA/2026-08-10/2026-0
 Rule: after loading any aggregator search page headlessly, ALWAYS grep the rendered output for the echoed location string in the search form and confirm it matches the intended city BEFORE reading any price off the page. If it does not match, discard the numbers rather than adjusting them. A wrong-city page does not error, does not warn, and looks exactly like a right-city page.
 
 Corollary for scraped business directories (cmac.ws, loc8nearme, superpages, yellowpages): treat a branch address or phone found only in a scraped directory as an unconfirmed lead. Verify it against the brand's own location index or location API before repeating it as fact. Same session produced a phantom 'Enterprise at 2016 E Garvey Ave S, (626) 974-7984' from cmac.ws that does not exist; the phone was one digit-group off a real nearby branch, the signature of a scrape transcription error.
+
+### After a form POST, browser-agent content-script text/state can serve STALE page content; confirm with cdp-eval before declaring a submit failed (2026-08-07)
+Symptom: you click a form's submit control, then `browser-cli text <tab>` still shows the blank registration form, so you conclude the click missed and you re-submit.
+
+What is actually happening: the content-script snapshot (text/state/read) can lag the rendered page after a navigation triggered by a POST. On 2026-08-07 both the Monterey County (Aspen Discovery) and Sunnyvale (Innovative Millennium) library forms had ALREADY rendered their confirmation page — with the issued card number on it — while `text` was still returning the pre-submit form.
+
+Cost of the mistake: a duplicate submission. Monterey returned 'Could not create your account. A patron record matching these details already exists', which is a benign outcome only because the vendor de-duplicates. On a system without duplicate detection you would create two patron records.
+
+Fix: after any submit, read the page with `browser-cli cdp-eval 'document.body.innerText.slice(0,600)' <tabIdOrUrl>`. CDP reads the live DOM and showed the real confirmation text immediately in both cases. Only conclude 'the submit did nothing' after a CDP read agrees.
+
+Related gotcha found the same session: `browser-cli click` only treats an argument as a CSS selector when it starts with '#' or '.'. Passing 'input[value=Submit]' or 'button.btn-primary' is treated as link TEXT, fails to match, and then falls through to CDP — which errors with 'Another debugger is already attached' if a CDP command is in flight. Use an id/class selector, or submit via cdp-eval.
