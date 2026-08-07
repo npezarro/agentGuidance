@@ -643,3 +643,14 @@ This generalises to any parse/validate/transform layer. A dropped field is invis
 both the unit suite (which never runs the transform) and the type checker (the object is
 still structurally valid, just missing an optional property). At least one test must cross
 the boundary.
+
+### A measurement rig fails the same ways the thing it measures does; check it is measurable BY CONSTRUCTION before collecting (2026-08-07)
+Two failures from xp-001 (memory lazy-tier test, 2026-08-05), both in the rig rather than the subject.
+
+1. UNMEASURABLE BY CONSTRUCTION. Candidates were selected for 'never read in 4,225 sessions', then the metric was 'recall on reads'. Expected observations in the 14-day window: 0.00. Two weeks of empty logs would have read as 'the retriever is safe' when all it proves is that you picked entries nothing reads. Before collecting, compute the EXPECTED number of observations under the null. If it rounds to zero, the metric is decoration.
+
+2. THE RIG IS A SYSTEM TOO. Mid-audit I 'discovered' a second demand signal that seemed to justify cutting the candidate set, and had already applied the cut before running a control. The control killed it: 91 of 99 matching system-reminder blocks were inside tool_result, i.e. a read file's own [[wikilinks]] echoed back in a staleness notice. It was a correlation with my own reads. Related: pattern_index_contaminates_own_usage_measurement.
+
+CONSEQUENCE: version-stamp the rig. Hash the matcher source + input sets + thresholds into every record, and make the scorer REFUSE to average across versions rather than silently mixing them. Without this, xp-001's rig changed 4x in one day and produced a '0% recall' artifact; the then-current matcher fired correctly on the exact prompt it was scored as missing.
+
+PROPORTIONALITY: stop when rig effort exceeds the prize. xp-001 measures ~524 tokens; the un-measured format normalisation shipped alongside it banked ~2,631. Somewhere around the third rig correction, 'let it collect and read it once' beats a fifth fix.
