@@ -344,3 +344,18 @@ API_KEY="SENTINEL123" ; <the log line> | grep -q SENTINEL123 && echo "LEAKS"
 
 This generalises: presence is a boolean, so compute the boolean and log that.
 A credential variable should never appear inside a format string at all.
+
+### A blocking gate with no write-time counterpart guarantees a backlog of unpublishable files (2026-08-07)
+A secret/identifier gate that only BLOCKS, with nothing that REDACTS at write time, does not prevent leaks: it converts them into a growing pile of files that can never be committed. wordpressPosts reached 29 stuck posts this way (2026-08-07), and the generator kept adding more every session.
+
+Three failure modes, all of which have to be fixed together:
+
+1. **No redactor.** security-scan.sh decided what was blocked but nothing decided what content should be replaced WITH. Fix: privateContext/redact-identifiers.sh reads the same sensitive-identifiers.md, so the gate and the redactor cannot drift into "redacted but still blocked". Invariant worth testing: every pattern in Machine-Parseable Patterns has a Redaction Replacements entry.
+
+2. **Swallowed failure.** The generator ran `git commit ... 2>/dev/null || true`. Every gate rejection was discarded, so the backlog grew invisibly for five days. A gated write must log its rejection somewhere a human or agent will see it.
+
+3. **Shared index.** The hook ran `git add` then a bare `git commit`, so one dirty file blocked every other session committing in the same checkout. Fix: `git add -- <path>` followed by `git commit -- <path>`. A path-limited commit builds a temporary index, so the pre-commit hook sees only that path and a peer commits work is neither swept in nor blocking. Verified by test.
+
+Corollary for allowlists: a `.security-scan-allow` file is itself scanned. Explaining an exemption by naming the other blocked identifiers makes the allowlist uncommittable. Describe them ("its hostname, IP and deploy paths"), do not name them.
+
+Corollary for redaction targets: replacement values are read by humans in published prose. Use `/var/www/app`, not the "(see privateContext)" note from the docs table.
