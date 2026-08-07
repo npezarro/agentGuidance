@@ -84,6 +84,53 @@ function fakeOAuthToken(overrides?: Partial<OAuthToken>): OAuthToken {
 const token = fakeOAuthToken();
 ```
 
+## Testing Shell Scripts: Don't Stub a Binary on PATH, Stand Up the Real Sink
+
+Shell scripts that alert (Discord webhook, email, HTTP callback) need their alert path tested, and
+the instinct is to drop a fake `curl` earlier on `PATH`. **This silently measures nothing** whenever
+the script hardens its own `PATH`, which the cron-safe ones here all do:
+
+```bash
+export PATH="$(dirname "$(command -v node)"):$(dirname "$CLAUDE_BIN"):$PATH"
+```
+
+That prepends `/usr/bin`, so the system `curl` wins the lookup and the stub is never called. The test
+then passes for the wrong reason: zero alerts recorded, interpreted as "suppression works." Verified
+live 2026-08-07 — the first harness for `claude-auth-probe.sh` reported all-pass while observing
+nothing at all.
+
+**Instead, bind a real listener and point the script's own webhook variable at it.** It exercises the
+actual `curl` invocation, actual JSON payload, and actual HTTP semantics:
+
+```bash
+python3 - "$SINK" > "$T/port" 2>/dev/null <<'PY' &
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+sink = sys.argv[1]
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get('Content-Length', 0))
+        open(sink, 'a').write(self.rfile.read(n).decode('utf-8', 'replace').replace('\n', ' ') + '\n')
+        self.send_response(204); self.end_headers()
+    def log_message(self, *a): pass
+srv = HTTPServer(('127.0.0.1', 0), H)   # port 0 = never collides with a real service
+print(srv.server_port, flush=True); srv.serve_forever()
+PY
+export WEBHOOK_VAR="http://127.0.0.1:$(cat "$T/port")/hook"
+```
+
+Companion rules for the same class of script:
+
+- **Always add an `env -i PATH=/usr/bin:/bin HOME=$HOME` case.** Cron's PATH omits `/usr/local/bin`,
+  and that presents as exit 127 *before* any logic runs. A suite that only runs under your
+  interactive shell cannot see it.
+- **Test the state-file upgrade path.** Changing a marker format (bare `touch` → structured) must be
+  exercised against the OLD format, or the first deploy inherits broken behaviour during a live
+  incident.
+- **`curl ... || true` is untestable by construction and unsafe in production**: a revoked webhook
+  fails identically to success. Capture the status instead and assert on it:
+  `code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 ...)`.
+
 ## Making Node.js Servers Testable
 
 When adding tests to a server-side repo, the server often needs minor changes to support isolated testing. These patterns are deployed across 4+ repos (url-vault, browser-logs, claudeNet, claude-auto-merger):
