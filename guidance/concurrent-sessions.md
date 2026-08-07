@@ -380,3 +380,21 @@ Rules:
 1. **Never deploy artifacts from a worktree build.** The static assets sit where the standalone server will not serve them, which reproduces exactly the unstyled-page failure the `fix-static-asset-drift` skill exists to repair.
 2. Treat that `cp` failure as a hard stop, not a cosmetic warning. It is the signal that the output tree is not the shape the deploy expects.
 3. A worktree build is still the right way to *typecheck and validate* a change. Merge to the default branch, then build from the primary checkout to produce anything deployable.
+
+### git add inherits a shared staging area: a pre-commit secret gate can block YOUR commit over a peer session's content (2026-08-07)
+SYMPTOM: you stage one clean file, and the pre-commit secret-scan blocks the commit citing line numbers and identifiers that do not appear anywhere in your file.
+
+CAUSE: several sessions share one checkout, so the git INDEX is shared state too. A peer session had already staged 8 other files. Your 'git add <one-file>' adds to that existing index, and the gate scans the whole staged diff, not just your path. Hit on 2026-08-07 in wordpressPosts: 8 peer-staged posts carried real repo-name and ssh identifier leaks.
+
+DO NOT: 'git commit --no-verify'. The gate was right; the leaks are real. Committing bypasses it for the peer's content, not just yours.
+DO NOT: 'git reset' or 'git stash'. Reset is fine here in practice but broad, and stash TOUCHES THE WORKING TREE, which can yank files out from under a live peer session mid-write.
+
+DO: unstage the peer's paths by name, leaving the working tree untouched, then commit only yours.
+  git diff --cached --name-only            # see whose files are actually staged
+  git restore --staged <peer-path> ...     # index only; files stay on disk
+  git diff --cached --name-only            # confirm only yours remains
+  git commit && git push
+
+Their content is preserved on disk and loses nothing: it could not have been committed anyway while the gate was blocking it. Report the blocked files as an open item so the leaks get fixed rather than silently re-staged.
+
+GENERAL RULE: before commiting in a shared checkout, always run 'git diff --cached --name-only' and confirm every staged path is yours. Related: pattern_concurrent_sessions_two_problems, learning_concurrent_session_clobber.
