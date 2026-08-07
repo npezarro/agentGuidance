@@ -130,3 +130,12 @@ When researching which merchants trigger an Amex category statement credit (wire
 3. reddit.com is blocked to WebSearch (API Error 400: 'domains are not accessible to our user agent'), including via allowed_domains. Crowd-sourced data points need an aggregator (Doctor of Credit, FrequentMiler, Miles to Memories, bestmvno) or page-reader instead.
 
 Practical consequence: recommend a test charge before committing to a carrier whose coding rests only on an old data point, and record the evidence gaps explicitly in the deliverable.
+
+### Eligibility on a marketing/FAQ page is not evidence: read the sentence printed on the application form (2026-08-07)
+Alameda County Library's public page says an out-of-county Californian can apply online for an eCard. The live application form at alam1.aclibrary.org/selfreg says the opposite, verbatim: 'Please note: eCards are only available to Alameda County Library residents.' A research pass that only reads marketing pages will report eligible and the agent will then submit a false residency claim.
+
+Same session, same failure mode twice: a research pass reported archive.org/account/signup as CAPTCHA-free, but the live page is shadow-DOM with a g-recaptcha-response field present.
+
+Rule: for any signup/eligibility/enrollment task, the authoritative quote is the one rendered on the form you are about to submit, read via the browser after the page loads. Treat FAQ, marketing, LibGuides and search-snippet quotes as leads to verify, never as the finding. When they conflict, the form wins and you stop.
+
+Corollary: this is also the cheapest place to catch a subagent's overconfident research, so map the form BEFORE filling it, not after a failed submit.
