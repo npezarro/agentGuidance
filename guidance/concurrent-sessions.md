@@ -405,3 +405,20 @@ Two Claude jobs ran the same library-signup task against the same browser-agent 
 Detect it, do not guess: 'browser-cli.sh logs 300' prints per-consumer lines like '[17861403] Exec: clickAny ...' — consumer IDs that are not yours are another agent. Cross-check with 'ps' start times against your own PID chain.
 
 Interleaved fill/click on a shared profile silently corrupts the other agent's half-filled form, and duplicate submissions to the same institution risk a duplicate-patron record. Resolution that worked: a CLAIMS.md in the shared working dir listing PID -> target, appended to BEFORE the first fill on a new target, plus an explicit statement in the final report that the other job's targets are its to report, not yours. Never assert an outcome for a target another agent drove — you cannot verify it.
+
+### Two Discord-dispatched Claude jobs can share one Chrome profile and one scratch dir; read the claims file before the first fill or you duplicate a sibling's signups (2026-08-07)
+On 2026-08-07 a single Discord request produced TWO concurrent Claude jobs (PID 272628 at 14:18 PT and PID 413575 at 15:05 PT) both driving the SAME browser-agent Chrome profile (keyIdx 0) and both writing to ~/library-signup/.
+
+The 14:18 job wrote ~/library-signup/CLAIMS.md as a coordination guard, claiming targets before driving each form. The 15:05 job never read it and re-drove a claimed target (Monterey County Free Libraries), submitting a duplicate registration. It was rejected by vendor de-duplication ('A patron record matching these details already exists'), and the 15:05 job then misread that rejection as proof its OWN submit had succeeded — writing a false success into its results file and appending a bogus second PIN to the shared .pw.
+
+Detection signals that a sibling job is live in your workspace:
+- a file in your scratch dir you did not create (here: CLAIMS.md, and an extra .pw line)
+- `browser-cli tabs` showing tabs for sites unrelated to your task
+- 'Another debugger is already attached to the tab with id: N' from cdp-* commands
+- your own PID tree not matching the PID recorded in the claims file
+
+Rules:
+1. Before the first `fill` on a new target, list your scratch dir and READ any claims/lock file.
+2. Append your PID + target to it before driving.
+3. Never treat a vendor 'record already exists' response as evidence your own submit worked — it is equally consistent with a sibling having done it. Verify by logging in, or check the claims file.
+4. Target tabs by explicit tab id, and assert the URL before acting; `focus` matches any Chrome tab including ones the relay is not tracking, so a loose URL substring can silently drive the wrong page.
