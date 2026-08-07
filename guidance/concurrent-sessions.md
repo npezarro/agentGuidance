@@ -398,3 +398,10 @@ DO: unstage the peer's paths by name, leaving the working tree untouched, then c
 Their content is preserved on disk and loses nothing: it could not have been committed anyway while the gate was blocking it. Report the blocked files as an open item so the leaks get fixed rather than silently re-staged.
 
 GENERAL RULE: before commiting in a shared checkout, always run 'git diff --cached --name-only' and confirm every staged path is yours. Related: pattern_concurrent_sessions_two_problems, learning_concurrent_session_clobber.
+
+### Two agents on one Chrome profile must claim targets in a file before the first fill (2026-08-07)
+Two Claude jobs ran the same library-signup task against the same browser-agent profile (keyIdx 0) at once. Symptoms: tabs appearing that this session did not open, and 'Timeout waiting for browser response' on roughly every other command.
+
+Detect it, do not guess: 'browser-cli.sh logs 300' prints per-consumer lines like '[17861403] Exec: clickAny ...' — consumer IDs that are not yours are another agent. Cross-check with 'ps' start times against your own PID chain.
+
+Interleaved fill/click on a shared profile silently corrupts the other agent's half-filled form, and duplicate submissions to the same institution risk a duplicate-patron record. Resolution that worked: a CLAIMS.md in the shared working dir listing PID -> target, appended to BEFORE the first fill on a new target, plus an explicit statement in the final report that the other job's targets are its to report, not yours. Never assert an outcome for a target another agent drove — you cannot verify it.
