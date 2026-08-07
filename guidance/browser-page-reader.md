@@ -343,3 +343,20 @@ Cost of the mistake: a duplicate submission. Monterey returned 'Could not create
 Fix: after any submit, read the page with `browser-cli cdp-eval 'document.body.innerText.slice(0,600)' <tabIdOrUrl>`. CDP reads the live DOM and showed the real confirmation text immediately in both cases. Only conclude 'the submit did nothing' after a CDP read agrees.
 
 Related gotcha found the same session: `browser-cli click` only treats an argument as a CSS selector when it starts with '#' or '.'. Passing 'input[value=Submit]' or 'button.btn-primary' is treated as link TEXT, fails to match, and then falls through to CDP — which errors with 'Another debugger is already attached' if a CDP command is in flight. Use an id/class selector, or submit via cdp-eval.
+
+### React/BiblioCommons inputs ignore a direct .value assignment — use the native value setter, or you will misread 'never submitted' as 'credentials rejected' (2026-08-07)
+On 2026-08-07, driving the Oakland Public Library login at oaklandlibrary.bibliocommons.com, setting the barcode and PIN with `el.value = x` and clicking submit produced NO navigation and NO error message. It looked like the credentials had been rejected. They had never been submitted: BiblioCommons is React, and React tracks the input's value in its own internal state. Assigning `.value` directly bypasses React's setter, so on submit React reads back its own (empty) state.
+
+The fix, which did make the values register:
+  var set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  set.call(el, value);
+  el.dispatchEvent(new Event('input',  {bubbles:true}));
+  el.dispatchEvent(new Event('change', {bubbles:true}));
+
+Diagnostic that distinguishes the two cases cheaply: query the app's own session endpoint rather than trusting the rendered page. For BiblioCommons that is
+  fetch('https://gateway.bibliocommons.com/v2/libraries/<lib>/sessions/current', {credentials:'include'})
+which returns {"auth":{},"entities":{"accounts":{}}} when no session exists. An empty auth object proves 'not logged in'; it does NOT prove the credentials were wrong.
+
+General rule: on a React/SPA form, a silent no-op after submit means 'the framework never saw your input', not 'the server said no'. Do not record a credential as invalid on that evidence.
+
+Also seen the same session: browser-cli `click` only treats an argument as a CSS selector when it begins with '#' or '.'; `click-any` matches textContent, so it cannot click an `<input type=submit>` whose caption lives in its `value` attribute. For those, submit via cdp-eval.
