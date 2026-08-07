@@ -114,6 +114,3 @@ opportunities came from the one archive-split session, and were unwinnable by
 construction.
 
 Related: `guidance/debugging.md` (diagnose before retrying), `guidance/testing.md`.
-
-### A censored denominator sounds like a behavioural finding: align coverage denominators to the collector's own log window (2026-08-07)
-xp-001's shadow hook read 100% coverage on single-turn sessions and 52% on multi-turn, written up as 'fires on the first prompt, unreliably after' and logged as a sampling-validity threat. It was a measurement artifact. The log had been archived at the rig freeze (2026-08-05 17:47:02) but the denominator counted each session's entire transcript, including prompts from before the log existed. Long sessions straddle that edge; short ones do not, so the deficit correlated with turn count. Corrected per-prompt join across all 124 transcripts: 153/153 = 100%, both segments. The worst case's six 'missing' records were in the v1/v3-mixed archives. A rotation you performed yourself is still left-censoring, and 'did rotation lose data?' is a different question from 'does the denominator start where the log starts?'. Second-order: the same censoring contaminates score-shadow.py's recall join (would[sid] truncated, opened[sid] unbounded), which only ever pushes recall down and could manufacture a false negative at readout.
