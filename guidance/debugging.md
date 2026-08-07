@@ -279,3 +279,15 @@ Found 2026-08-05: pm2-watchdog.sh had been dying on every */5 run because 'pm2 j
 The compounding nuance, which is the reusable part: '>>' updates a log file's mtime only on an actual WRITE, not on open. A job that fails before producing output leaves its log 0 bytes with the mtime frozen at whenever it last wrote. pm2-watchdog's log sat at 0 bytes dated 2026-07-17. So a freshness checker watching that file sees nothing move and cannot distinguish 'silently dead for weeks' from 'never had anything to say'.
 
 **Why:** cron deliberately uses a minimal environment; set -e turns a missing binary into a silent full stop. **How to apply:** put 'export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"' at the top of any script cron will run, or declare PATH= in the crontab. When a script works interactively but fails under cron, reproduce with 'env -i HOME=$HOME PATH=/usr/bin:/bin bash -c ...' before theorising. Never conclude a job is healthy from log mtime. Related: [[pattern_set_e_kills_script_at_git_symbolic_ref]], [[pattern_cron_redirect_fails_before_command]], [[project_run_ledger]].
+
+### An empty err.message (AggregateError) makes a fallback string look like the real error (2026-08-07)
+Node >= 20 dials a `localhost` hostname with happy-eyeballs (::1 and 127.0.0.1 in parallel). When BOTH fail it throws an AggregateError whose .message is the EMPTY STRING, with the real per-address errors in .errors. So the ubiquitous idiom `err.message || "some fallback"` selects the fallback and the diagnosis is gone.
+
+Hit 2026-08-07: foodie stored "Recovery failed: recovery failed" as a search result and logged the same, naming neither the code nor the port - so the outage took a live repro to identify. undici compounds it: every connection failure is reported as the opaque string "fetch failed" with the real reason hidden in .cause.
+
+It is ENVIRONMENT-DEPENDENT, which is why it does not reproduce locally: a single-stack host (WSL) resolves localhost to one address and throws a plain Error with a usable message; a dual-stack host (the GCP VM) throws the empty-message AggregateError. A test that dials a dead port therefore asserts different things on the two machines - build the AggregateError by hand in the test instead.
+
+How to apply:
+1. Never format an error with .message alone. Use a describeError() that walks .errors and .cause and appends code + address:port.
+2. Any predicate that matches on error text (isTransientError, isRetryable) must match the FULL description, or an AggregateError carrying ECONNREFUSED reads as non-transient and is treated as permanent.
+3. A self-referential message ("X failed: x failed") is the signature - it means the fallback fired, not that the error was unhelpful.
