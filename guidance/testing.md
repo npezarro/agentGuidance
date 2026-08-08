@@ -701,3 +701,35 @@ Two failures from xp-001 (memory lazy-tier test, 2026-08-05), both in the rig ra
 CONSEQUENCE: version-stamp the rig. Hash the matcher source + input sets + thresholds into every record, and make the scorer REFUSE to average across versions rather than silently mixing them. Without this, xp-001's rig changed 4x in one day and produced a '0% recall' artifact; the then-current matcher fired correctly on the exact prompt it was scored as missing.
 
 PROPORTIONALITY: stop when rig effort exceeds the prize. xp-001 measures ~524 tokens; the un-measured format normalisation shipped alongside it banked ~2,631. Somewhere around the third rig correction, 'let it collect and read it once' beats a fifth fix.
+
+## A metadata-only log is still replayable: rejoin it to the transcripts (2026-08-07)
+
+A shadow/telemetry log that deliberately omits sensitive fields looks untestable, and "I can't
+regression-test this until it collects the real thing" feels forced. Usually it is wrong: **the
+omitted field is often still sitting in a second store that kept it for an unrelated reason.**
+
+Concrete case. `~/.claude/memory-lazy-shadow.jsonl` records, per prompt, which memories the matcher
+would have surfaced plus the prompt's **length** — never its text, by design, so the log carries
+nothing sensitive. That is exactly the field a replay needs. But the text is still in the session
+transcripts at `~/.claude/projects/*/<session_id>.jsonl`, so the records rejoin on:
+
+```
+(session_id, |timestamp delta| <= 5s, exact character length)
+```
+
+That turned "wait 12 more days" into a 148-case regression test available the same afternoon, and it
+was the only way to prove a **copied** matcher was byte-identical to a frozen original that could not
+be imported. See `hooks/memory-lazy-tier.selftest.sh` for a working implementation.
+
+Three rules that generalise:
+
+- **Filter `type:"user"` entries down to real prompts.** Tool results arrive as `type:"user"` too. A
+  long tool output can coincidentally match a prompt's length and replay the wrong text into a test
+  that then passes. Drop any content list containing a `tool_result` block; concatenate only `text`
+  blocks.
+- **Assert on exact values, not overlap.** Compare names *and* scores in order. A near-match hides
+  precisely the drift the test exists to catch.
+- **Report the recovery rate as part of the result.** 148 of 218 records replayed; the other 70 had
+  no local transcript (headless/VM sessions). Quoting "148/148 passed" without the denominator would
+  imply coverage the test does not have. Where a transcript existed at all, recovery was 97% — that
+  is the honest number, and it is the one that says whether the sample is worth trusting.
