@@ -207,3 +207,20 @@ Full closeout: privateContext/deliverables/closeouts/2026-08-05-claude-tray-noti
   two `UserPromptSubmit` hooks intact. 13/13 tests pass.
 
 Full closeout: privateContext/deliverables/closeouts/2026-08-07-memory-lazy-tier-mechanism-built-off.md
+
+## 2026-08-07 (later) -- save-to-wp-repo: redact at write time, commit only its own path
+
+- `b6a85a7` -- `hooks/save-to-wp-repo.sh`. The hook redacted secrets but not the identifiers the
+  commit gate blocks, so every post naming the VM or a private repo was unpublishable on arrival;
+  `git commit ... 2>/dev/null || true` then discarded the rejection. 29 posts had piled up over
+  five days. Fixes: redact via `privateContext/redact-identifiers.sh`; anchor `cwd` to `~` before
+  the frontmatter; `git add -- <path>` plus `git commit -- <path>` so a shared checkout's peers are
+  neither swept in nor blocking; log failures to `~/.cache/wp-posts/hook.log` and stderr, with a
+  pre-commit self-check that names the missing Redaction Replacements entry.
+- `3d9de27` -- `guidance/secrets-hygiene.md`: a blocking gate with no write-time counterpart
+  guarantees a backlog of unpublishable files. Includes the two corollaries found by testing (an
+  allowlist file is itself scanned; replacement values are read by humans in published prose).
+- Verified in a sandboxed clone with a fake `HOME`, the real hooks and a peer's dirty file
+  pre-staged, plus a deliberate failure-path run. A peer's hook committed successfully mid-session.
+
+Full closeout: privateContext/deliverables/closeouts/2026-08-07-wordpressposts-backlog-and-write-time-redaction.md
