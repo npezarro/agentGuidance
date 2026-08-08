@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-08-07 (latest) -- **`guidance/measurement-windows.md`: a censored denominator sounds like a behavioural finding** (`1d5bce5`, merged `f9e9a1a`). xp-001's shadow hook was reported at **100% coverage on single-turn sessions and 52% on multi-turn**, written up as "it fires on a session's first prompt and unreliably after" and logged as a *sampling-validity threat*. There is no such mechanism. **The shadow log does not begin when the hook was installed; it begins where the log was last ARCHIVED** (the rig freeze, 2026-08-05 17:47:02), but the denominator counted each session's *entire transcript*, including prompts from days earlier. Sessions are long-lived and log files are not, so a long session donates its whole history to the denominator and only its post-archive prompts to the numerator. **Short sessions sit inside the window and read 100%; long ones straddle it and read ~50% -- duration was doing all the work, and duration correlates with turn count**, which is why the artifact arrived pre-dressed as a hypothesis. Corrected by per-prompt timestamp join (±3s) across **all 124** transcripts with in-window activity -- not just sessions that already had a record, which is where the original method could not see a zero-record session at all: **153/153 = 100%**, single-turn 110/110 and multi-turn 43/43, the 3 apparent residuals being one `/compact` operation (the command, its expansion, and the continuation summary, none of them user prompts). The worst case's six "missing" records sat in `.v1`/`.v3-mixed` the whole time, timestamps matching its prompts to the second. **The trap that makes this hard to catch: a rotation you performed yourself is still left-censoring, and "did rotation lose data?" (no) is a different question from "does the denominator start where the log starts?" (nobody asked)** -- which is exactly how the prior control crossed it off. The other near-miss: that control tested the right idea against the **wrong timestamp**, using hook-registration 14:15:19 rather than the log's real left edge 17:47:02, so sessions starting in the 3.5h gap still failed and read as confirmation. **Whenever an apparent deficit correlates with the observed unit's AGE, suspect censoring before the collector**, and check the archives before building instrumentation -- three collector-side hypotheses and a heartbeat hook were queued and none were needed. It propagates and it lies in one direction only: the same censoring contaminates `score-shadow.py`'s recall join (`would[sid]` truncated, `opened[sid]` unbounded), which **can only push recall DOWN**, and the decision rule's failure branch is "<80% -> keep the entries loaded" -- so it manufactures false negatives, never false positives. Left **unapplied** (scorer-only, no fingerprint change, no window restart, but inside frozen `experiments/`). Closeout: `privateContext/deliverables/closeouts/2026-08-07-xp001-hook-coverage-resolved.md`.
+
+## Last Updated (prior)
 2026-08-07 (later) -- **`hooks/save-to-wp-repo.sh` wrote posts it could never commit, and threw the rejection away** (`b6a85a7`). The stop hook redacted secrets but none of the identifiers the commit gate blocks, then ran `git commit ... 2>/dev/null || true`, so 29 unpublishable posts accumulated silently over five days. Four fixes: pipe content through `privateContext/redact-identifiers.sh` (one list for writer and gate); anchor `cwd` to `~` before it reaches the frontmatter (every post carried the WSL/Windows username, 31 carried one in `project:` too); commit with **`git add -- <path>` plus `git commit -- <path>`**, which builds a temporary index so a peer sharing this checkout is neither swept in nor blocking; and report failures to `~/.cache/wp-posts/hook.log` and stderr, with a pre-commit self-check that names the gap. Guidance in `guidance/secrets-hygiene.md` (`3d9de27`). Full closeout: `privateContext/deliverables/closeouts/2026-08-07-wordpressposts-backlog-and-write-time-redaction.md`.
 
 ## Last Updated (prior)
@@ -206,12 +209,25 @@ Full closeout: `privateContext/deliverables/closeouts/2026-08-02-three-followups
   (2) the rig is a system too and fails the same ways the thing it measures does. A mid-audit
   "discovery" of a second demand signal turned out to be a read file's own `[[wikilinks]]` echoed
   back inside `tool_result` staleness notices, i.e. a correlation with my own reads.
-- **Known unresolved:** long sessions log fewer prompts than they contain; short sessions log all of
-  them. Four controls each came back clean or confounded. Accepted rather than fixed, because the
-  effort had already exceeded the ~524 tokens under test.
-- **State: compaction working and self-maintaining; experiment running, 153 records, 0.69
-  injections/prompt against a 1.0 ceiling.** Full closeout:
+- ~~**Known unresolved:** long sessions log fewer prompts than they contain.~~ **RESOLVED
+  2026-08-07: the hook has 100% coverage.** It was a censored denominator, not a collector defect.
+  The shadow log begins at the rig-freeze archive point, but the denominator counted each session's
+  *entire* transcript, so long sessions (the ones that straddle that edge) read ~52% while short ones
+  read 100%. Corrected per-prompt join across all 124 transcripts: **153/153**, both segments; the
+  worst case's six "missing" records were in the `.v1`/`.v3-mixed` archives all along. **No
+  first-prompt bias, so no sampling-validity threat to xp-001.** Generalised to
+  `guidance/measurement-windows.md`.
+- **One open item on the rig, needs Nick's call:** `score-shadow.py` builds `would[sid]` from the
+  truncated log but scans the whole transcript for `opened[sid]`, so archive-split sessions
+  contribute structurally unwinnable recall misses (4 of the current 8 opportunities). Censoring only
+  pushes recall **down**, and the decision rule fails at <80%, so this can manufacture a false
+  negative at readout. The fix is scorer-only (no fingerprint change, no window restart) but lives
+  inside frozen `experiments/`, so it was **not applied**.
+- **State: compaction working and self-maintaining; experiment running, 213 records, hook coverage
+  verified at 100%, cost 0.18 candidate-injections per interactive prompt against a 1.0 ceiling;
+  recall still thin at n=8.** Full closeouts:
   `privateContext/deliverables/closeouts/2026-08-07-memory-index-compaction-and-experiment-registry.md`
+  and `.../2026-08-07-xp001-hook-coverage-resolved.md`
 
 ## 2026-08-07 — Memory lazy tier: the mechanism, built and switched off
 - **Follow-on to the 2026-08-05 entry above.** That session shipped format normalisation (free win,
