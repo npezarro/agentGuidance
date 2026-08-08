@@ -196,6 +196,8 @@ kwargs["env"] = env
 
 **Implication:** When debugging a prolonged OAuth failure, check both paths. If the cron log shows persistent `rate_limit_error` and the access token is expired, the recovery path is NOT to wait — it is to trigger `claude-auto-relogin.sh` (or the `/refresh-main-auth` skill) which uses the browser and is not subject to the API rate limit.
 
+**Second incident (2026-05-31) — both API methods fail under concurrent load:** When many autonomous `claude -p` jobs run simultaneously (learning-agent, autonomousDev, trading-agent all active), the `platform.claude.com/v1/oauth/token` endpoint can rate-limit BOTH the direct refresh grant AND the `claude -p` fallback within the same cycle — because `claude -p` calls the same token endpoint internally to validate its session. Two consecutive cycles (~21:00 and 00:00 PDT) both failed; the token reached 0.2h remaining before the alert fired. The `claude-auto-relogin.sh` browser-based recovery is still the correct first action (it uses the web OAuth flow, bypassing the API endpoint). Documented in `scripts/CLAUDE.md` commit `fcba782`.
+
 ### React SPA Hydration Race in Browser-Agent OAuth Scripts
 
 **Symptom:** A browser-agent script clicks the OAuth Authorize button on `claude.ai`. The click reports success but nothing happens — no navigation, no callback. The same script works fine minutes later.
