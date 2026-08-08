@@ -1,6 +1,9 @@
 # context.md
 
 ## Last Updated
+2026-08-07 (later) -- **`hooks/memory-lazy-tier.sh`: the memory demotion switch exists and is OFF** (`be70c24`, merged `5cf2ed3`). xp-001 decides on **2026-08-19** whether to demote the 46 never-read `project_`/`reference_` index entries to an on-demand tier; it does not build the switch, so a "go" verdict would have meant starting a project instead of flipping a flag. Built, tested, left off: **nothing demoted, no hook registered, `experiments/` and the frozen input sets untouched.** ENABLE = `hooks/memory-lazy-tier.sh enable`; KILL = `... disable`, or `MEMORY_LAZY_TIER=off` for an instant no-edit restore. **The matcher is a verbatim COPY of frozen rig `54893c36fdbd` -- do not "improve" it in place**, because `hooks/memory-lazy-tier.selftest.sh` asserts byte-identical scores against 148 real logged decisions and any edit that moves a score invalidates the experiment's applicability to this code. That replay is the reusable trick: **the shadow log stores prompt LENGTH but never prompt text, so it looks unreplayable -- the text comes back from the session transcripts by joining on `(session_id, |Δt| <= 5s, exact length)`**, excluding `type:user` messages that are really `tool_result` blocks. 148/218 recovered (the other 70 are headless sessions with no local transcript), **148/148 reproduce the logged top-K exactly, name and score.** Measured saving is **~630 tokens/session**, above the ~524 estimate, and the kill switch round-trips byte-identically (15,139 -> 12,606 -> 15,139, 196 entries either side). **The design lesson is about the fallback, not the feature:** a retrieval miss is silent, so a fallback is mandatory -- and my first two fallback designs were wrong *and I only knew because I measured them*. "Name every suppressed entry" fired **129 times against 29 real injections**, 4x more often than the thing it backstops; restricting to margin-cut survivors moved it to 109 (the relative cut barely binds when top scores are low); the fix was a different question -- fire **only on prompts where the tier injected nothing** (~6.6 tok/prompt vs ~9.5, covering the 47 of 121 silent prompts where a lazy entry actually scored). **Measure a fallback's fire rate against the failure rate it covers before shipping it**, and state the residual plainly: an agent that never suspects a gap still gets no prompt to look, so no fallback makes a sub-80% recall number safe to ship over. Closeout: `privateContext/deliverables/closeouts/2026-08-07-memory-lazy-tier-mechanism-built-off.md`.
+
+## Last Updated (prior)
 2026-08-07 -- **`guidance/testing.md`: a PATH-stubbed binary is not a test double** (`72b789e`). Testing a shell script's alert path by dropping a fake `curl` earlier on `PATH` **silently measures nothing** whenever the script hardens its own `PATH` -- and every cron-safe script here does, via `export PATH="$(dirname node):$(dirname claude):$PATH"`, which prepends `/usr/bin` so the system `curl` always wins the lookup. The failure is invisible in the worst way: the suite records **zero alerts** and that reads as "suppression works." Verified live -- the first harness for `claude-auth-probe.sh` reported **5/5 pass while observing nothing at all**, and only the "no alerts recorded" line looked odd enough to check. Fix is to **bind a real listener** (`HTTPServer(('127.0.0.1', 0), ...)`, port 0 so it never collides) and point the script's own webhook variable at it, which exercises the real `curl` invocation, real payload, and real HTTP semantics. Three companion rules added: always include an `env -i PATH=/usr/bin:/bin` case (cron's PATH omits `/usr/local/bin`, presenting as exit 127 **before** any logic runs, so an interactive-shell-only suite cannot see it); **test the state-file upgrade path** against the OLD format, or the first deploy inherits broken behaviour mid-incident; and **`curl … || true` is untestable by construction and unsafe in production** -- a revoked webhook fails identically to success, so capture `%{http_code}` and assert on it. Origin: VM OAuth outage session. Closeout: `privateContext/deliverables/closeouts/2026-08-07-vm-oauth-outage-long-lived-token-expiry-monitor.md`.
 
 ## Last Updated (prior)
@@ -206,3 +209,33 @@ Full closeout: `privateContext/deliverables/closeouts/2026-08-02-three-followups
 - **State: compaction working and self-maintaining; experiment running, 153 records, 0.69
   injections/prompt against a 1.0 ceiling.** Full closeout:
   `privateContext/deliverables/closeouts/2026-08-07-memory-index-compaction-and-experiment-registry.md`
+
+## 2026-08-07 — Memory lazy tier: the mechanism, built and switched off
+- **Follow-on to the 2026-08-05 entry above.** That session shipped format normalisation (free win,
+  banked) and started xp-001 on the demotion (recall bet, under test). This session built what a
+  "go" verdict would need, and enabled none of it.
+- **`hooks/memory-lazy-tier.sh`** — `demote` / `retrieve` / `restore` / `enable` / `disable` /
+  `status`. `demote` moves index LINES only; memory files never move and stay recall-searchable.
+  `retrieve` is a `UserPromptSubmit` hook that scores the prompt against the **full** index (hot +
+  lazy) and injects only the lazy winners. Scoring the lazy set alone would change the IDF document
+  frequencies and produce different scores from the rig; it is also worse on the merits, since a hot
+  entry beating a lazy one is the signal that the lazy one was not the answer.
+- **Hook is NOT pre-registered**, though it is provably inert on an empty tier. Adding a
+  `UserPromptSubmit` hook mid-experiment changes the running rig's environment for no gain —
+  `enable` registers it atomically with demotion, so it is a one-liner either way.
+- **Two kill switches on purpose.** `disable` is correct but needs a working script and a writable
+  index; `MEMORY_LAZY_TIER=off` edits nothing and works from a shell that is already broken. Both
+  tested — a kill switch first exercised on the day you need it is not a kill switch.
+- **The pointer line is `> `-prefixed for a reason.** `compact-memory-index.sh` routes `# - * >`
+  lines to passthrough; without the prefix the pointer parses as an entry named `NOTE` and gets
+  clipped at 88 chars. Verified: the compactor is a no-op on a demoted index and resurrects nothing.
+- **Expect this false alarm:** a high-scoring entry with `cand:false` looks exactly like a retrieval
+  miss and is the mechanism working — it means the entry is still hot and already in context. Two
+  spot-checks tripped on this before I checked the candidate list.
+- **State: built, 13/13 tests pass, OFF.** Open item carried forward and still unresolved:
+  `score-shadow.py`'s recall numerator is censored by the archive boundary, censoring only pushes
+  recall down, and the rule says "if recall < 80%, keep the entries loaded" — so left unfixed it
+  manufactures a false negative at the readout. Fix is a scorer change (does not alter the rig
+  fingerprint), but the file is inside the frozen dir. **Needs a decision before the 19th, not on
+  it.** Full closeout:
+  `privateContext/deliverables/closeouts/2026-08-07-memory-lazy-tier-mechanism-built-off.md`

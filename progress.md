@@ -187,3 +187,23 @@ shareable, audit the DEPENDENCY CLOSURE, not just for secrets.
 Full procedure lives in the `public-readiness-audit` skill.
 
 Full closeout: privateContext/deliverables/closeouts/2026-08-05-claude-tray-notifier-public-readiness.md
+
+## 2026-08-07 — memory lazy-tier mechanism, shipped OFF
+
+`be70c24` (merged `5cf2ed3`) added `hooks/memory-lazy-tier.sh` and
+`hooks/memory-lazy-tier.selftest.sh`. Built the switch xp-001 will vote on, and enabled nothing.
+
+- Demotion moves 46 index lines out of `MEMORY.md` into the `LAZY-TIER` block of `INDEX-LAZY.md`.
+  Measured on the live index: 15,139 -> 12,606 bytes, **~630 tokens/session** (est. was ~524).
+- Matcher is a verbatim copy of frozen rig `54893c36fdbd`. Copied, not imported: `experiments/` is
+  frozen until the readout. **Do not edit the copy** — the selftest asserts identical scores.
+- Replay regression recovers prompt text (which the log deliberately never stored) from session
+  transcripts by `(session_id, |Δt| <= 5s, exact length)`. **148/148 recoverable decisions reproduce
+  the logged top-K exactly, name and score.** 70 of 218 have no local transcript (headless).
+- Silent-miss fallback, scope set by measurement not taste: pointer line (flat ~40 tok/session,
+  survives compaction) + near-miss names capped at 2 **only when the tier injected nothing**
+  (~6.6 tok/prompt vs ~9.5 firing on every prompt) + `INDEX-LAZY.md` as a greppable manifest.
+- Kill switch verified as a byte-identical round trip; `settings.json` patching leaves the other
+  two `UserPromptSubmit` hooks intact. 13/13 tests pass.
+
+Full closeout: privateContext/deliverables/closeouts/2026-08-07-memory-lazy-tier-mechanism-built-off.md
