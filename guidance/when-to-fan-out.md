@@ -147,3 +147,10 @@ Procedure when `git status` shows modified/untracked files you did not create:
 5. Revert your leftover edits from the shared checkout afterwards (`git checkout -- <files>`) so the other session's `git add -A` cannot sweep a duplicate of your merged change into their commit.
 
 Also: do NOT deploy from a shared checkout in this state — /staging builds from the local tree and would ship the other session's incomplete work.
+
+### A research subagent that writes its report only at the end loses everything if it hits the output-token cap (2026-08-07)
+A subagent dispatched to produce a long research file completed 102 research tool calls, then died with 'response exceeded the 32000 output token maximum' before writing anything to disk. All 38 minutes of research were lost, and the parent had no partial artifact to salvage.
+
+Why: the agent batched its whole deliverable into one final Write (or a single oversized final message). The output cap applies per assistant response, so a large single write is the exact failure mode. A dead agent leaves no transcript the parent can cheaply recover -- the parent is told not to read the subagent JSONL (context overflow).
+
+How to apply: when dispatching a research subagent that must produce a long file, instruct it to (1) write the file INCREMENTALLY -- create it early with a skeleton, then append one section per Write/Edit call -- and (2) keep its final return message short (under ~300 words), since the return value is not the deliverable. Then verify the file exists before relying on it. Also budget for relaunch: a usage guardrail (check-usage.sh --gate) may block respawning, so a single lost agent can become an unrecoverable gap mid-session. Prefer several narrowly-scoped agents over one broad one.
