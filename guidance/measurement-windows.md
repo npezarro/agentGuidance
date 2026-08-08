@@ -78,6 +78,43 @@ This matters most when a metric has a "if the number is low, abandon the plan"
 branch: censoring only ever pushes the number down, so it manufactures false
 negatives, never false positives.
 
+## Fix every direction, not just the flattering one
+
+When you correct a censored join, check each metric separately for **which way
+its bias points**. They will not agree, and applying one bound everywhere is how
+a rig quietly gets tuned toward the answer you want.
+
+xp-001 had two metrics reading the same event set:
+
+| metric | correct bound | why |
+|---|---|---|
+| recall | per-unit floor (first surviving record) | fair to the retriever: only score events whose trigger this rig actually saw |
+| demand ("was it ever wanted?") | the log's global window | a fact about the user, not the retriever; the stricter floor **under-counts** it |
+
+The recall bound raises the number. The demand bound raises it too, and the
+decision rule ships when demand is zero, so tightening demand would have pushed
+toward shipping on an artifact. **State each metric's bias direction out loud
+before choosing its bound.**
+
+## The freeze protects the collector, not the scorer
+
+"The rig is frozen" usually means *stop changing what gets recorded*. A scorer
+reads data that already exists; correcting it re-reads the same records and
+cannot invalidate them.
+
+Settle this with the fingerprint rather than by argument. If your records carry a
+version hash, recompute it from its declared inputs and compare:
+
+```python
+h = sha256(collector_source + input_set_a + input_set_b + thresholds)
+assert h.hexdigest()[:12] == recorded_rig     # scorer absent -> scorer is free
+```
+
+If the scorer is not an input, editing it changes no record and **does not
+restart the observation window**. If it *is* an input, treat it as the collector.
+Print the pre-fix and post-fix readings side by side either way, so the
+correction is auditable instead of a number that silently moved.
+
 ## Checklist
 
 Before reporting a coverage or recall figure:
@@ -111,6 +148,9 @@ continuation summary). No first-prompt bias exists.
 
 The same censoring was independently depressing the recall metric: 4 of its 8
 opportunities came from the one archive-split session, and were unwinnable by
-construction.
+construction. Fixed in the scorer on the same day (reading moved 12% -> 25%, both
+printed); the collector was not touched, and recomputing the rig fingerprint from
+its declared inputs proved no record was invalidated and the window did not
+restart.
 
 Related: `guidance/debugging.md` (diagnose before retrying), `guidance/testing.md`.
